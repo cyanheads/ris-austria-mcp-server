@@ -1,0 +1,41 @@
+{
+  "manifest_version": "0.3",
+  "name": "ris-austria-mcp-server",
+  "version": "0.1.0",
+  "description": "Search Austrian federal and state law, court decisions, and the authentic Bundesgesetzblatt (RIS).",
+  "author": { "name": "cyanheads" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cyanheads/ris-austria-mcp-server"
+  },
+  "homepage": "https://github.com/cyanheads/ris-austria-mcp-server#readme",
+  "license": "Apache-2.0",
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"],
+      "env": {
+        "MCP_TRANSPORT_TYPE": "stdio",
+        "MCP_AUTH_MODE": "none",
+        "NODE_ENV": "production",
+        "RIS_CONTACT": "${user_config.ris_contact}"
+      }
+    }
+  },
+  "compatibility": {
+    "runtimes": { "node": ">=24.0.0" }
+  },
+  "tools_generated": true,
+  "prompts_generated": true,
+  "user_config": {
+    "ris_contact": {
+      "type": "string",
+      "title": "RIS Contact",
+      "description": "Optional contact string appended to the User-Agent. RIS netiquette asks integrators to be identifiable; no API key is needed.",
+      "required": false,
+      "default": ""
+    }
+  }
+}

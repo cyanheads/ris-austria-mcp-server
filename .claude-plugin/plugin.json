@@ -1,0 +1,20 @@
+{
+  "name": "ris-austria-mcp-server",
+  "version": "0.1.0",
+  "description": "Search Austrian consolidated federal & state law, court decisions, and the authentic Bundesgesetzblatt from the official RIS via MCP. Keyless. STDIO or Streamable HTTP.",
+  "author": {
+    "name": "cyanheads"
+  },
+  "homepage": "https://github.com/cyanheads/ris-austria-mcp-server#readme",
+  "repository": "git+https://github.com/cyanheads/ris-austria-mcp-server.git",
+  "license": "Apache-2.0",
+  "mcpServers": {
+    "ris-austria-mcp-server": {
+      "command": "npx",
+      "args": ["-y", "@cyanheads/ris-austria-mcp-server"],
+      "env": {
+        "MCP_TRANSPORT_TYPE": "stdio"
+      }
+    }
+  }
+}
