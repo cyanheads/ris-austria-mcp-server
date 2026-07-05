@@ -39,10 +39,10 @@ ENV NODE_ENV=production
 # OCI image metadata (https://github.com/opencontainers/image-spec/blob/main/annotations.md)
 ARG APP_VERSION
 LABEL org.opencontainers.image.title="ris-austria-mcp-server"
-LABEL org.opencontainers.image.description="Search Austrian federal and state law, court decisions, and the authentic Bundesgesetzblatt (RIS)."
+LABEL org.opencontainers.image.description=""
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.version="${APP_VERSION}"
-LABEL org.opencontainers.image.source="https://github.com/cyanheads/ris-austria-mcp-server"
+LABEL org.opencontainers.image.source=""
 
 # Copy dependency manifests
 COPY package.json bun.lock ./

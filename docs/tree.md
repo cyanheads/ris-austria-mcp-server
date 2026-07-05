@@ -1,6 +1,6 @@
 # ris-austria-mcp-server - Directory Structure
 
-Generated on: 2026-07-04 18:37:27
+Generated on: 2026-07-05 11:52:15
 
 ```text
 ris-austria-mcp-server/
@@ -151,7 +151,6 @@ ris-austria-mcp-server/
 ├── AGENTS.md
 ├── biome.json
 ├── bun.lock
-├── bunfig.toml
 ├── CHANGELOG.md
 ├── CLAUDE.md
 ├── devcheck.config.json

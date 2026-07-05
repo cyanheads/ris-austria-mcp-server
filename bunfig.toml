@@ -1,6 +1,0 @@
-[install]
-auto = "fallback"
-frozenLockfile = false
-
-[run]
-bun = true
