@@ -1,6 +1,8 @@
 # ris-austria-mcp-server — Design
 
-Austrian federal & state law and court decisions via the RIS (Rechtsinformationssystem des Bundes) OGD REST API v2.6 — keyless, CC BY 4.0. Designed 2026-07-04; all "✓ live-confirmed" markers in this doc were verified against the production API on that date.
+Austrian federal, state, district, and municipal law, court decisions, the lawmaking pipeline, and official sectoral gazettes via the RIS (Rechtsinformationssystem des Bundes) OGD REST API v2.6 — keyless, CC BY 4.0. Designed 2026-07-04, revised to full-surface scope 2026-07-05; all "✓ live-confirmed" markers were verified against the production API on those dates.
+
+**v1 covers the entire OGD surface.** Every application the API exposes (Table 1 of the OGD-RIS API Handbook V2.6) is reachable through a tool — there is no deferred tier. Decision (2026-07-05): build everything at once rather than staging; the per-application cost is a param-map row and routing, not a new architecture, and a complete surface makes the server the single Austrian-law entry point rather than a subset with surprise gaps.
 
 ## MCP Surface
 
@@ -8,12 +10,15 @@ Austrian federal & state law and court decisions via the RIS (Rechtsinformations
 
 | Name | Description | Key Inputs | Annotations |
 |:-----|:------------|:-----------|:------------|
-| `ris_search_legislation` | Search consolidated federal + state law (one doc = one §/Artikel/Anlage). Flagship filter: in-force-as-of date. | `query`, `title`, `scope` (federal \| 9 Bundesländer), `in_force_as_of` (default today), `include_all_versions`, `section_from/to`, `section_type`, `law_id`, `index`, `changed_since`, `page`, `page_size` | readOnly, idempotent, openWorld |
-| `ris_search_case_law` | Search Judikatur in one court/tribunal application per call (VfGH, VwGH, Justiz, BVwG, LVwG, DSB, …). | `court` (enum, required), `query`, `norm`, `case_number`, `decision_type`, `decided_from/to`, `issuing_body` (dsk), `court_name` (justiz), `state` (lvwg), `changed_since`, `page`, `page_size` | readOnly, idempotent, openWorld |
-| `ris_search_gazette` | Browse authentic promulgations (Bundesgesetzblatt / Landesgesetzblätter) by date range, part, type, issuer — the compliance-monitoring surface. | `scope` (federal \| Bundesland), `query`, `number`, `part`, `type`, `published_from/to`, `issuer`, `page`, `page_size` | readOnly, idempotent, openWorld |
-| `ris_lookup_citation` | Deterministic resolver: one legal citation → the canonical RIS document. Handles norm cites ("§ 6 DSG"), gazette cites ("BGBl. I Nr. 165/1999"), case numbers ("2025-0.934.677"). Returns `found: false`, never throws, on no-resolve. | `citation`, `kind` (auto \| norm \| gazette \| case_number), `court` (hint), `in_force_as_of` | readOnly, idempotent, openWorld |
-| `ris_get_document` | Fetch one document's full text (markdown/html/xml) or its export URLs, with binding-status labeling and the authentic PDF surfaced for gazette docs. | `document_number` + `application`, or `document_url`; `format` (markdown \| html \| xml \| urls_only) | readOnly, idempotent, openWorld |
-| `ris_list_reference` | Ground the opaque German codes: applications, court codes, Bundesländer, decision types, DPA bodies, changed-since intervals, section types, gazette parts, citation formats. Static, offline. | `topic` (enum) | readOnly, idempotent, closedWorld |
+| `ris_search_legislation` | Search consolidated federal + state + municipal law (one doc = one §/Artikel/Anlage) and English translations of selected laws. Flagship filter: in-force-as-of date. | `query`, `title`, `scope` (federal \| 9 Bundesländer), `municipality` (→ municipal law), `language` (german \| english → Erv), `in_force_as_of` (default today), `include_all_versions`, `entered_force_from/to`, `left_force_from/to`, `section_from/to`, `section_type`, `law_id`, `index`, `changed_since`, `sort_by`, `sort_direction`, `page`, `page_size` | readOnly, idempotent, openWorld |
+| `ris_search_case_law` | Search Judikatur in one court/tribunal application per call (VfGH, VwGH, Justiz, BVwG, LVwG, DSB, UPTS, …). | `court` (enum of 17, required), `query`, `norm`, `case_number`, `decision_type`, `decided_from/to`, `decision_kind`, `collection_number` (vfgh/vwgh/uvs), `issuing_body` (dsk/dok/pvak/verg), `court_name`, `legal_area`, `subject_area` (justiz), `state` (lvwg/uvs), `party` (upts), `commission`, `senate`, `discrimination_ground` (gbk), `subject_law` (bks), `changed_since`, `sort_by`, `sort_direction`, `page`, `page_size` | readOnly, idempotent, openWorld |
+| `ris_search_gazette` | Browse the promulgation record at every level — federal (three era tiers, auto-routed), state law + ordinance gazettes, district, municipal. The compliance-monitoring surface. | `scope` (federal \| 9 Bundesländer \| district \| municipal), `series` (law_gazette \| ordinance_gazette), `include_non_authentic`, `query`, `title`, `number`, `part` (incl. `pre_1997`), `type`, `published_from/to`, `issuer`, `district_authority`, `municipality`, `sort_by`, `sort_direction`, `page`, `page_size` | readOnly, idempotent, openWorld |
+| `ris_search_drafts` | Search the federal lawmaking pipeline: ministerial review drafts (Begutachtungsentwürfe) and government bills (Regierungsvorlagen, 2004+). | `stage` (review_drafts \| government_bills, required), `query`, `title`, `ministry`, `in_review_on` (review-only), `decided_from/to` (bills-only), `changed_since`, `sort_by`, `sort_direction`, `page`, `page_size` | readOnly, idempotent, openWorld |
+| `ris_search_announcements` | Search sectoral official gazettes and executive documents: social-insurance official notices, veterinary notices, court rules of procedure, trade-exam regulations, health structure plans, ministerial decrees, council-of-ministers minutes. | `collection` (enum of 7, required), `query`, `title`, `number`, `published_from/to`, `in_force_as_of`, `issuer`, `norm`, `case_number`, `type`, `department`, `plan_type`, `plan_state`, `session_number`, `legislature`, `changed_since`, `sort_by`, `sort_direction`, `page`, `page_size` | readOnly, idempotent, openWorld |
+| `ris_lookup_citation` | Deterministic resolver: one legal citation → the canonical RIS document. Handles norm cites ("§ 6 DSG"), gazette cites across all three federal eras + LGBl, case numbers ("2025-0.934.677"), collection numbers ("VfSlg 19.632/2012"). Returns `found: false`, never throws, on no-resolve. | `citation`, `kind` (auto \| norm \| gazette \| case_number \| collection_number), `court` (hint), `state` (hint), `in_force_as_of` | readOnly, idempotent, openWorld |
+| `ris_get_document` | Fetch one document's full text (markdown/html/xml) or its export URLs, with binding-status labeling and the authentic PDF surfaced wherever it exists. | `document_number` + `application`, or `document_url`; `format` (markdown \| html \| xml \| urls_only) | readOnly, idempotent, openWorld |
+| `ris_track_changes` | Precise change feed per application (the History controller): every document added/changed in a date window, optionally including deletions — the delta-sync and monitoring primitive `changed_since` intervals can't express. | `application` (enum, required), `changed_from`, `changed_to`, `include_deleted`, `page`, `page_size` | readOnly, idempotent, openWorld |
+| `ris_list_reference` | Ground the opaque German codes: applications + coverage windows, courts, states, decision types/kinds, issuing bodies, ministries, collections, gazette tiers/parts, district authorities, Justiz subject areas, search syntax, citation formats. Static, offline. | `topic` (enum) | readOnly, idempotent, closedWorld |
 
 ### Resources
 
@@ -27,21 +32,25 @@ None in v1. An EU→AT transposition research prompt was considered and deferred
 
 ## Overview
 
-The Austrian-national counterpart to `eur-lex-mcp-server`. RIS is the Austrian government's official legal database: consolidated federal and state law, case law across every Austrian court and tribunal, and the authentic (legally binding) Bundesgesetzblatt. The OGD REST API is keyless and CC BY 4.0.
+The Austrian-national counterpart to `eur-lex-mcp-server`. RIS is the Austrian government's official legal database: consolidated federal/state/municipal law, case law across every Austrian court and tribunal, the authentic (legally binding) gazettes at every level of government, the pre-parliamentary lawmaking pipeline, and ministerial decrees. The OGD REST API is keyless and CC BY 4.0.
 
 **Audience:** Austrian legal practitioners, compliance/regulatory teams, GovTech, legal-research agents. Data-protection compliance (DSG/DSGVO, Datenschutzbehörde + BVwG/VwGH/VfGH case law) is the anchor use case: "current in-force text as of date X" and DPA case law are the daily questions.
 
-**Three document classes** drive the tool split:
+**Seven document classes** drive the tool split:
 
 | Class | Applications | Legally binding? | Reached via |
 |:---|:---|:---|:---|
-| Consolidated law | BrKons (federal), LrKons (state) | No — informational | `search_legislation`, `lookup_citation` |
-| Authentic promulgation | BgblAuth (2004+), BgblAlt (1945–2003), LgblAuth | **Yes** (amtssigniert PDF) | `search_gazette`, `lookup_citation` |
-| Case law (Judikatur) | Vfgh, Vwgh, Justiz, Bvwg, Lvwg, Dsk + 10 historical/specialized | n/a | `search_case_law`, `lookup_citation` |
+| Consolidated law | BrKons (federal), LrKons (state), Gr (municipal, selected), LgblNO (NÖ systematic collection) | No — informational | `search_legislation`, `search_gazette` (LgblNO), `lookup_citation` |
+| English translations | Erv (selected federal laws) | No — unofficial | `search_legislation` (`language: english`) |
+| Authentic promulgation | BgblAuth (2004+), LgblAuth, Vbl, Bvb (district), GrA (municipal) + sectoral: Avsv, Avn, KmGer, PruefGewO, Spg | **Yes** (amtssigniert PDF) | `search_gazette`, `search_announcements`, `lookup_citation` |
+| Historical gazettes | BgblPdf (1945–2003), BgblAlt (1848–1940), Lgbl (state, non-authentic) | No — record of superseded/pre-e-Recht promulgations | `search_gazette`, `lookup_citation` |
+| Case law (Judikatur) | Vfgh, Vwgh, Justiz, Bvwg, Lvwg, Dsk + 10 historical/specialized + Upts | n/a | `search_case_law`, `lookup_citation` |
+| Lawmaking pipeline & executive records | Begut, RegV (drafts/bills); Mrp (council minutes), Erlaesse (ministerial decrees) | No (Erlässe bind the administration internally) | `search_drafts`, `search_announcements` |
+| Change feed | History (per-application deltas) | n/a | `track_changes` |
 
 ## Requirements
 
-- Search, read, export across all three document classes
+- Search, read, export across all seven document classes — the full OGD application surface, no deferred tier
 - Keyless upstream; no auth on the server
 - In-force-as-of date handling correct by default (see Design Decisions)
 - Authentic-vs-consolidated binding status explicit on every document output
@@ -57,36 +66,46 @@ The Austrian-national counterpart to `eur-lex-mcp-server`. RIS is the Austrian g
 3. Search case law by court, keyword, cited norm ("DSGVO Art 32"), case number, or date range
 4. Read a specific decision — Rechtssatz (headnote) and/or full Entscheidungstext — by Geschäftszahl
 5. Resolve any Austrian legal citation deterministically to its canonical document
-6. Monitor new promulgations ("what landed in BGBl. II in June") and recently changed consolidated law
+6. Monitor new promulgations ("what landed in BGBl. II in June") and recently changed consolidated law — at federal, state, district, and municipal level
 7. Get the authentic, legally binding gazette artifact (amtssigniert PDF) — never a paraphrase
 8. Bridge an EU act to its Austrian transposition (CELEX references parsed from BrKons metadata → eur-lex)
+9. Watch the lawmaking pipeline: what is in review (Begutachtung) right now, which government bills the council adopted, what the council of ministers decided
+10. Find ministerial decrees interpreting a norm ("BMF decrees citing the DSG") and sectoral official notices (social insurance, veterinary, health structure plans)
+11. Read historical promulgations back to 1848 (metadata + scans) and post-war gazettes 1945–2003 in full text
+12. Sync precisely against a change window per application, deletions included (`track_changes`)
 
 ## Tools — detail
 
 ### ris_search_legislation
 
-One tool spans federal (BrKons) and state (LrKons) consolidated law — the filter grammars are near-identical; `scope` routes.
+One tool spans federal (BrKons), state (LrKons), and municipal (Gr) consolidated law plus English translations (Erv) — the filter grammars are near-identical where they overlap; `scope` + `municipality` + `language` route.
 
 | Param | Type | Maps to | Notes |
 |:---|:---|:---|:---|
-| `query` | string? | `Suchworte` | Full-text. Boolean `UND`/`ODER`/`NICHT` (also `AND`/`OR`/`NOT` ✓), parens, quoted phrases. Wildcard `*` trailing-only here. |
-| `title` | string? | `Titel` | Matches title, short title, and abbreviation ("ABGB", "DSG"). Phrase-type field: `*` allowed leading or trailing. |
-| `scope` | enum | controller + `Bundesland.SucheIn<Land>` | `federal` (default) \| `burgenland` \| `kaernten` \| `niederoesterreich` \| `oberoesterreich` \| `salzburg` \| `steiermark` \| `tirol` \| `vorarlberg` \| `wien` |
+| `query` | string? | `Suchworte` (Erv: `SearchTerms` ✓) | Full-text. Boolean `UND`/`ODER`/`NICHT` (also `AND`/`OR`/`NOT` ✓), parens, quoted phrases. Wildcard `*` trailing-only here. |
+| `title` | string? | `Titel` (Erv: `Title` ✓) | Matches title, short title, and abbreviation ("ABGB", "DSG"). Phrase-type field: `*` allowed leading or trailing. |
+| `scope` | enum | controller + `Bundesland.SucheIn<Land>` (LrKons) / `Bundesland` (Gr) | `federal` (default) \| `burgenland` \| `kaernten` \| `niederoesterreich` \| `oberoesterreich` \| `salzburg` \| `steiermark` \| `tirol` \| `vorarlberg` \| `wien` |
+| `municipality` | string? | `Gemeinde` + routes to Gemeinden/Gr | Municipal law (✓ 18,250 docs; Wien 869 ✓). Requires a state `scope`; supports `query`, `title`, `in_force_as_of` only (Gr has `FassungVom` ✓) — other filters throw `scope_filter_mismatch`. Coverage: selected norms, 6 Bundesländer (see Known Limitations). |
+| `language` | enum? | routes to Erv | `german` (default) \| `english` — English translations of selected federal laws (✓ 138 docs). Requires `scope: federal`; supports `query` + `title` only (Erv has no date/section params — English param names `SearchTerms`/`Title` ✓ 109/2 hits). |
 | `in_force_as_of` | ISO date? | `FassungVom` | **Default: today.** Omitting FassungVom upstream searches ALL historical versions — silently wrong default for "current law" questions (✓ 77 vs 436 hits). |
 | `include_all_versions` | boolean? | omits `FassungVom` | Explicit opt-in for version-history research. Overrides `in_force_as_of`. |
+| `entered_force_from/to` | ISO date? | `Fassung.VonInkrafttretensdatum` / `.BisInkrafttretensdatum` | "Provisions that entered force in window" — new-law tracking. Mutually exclusive with `in_force_as_of`/`include_all_versions` (upstream: FassungVom OR window params). BrKons/LrKons only. |
+| `left_force_from/to` | ISO date? | `Fassung.VonAusserkrafttretensdatum` / `.BisAusserkrafttretensdatum` | Repeal-window counterpart. Same exclusivity. |
 | `section_from` / `section_to` | string? | `Abschnitt.Von` / `Abschnitt.Bis` | "6", "1a" — §/Artikel/Anlage number-or-letter range (✓). |
 | `section_type` | enum? | `Abschnitt.Typ` | `Alle` \| `Artikel` \| `Paragraph` (default when section range set) \| `Anlage` |
-| `law_id` | string? | `Gesetzesnummer` | Law-level grouping key (e.g. 10001597 = DSG) — fetch all §§ of one law. Exact match. |
-| `index` | string? | `Index` | Systematik classification ("10/10 Datenschutz"). |
+| `law_id` | string? | `Gesetzesnummer` | Law-level grouping key (e.g. 10001597 = DSG) — fetch all §§ of one law. Exact match. BrKons/LrKons only. |
+| `index` | string? | `Index` | Systematik classification ("10/10 Datenschutz"). BrKons/LrKons only (Gr's Index is a fixed 10-value enum — v1 routes municipal thematic browsing through `query`). |
 | `changed_since` | enum? | `ImRisSeit` | `one_week` \| `two_weeks` \| `one_month` \| `three_months` \| `six_months` \| `one_year` |
+| `sort_by`, `sort_direction` | enum? | `Sortierung.SortedByColumn/.SortDirection` | `section` (ArtikelParagraphAnlage) \| `in_force_date` (Inkrafttretensdatum); `ascending` \| `descending`. |
 | `page`, `page_size` | number? | `Seitennummer`, `DokumenteProSeite` | page_size ∈ {10, 20, 50, 100} → Ten/Twenty/Fifty/OneHundred. Default 20. |
 
-**Output** (per record): `document_number` (Technisch.ID, e.g. NOR40262691), `application`, `short_title`, `title` (cleaned of `<br/>` markup), `abbreviation`, `section_label` (ArtikelParagraphAnlage), `law_id` + `law_url` (GesamteRechtsvorschriftUrl), `in_force_from` (Inkrafttretensdatum), `promulgation` (Kundmachungsorgan), `type` (BG/V/K…), `index`, `eli`, `celex_references` (parsed from Titel/Aenderung `[CELEX-Nr.: …]` markers — the EU-transposition hook), `content_urls` {xml, html, pdf, rtf}. Enrichment: total hits, page info, truncation, and an **echo of the applied `in_force_as_of`** (the server defaults it; the agent must see what was applied).
+**Output** (per record): `document_number` (Technisch.ID, e.g. NOR40262691, GEMRE_WI_… for municipal, ERV_1999_1_165 for English), `application`, `short_title`, `title` (cleaned of `<br/>` markup), `abbreviation`, `section_label` (ArtikelParagraphAnlage), `law_id` + `law_url` (GesamteRechtsvorschriftUrl), `in_force_from` (Inkrafttretensdatum), `promulgation` (Kundmachungsorgan), `type` (BG/V/K…), `index`, `eli`, `celex_references` (parsed from Titel/Aenderung `[CELEX-Nr.: …]` markers — the EU-transposition hook), `municipality` (Gr), `content_urls` {xml, html, pdf, rtf}. Enrichment: total hits, page info, truncation, and an **echo of the applied `in_force_as_of`** (the server defaults it; the agent must see what was applied).
 
 **Errors** (typed contract — shared conventions in Design Decisions › *No dead ends*):
 
 | reason | code | when | recovery |
 |:---|:---|:---|:---|
+| `scope_filter_mismatch` | ValidationError | `municipality` without a state scope, `language: english` off federal, section/law_id/index/date-window filters combined with `municipality` or `language: english`, or `entered_force_*`/`left_force_*` combined with `in_force_as_of`/`include_all_versions` — thrown **locally, before any upstream call**; message names the actual offending pair | "Drop the named filter or adjust scope: municipality needs a state scope and supports query/title/in_force_as_of; english supports query/title under scope: federal. Version filters are exclusive — pick in_force_as_of, include_all_versions, OR a force-window." |
 | `invalid_query` | ValidationError | RIS rejected a parameter value (in-band `Error @type="Client"` — message passed through verbatim; it enumerates valid elements/values) | "Correct the parameter RIS names in the message. Ground valid codes with ris_list_reference (topic: states, section_types, changed_since_intervals, or search_syntax)." |
 | `upstream_error` | ServiceUnavailable (retryable) | RIS unreachable, 5xx, in-band `@type="Server"`, or HTML error page | "RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the query." |
 
@@ -98,33 +117,42 @@ One tool spans federal (BrKons) and state (LrKons) consolidated law — the filt
 | `in_force_as_of` applied (i.e. not `include_all_versions`) | "Only versions in force on {date} were searched — a repealed or not-yet-enacted provision returns nothing. Set include_all_versions: true to search all historical versions." |
 | `query` set | "query wildcards are trailing-only ('Datenschutz*', never '*schutz'); boolean operators UND/ODER/NICHT or AND/OR/NOT. Syntax reference: ris_list_reference topic search_syntax." |
 | `title` set | "title matches title, short title, and abbreviation — try the official abbreviation ('DSG') with a trailing *." |
+| `municipality` set | "Municipal coverage is selected norms in 6 Bundesländer (no Burgenland/Tirol/Vorarlberg) — coverage: ris_list_reference topic applications. The municipality name must match RIS's spelling ('Graz', not 'Stadt Graz')." |
+| `language: english` set | "Erv holds ~138 selected translations only — absence means untranslated, not nonexistent. Search the German original instead (language: german)." |
 | looks like a citation (§/BGBl/GZ shape in `query` or `title`) | "For a specific citation, ris_lookup_citation resolves it deterministically instead of keyword search." |
 
 ### ris_search_case_law
 
-One Judikatur application per call — upstream requires it, and merged cross-court paging would be incoherent. Cross-court research = one call per court (documented in the tool description; each call is cheap).
+One Judikatur application per call — upstream requires it, and merged cross-court paging would be incoherent. Cross-court research = one call per court (documented in the tool description; each call is cheap). `upts` (Parteien-Transparenz-Senat) rides this tool — its documents are decisions with GZ/date/norm semantics — routed internally to the Sonstige controller.
 
 | Param | Type | Maps to | Notes |
 |:---|:---|:---|:---|
-| `court` | enum, required | `Applikation` | `vfgh` \| `vwgh` \| `justiz` \| `bvwg` \| `lvwg` \| `dsk` \| `normenliste` \| `dok` \| `pvak` \| `gbk` \| `uvs` \| `asylgh` \| `ubas` \| `umse` \| `bks` \| `verg` (✓ full set) |
+| `court` | enum, required | `Applikation` | `vfgh` \| `vwgh` \| `justiz` \| `bvwg` \| `lvwg` \| `dsk` \| `normenliste` \| `dok` \| `pvak` \| `gbk` \| `uvs` \| `asylgh` \| `ubas` \| `umse` \| `bks` \| `verg` (✓ full set) \| `upts` (✓ 35 docs, Sonstige controller) |
 | `query` | string? | `Suchworte` | Full-text over decisions. |
-| `norm` | string? | `Norm` | Cited provision — "DSG §1", "DSGVO Art32", "GewO 1994 §129" (✓ format as returned in `Normen`). High-value filter. |
-| `case_number` | string? | `Geschaeftszahl` | Exact Geschäftszahl returns that decision's docs (✓ 1 hit). |
-| `decision_type` | enum? | `Dokumenttyp.SucheInRechtssaetzen` / `.SucheInEntscheidungstexten` | `headnote` \| `full_text` \| `all` (default — both flags false upstream searches everything ✓). |
-| `decided_from` / `decided_to` | ISO date? | `EntscheidungsdatumVon/Bis` | |
-| `issuing_body` | enum? | `EntscheidendeBehoerde` (✓) | **dsk only**: `datenschutzbehoerde` (2014+) \| `datenschutzkommission` (≤2013). Dsk is one application holding both bodies (+ Organ-separated PDKT docs). |
+| `norm` | string? | `Norm` | Cited provision — "DSG §1", "DSGVO Art32", "GewO 1994 §129" (✓ format as returned in `Normen`). High-value filter. Also on upts ✓ handbook. |
+| `case_number` | string? | `Geschaeftszahl` (upts: `GZ`) | Exact Geschäftszahl returns that decision's docs (✓ 1 hit). Not available for `normenliste`. |
+| `decision_type` | enum? | `Dokumenttyp.SucheInRechtssaetzen` / `.SucheInEntscheidungstexten` | `headnote` \| `full_text` \| `all` (default — both flags false upstream searches everything ✓). Not on gbk/upts/normenliste (guarded). |
+| `decided_from` / `decided_to` | ISO date? | `EntscheidungsdatumVon/Bis` (upts: `Entscheidungsdatum.Von/Bis`) | Not on normenliste. |
+| `decision_kind` | string? | `Entscheidungsart` | Per-court enums (Erkenntnis/Beschluss/Bescheid/…, Dsk's Bescheid* taxonomy, Verg's Vorabentscheidung set). Validated locally against the per-court table; values: ris_list_reference topic decision_kinds. |
+| `collection_number` | string? | `Sammlungsnummer` | **vfgh/vwgh/uvs only**: official collection number (VfSlg/VwSlg cites). |
+| `issuing_body` | string? | `EntscheidendeBehoerde` | **dsk/dok/pvak/verg only** (✓ dsk live; others handbook): dsk `datenschutzbehoerde` (2014+) \| `datenschutzkommission` (≤2013); dok/pvak/verg take their body names — values: ris_list_reference topic issuing_bodies. |
 | `court_name` | string? | `Justiz.Gericht` | **justiz only**: filter within ordinary courts — "OGH", "OLG Wien", "LG Linz". |
-| `state` | enum? | `Lvwg.Bundesland` | **lvwg only**: which of the 9 state administrative courts. |
-| `changed_since`, `page`, `page_size` | | `ImRisSeit`, `Seitennummer`, `DokumenteProSeite` | as above |
+| `legal_area` | enum? | `Justiz.Rechtsgebiet` | **justiz only**: `civil` (Zivilrecht) \| `criminal` (Strafrecht). |
+| `subject_area` | string? | `Justiz.Fachgebiet` | **justiz only**: fixed subject taxonomy ("Datenschutzrecht", "Insolvenzrecht", ~45 values — ris_list_reference topic justiz_subject_areas). |
+| `state` | enum? | `Lvwg.Bundesland` / `Uvs.Bundesland` | **lvwg/uvs only**: which of the 9 state administrative courts/senates (single-value enum, not SucheIn* flags). |
+| `party` | enum? | `Upts.Partei` | **upts only**: political party the decision concerns (ÖVP/SPÖ/FPÖ/KPÖ/BZÖ/Team Stronach). |
+| `commission` / `senate` / `discrimination_ground` | enum? | `Gbk.Kommission` / `.Senat` / `.Diskriminierungsgrund` | **gbk only**: federal vs general commission; senate I/II/III; ground (Geschlecht, EthnischeZugehoerigkeit, Religion, Weltanschauung, Alter, SexuelleOrientierung, Mehrfachdiskriminierung). |
+| `subject_law` | enum? | `Bks.Bereich` | **bks only**: media statute the case concerns (ORF-Gesetz, Privatradiogesetz, …). |
+| `changed_since`, `sort_by`, `sort_direction`, `page`, `page_size` | | `ImRisSeit`, `Sortierung.*`, `Seitennummer`, `DokumenteProSeite` | sort_by: `decision_date` (Datum) \| `case_number` (Geschaeftszahl). |
 
-**Output** (per record): `document_number` (e.g. DSBT_20251114_…, JFT_…, JJT_…), `court` (application), `organ` (Technisch.Organ — issuing body name), `case_numbers` (Geschaeftszahl — normalize to array; upstream is object-or-array), `decision_date`, `decision_type` (Rechtssatz \| Text), `summary` (Kurzinformation), `norms_cited` (array), `keywords` (Schlagworte), `ecli` (EuropeanCaseLawIdentifier), `decision_url` (GesamteEntscheidungUrl), `headnotes_url` (RechtssaetzeUrl), `content_urls`, `legal_force_note` (Anfechtung, where present). Enrichment: totals/paging.
+**Output** (per record): `document_number` (e.g. DSBT_20251114_…, JFT_…, JJT_…, UPTS_…), `court` (application), `organ` (Technisch.Organ — issuing body name), `case_numbers` (Geschaeftszahl — normalize to array; upstream is object-or-array), `decision_date`, `decision_type` (Rechtssatz \| Text), `decision_kind` (Entscheidungsart, where present), `summary` (Kurzinformation), `norms_cited` (array), `keywords` (Schlagworte), `collection_number` (Sammlungsnummer, where present), `ecli` (EuropeanCaseLawIdentifier), `decision_url` (GesamteEntscheidungUrl), `headnotes_url` (RechtssaetzeUrl), `content_urls`, `legal_force_note` (Anfechtung, where present). Enrichment: totals/paging.
 
 **Errors** (typed contract):
 
 | reason | code | when | recovery |
 |:---|:---|:---|:---|
-| `court_filter_mismatch` | ValidationError | A court-conditional filter was sent with the wrong `court` — thrown **locally, before any upstream call**; message names the actual offending pair (e.g. "issuing_body applies only to court 'dsk', got 'vfgh'") | "Drop the filter or switch court: issuing_body → dsk, court_name → justiz, state → lvwg. Court codes: ris_list_reference topic courts." |
-| `invalid_query` | ValidationError | as legislation (RIS Client-error passthrough) | "Correct the parameter RIS names in the message. Valid court codes, decision types, and syntax: ris_list_reference (topic: courts, decision_types, or search_syntax)." |
+| `court_filter_mismatch` | ValidationError | A court-conditional filter was sent with the wrong `court` (or `case_number`/dates/`decision_type` with `normenliste`, which is a norm index, not decisions) — thrown **locally, before any upstream call**; message names the actual offending pair (e.g. "issuing_body applies only to courts dsk/dok/pvak/verg, got 'vfgh'") | "Drop the filter or switch court: issuing_body → dsk/dok/pvak/verg, court_name/legal_area/subject_area → justiz, state → lvwg/uvs, party → upts, commission/senate/discrimination_ground → gbk, subject_law → bks, collection_number → vfgh/vwgh/uvs. Court codes: ris_list_reference topic courts." |
+| `invalid_query` | ValidationError | as legislation (RIS Client-error passthrough) | "Correct the parameter RIS names in the message. Valid court codes, decision types/kinds, and syntax: ris_list_reference (topic: courts, decision_types, decision_kinds, or search_syntax)." |
 | `upstream_error` | ServiceUnavailable (retryable) | as legislation | as legislation |
 
 **Zero hits = success + enrichment notice**, composed from the applicable fragments:
@@ -135,29 +163,46 @@ One Judikatur application per call — upstream requires it, and merged cross-co
 | `case_number` set | "Geschäftszahl formats differ per court ('Ra 2019/22/0184' = VwGH, 'G 287/2022' = VfGH, '6Ob56/25k' = OGH/justiz) — ris_lookup_citation auto-detects the court from the format; examples per court: ris_list_reference topic courts." |
 | `norm` set | "norm must match RIS's cited-norm format ('DSG §1', 'DSGVO Art32' style as returned in norms_cited) — run a broader search first and copy the exact string from a result's norms_cited." |
 | `decided_from/to` set and range predates the court's coverage window | "{court} coverage starts {year} — earlier decisions are not in RIS. Windows: ris_list_reference topic courts." |
+| `court` is a defunct body (uvs/asylgh/ubas/umse/bks + pre-2014 dsk) | "{court} is historical ({window}) — its successor is {successor: lvwg/bvwg/dsk}. Search the successor for current decisions." |
 
 ### ris_search_gazette
 
-Date-range/issuer browse of the *binding* promulgation record — the monitoring surface `lookup_citation` (point lookup) can't express. Federal: BgblAuth (2004+); date ranges predating 2004 route to BgblAlt (1945–2003) automatically, with a notice. State: LgblAuth + Bundesland filter.
+Date-range/issuer/number browse of the promulgation record at **every level of government** — the monitoring surface `lookup_citation` (point lookup) can't express. One `scope` axis (jurisdiction level), one `series` axis (state law gazettes vs ordinance gazettes), one `include_non_authentic` toggle (historical state gazettes).
+
+**Federal era tiers, auto-routed** by date range / number-year — one logical surface over three applications:
+
+| Tier | Application | Coverage | Authentic? | Number param |
+|:---|:---|:---|:---|:---|
+| Current | BgblAuth | 2004+ | **Yes** (amtssigniert ✓) | `Bgblnummer` ✓ |
+| Post-war | BgblPdf | 1945–2003 (Staats- und Bundesgesetzblatt) | No | `Bundesgesetzblatt` (✓ "194/1961" → 1 hit) |
+| Imperial/interwar | BgblAlt | 1848–1940 (RGBl, StGBl, BGBl, GBlÖ) | No | `Gesetzblattnummer` + `Jahrgang` (✓ 1900 → 234; spelling combo confirmed at build) |
+
+A date range or number-year spanning tiers routes to the owning tier(s), with a notice naming which application served the query. BgblPdf carries full Html/Pdf renditions ✓; BgblAlt is **metadata-only** — hits carry no content URLs (✓); the scans live at the ÖNB (linked via DokumentUrl).
 
 | Param | Type | Maps to | Notes |
 |:---|:---|:---|:---|
-| `scope` | enum | controller + application | `federal` (default) \| Bundesland (as legislation) |
+| `scope` | enum | controller + application | `federal` (default) \| 9 Bundesländer \| `district` (→ Bezirke/Bvb ✓ 2,433) \| `municipal` (→ Gemeinden/GrA ✓ 9,787) |
+| `series` | enum? | application | **state scopes only**: `law_gazette` (default → LgblAuth) \| `ordinance_gazette` (→ Vbl ✓ 550 — Verordnungsblätter; currently Tirol only, 2022+). |
+| `include_non_authentic` | boolean? | application | **state scopes only**: adds the historical non-authentic gazette — Lgbl (✓ 21,411; no NÖ/Wien flags upstream) or LgblNO for Niederösterreich (✓ 1,939; NÖ's systematic collection, has `FassungVom` + `Gliederungszahl`). Notice explains which application served. |
 | `query` | string? | `Suchworte` | |
-| `number` | string? | `Bgblnummer` | "BGBl. II Nr. 171/2026" or "171/2026" (✓ both). |
-| `part` | enum? | `Teil.SucheInTeil1/2/3` | federal only: `part1` (Gesetze) \| `part2` (Verordnungen) \| `part3` (Staatsverträge). |
-| `type` | enum? | `Typ.SucheIn…` | `laws` \| `regulations` \| `announcements` \| `other` (SucheInGesetzen/Verordnungen/Kundmachungen/Sonstiges). |
-| `published_from` / `published_to` | ISO date? | `KundmachungsdatumVon/Bis` (✓ 18,749 → 76 for one month) | |
-| `issuer` | string? | `EinbringendeStelle` | Ministry/body, e.g. "BMKOES". |
+| `title` | string? | `Titel` | All gazette applications carry it. |
+| `number` | string? | per-tier (federal, above) / `Lgblnummer` (state ✓ handbook) / `Kundmachungsnummer` (Vbl, Bvb, GrA) | "BGBl. II Nr. 171/2026" or "171/2026" (✓ both, BgblAuth). |
+| `part` | enum? | `Teil.SucheInTeil1/2/3` (BgblAuth) / `Teil.SucheInAlt/Teil1/2/3` (BgblPdf) | federal only: `part1` (Gesetze) \| `part2` (Verordnungen) \| `part3` (Staatsverträge) \| `pre_1997` (BGBl before the 1997 part split — BgblPdf's `SucheInAlt`). |
+| `type` | enum? | `Typ.SucheIn…` | `laws` \| `regulations` \| `announcements` \| `other` (SucheInGesetzen/Verordnungen/Kundmachungen/Sonstiges). Federal + state law gazettes. |
+| `published_from` / `published_to` | ISO date? | `KundmachungsdatumVon/Bis` (BgblAuth ✓; dot-form `Kundmachung.Von/Bis` equivalent ✓ 60=60) / `Kundgemacht.Von/Bis` (BgblPdf ✓ 663, BgblAlt ✓ 233) / `Kundmachung.Von/Bis` (LgblAuth ✓ 74, Lgbl) / `Kundmachungsdatum.Von/Bis` (Vbl, Bvb ✓ handbook, GrA) / `Ausgabedatum.Von/Bis` (LgblNO) | |
+| `issuer` | string? | `EinbringendeStelle` (BgblAuth) / `Einbringer` (Vbl: Landeshauptmann-frau \| Landesregierung \| Amt der Landesregierung \| Sonstige Landesbehörden) | Ministry/body, e.g. "BMKOES". |
+| `district_authority` | string? | `Bezirksverwaltungsbehoerde` | **district only**: e.g. "Bezirkshauptmannschaft Liezen" — full names: ris_list_reference topic district_authorities. |
+| `municipality` | string? | `Gemeinde` (+ optional `Bezirk` via `district_authority`… no — GrA uses `Bezirk`; v1 exposes `municipality` only) | **municipal only**: exact municipality name. |
+| `sort_by`, `sort_direction` | enum? | `Sortierung.*` | `published` (Kundmachungsdatum) \| `number`. |
 | `page`, `page_size` | | | as above |
 
-**Output** (per record): `document_number` (BGBLA_2026_II_171), `gazette_number` (Bgblnummer), `part` (Teil), `type` (Typ: Gesetz/Verordnung/…), `published` (Ausgabedatum), `issuer` (Einbringer/Organ), `title`, `short_title`, `eli`, `binding: "authentic"`, `authentic_pdf_url` (the `Authentisch` DataType — amtssigniert .pdfsig ✓), `content_urls`. Enrichment: totals/paging + which application served the query (BgblAuth vs BgblAlt).
+**Output** (per record): `document_number` (BGBLA_2026_II_171, 1961_194_0, rgb1902_…, LGBLA_SA_…, VBL_TI_…, BVB_ST_…, GEMREA_OB_… ✓ all observed), `gazette_number`, `part` (Teil), `type` (Typ: Gesetz/Verordnung/…), `published` (Ausgabedatum/Kundmachungsdatum), `issuer` (Einbringer/Organ), `district_authority`/`municipality` (where applicable), `title`, `short_title`, `eli`, `binding` (`authentic` for BgblAuth/LgblAuth/Vbl/Bvb/GrA ✓ Authentisch DataType observed on all five \| `historical_record` for BgblPdf/BgblAlt/Lgbl/LgblNO), `authentic_pdf_url` (the `Authentisch` DataType — amtssigniert .pdfsig ✓), `content_urls`. Enrichment: totals/paging + which application served the query.
 
 **Errors** (typed contract):
 
 | reason | code | when | recovery |
 |:---|:---|:---|:---|
-| `scope_filter_mismatch` | ValidationError | `part` sent with a Bundesland `scope` — thrown locally; Landesgesetzblätter have no parts | "part (I/II/III) applies only to scope: federal — drop it for state gazettes. Part semantics: ris_list_reference topic gazette_parts." |
+| `scope_filter_mismatch` | ValidationError | `part` off federal; `series`/`include_non_authentic` off state scopes; `district_authority` off district; `municipality` off municipal; `issuer` outside federal/ordinance — thrown locally; message names the actual offending pair | "part (I/II/III/pre_1997) applies only to scope: federal; series and include_non_authentic only to state scopes; district_authority only to scope: district; municipality only to scope: municipal. Semantics: ris_list_reference topic gazette_parts or applications." |
 | `invalid_query` | ValidationError | as legislation (RIS Client-error passthrough) | "Correct the parameter RIS names in the message. Part and type semantics: ris_list_reference topic gazette_parts or law_types." |
 | `upstream_error` | ServiceUnavailable (retryable) | as legislation | as legislation |
 
@@ -166,10 +211,78 @@ Date-range/issuer browse of the *binding* promulgation record — the monitoring
 | Condition | Notice fragment |
 |:---|:---|
 | always | "0 gazette entries matched." |
-| `number` set | "Verify part and year — a 'BGBl. II' number returns nothing when filtered to part1. For a single known number, ris_lookup_citation resolves it directly (and routes pre-2004 numbers to BgblAlt)." |
+| `number` set | "Verify part and year — a 'BGBl. II' number returns nothing when filtered to part1. For a single known number, ris_lookup_citation resolves it directly (and routes pre-2004 numbers to the right era tier)." |
 | `number` set with `part` also set and they disagree | "number names part {X} but the part filter is {Y} — drop one." (local consistency check; a notice, not an error) |
 | `issuer` set | "issuer is a phrase field — try the ministry abbreviation with a trailing * ('BMK*')." |
-| date range predates 2004 (federal) | (auto-route already fired) "Range served by BgblAlt (1945–2003); pre-1945 gazettes are not in RIS." |
+| date range predates 2004 (federal) | (auto-route already fired) "Range served by {BgblPdf 1945–2003 \| BgblAlt 1848–1940}; pre-1848 gazettes are not in RIS. BgblAlt is metadata-only — scans are ÖNB-hosted." |
+| `scope: district` | "District promulgations cover NÖ (2021+), OÖ/Tirol (2022+), Vorarlberg (2022-07+), Burgenland (2023+), Steiermark (2013+); Salzburg districts publish in the Salzburg LGBl. Windows: ris_list_reference topic applications." |
+| `series: ordinance_gazette` | "Verordnungsblätter in RIS currently cover Tirol (2022+) — other states' ordinance gazettes are not yet published here." |
+
+### ris_search_drafts
+
+The federal lawmaking pipeline **before** promulgation: ministerial drafts in public review (Begut ✓ 4,549) and government bills adopted by the council of ministers (RegV ✓ 2,618, 2004+). The monitoring counterpart to `search_gazette` — what *will* become law.
+
+| Param | Type | Maps to | Notes |
+|:---|:---|:---|:---|
+| `stage` | enum, required | `Applikation` | `review_drafts` (Begut) \| `government_bills` (RegV). One application per call, as everywhere. |
+| `query` | string? | `Suchworte` | |
+| `title` | string? | `Titel` | |
+| `ministry` | string? | `EinbringendeStelle` | Submitting ministry. Accepts the abbreviation ("BMF") — the service expands to RIS's exact-match full string ("BMF (Bundesministerium für Finanzen)"); full table: ris_list_reference topic ministries. |
+| `in_review_on` | ISO date? | `InBegutachtungAm` | **review_drafts only**: drafts whose review window covers the date (✓ 13 in review on 2026-07-05). "What is in Begutachtung right now" = today. |
+| `decided_from` / `decided_to` | ISO date? | `BeschlussdatumVon/Bis` | **government_bills only**: council-of-ministers adoption date (✓ 48 in 2026). |
+| `changed_since` | enum? | `ImRisSeit` | as legislation |
+| `sort_by`, `sort_direction` | enum? | `Sortierung.*` | `title` (Kurztitel) \| `ministry` (EinbringendeStelle) \| `date` (EndeBegutachtungsfrist / Beschlussdatum per stage). |
+| `page`, `page_size` | | | as above |
+
+**Output** (per record): `document_number` (BEGUT_/REGV_-prefixed GUID ✓), `stage`, `title`, `short_title`, `ministry` (Einbringer/Organ), `review_deadline` (Begutachtungsfrist end, review_drafts), `decided` (Beschlussdatum, government_bills), `content_urls` (Xml/Html/Rtf/Pdf + attachment Gifs ✓ — main document first). Enrichment: totals/paging.
+
+**Errors** (typed contract):
+
+| reason | code | when | recovery |
+|:---|:---|:---|:---|
+| `stage_filter_mismatch` | ValidationError | `in_review_on` with `government_bills`, or `decided_from/to` with `review_drafts` — thrown locally | "in_review_on applies only to stage: review_drafts; decided_from/to only to stage: government_bills." |
+| `invalid_query` | ValidationError | as legislation | "Correct the parameter RIS names in the message. Ministry codes: ris_list_reference topic ministries." |
+| `upstream_error` | ServiceUnavailable (retryable) | as legislation | as legislation |
+
+**Zero hits:** "0 {stage} matched." + (`ministry` set) "ministry must match a RIS ministry designation — abbreviations are expanded server-side; the historical name at submission time counts ('BMDW', not today's successor). Table: ris_list_reference topic ministries." + (`in_review_on` set) "No drafts in review on {date} matching the filters — drop in_review_on to search all drafts including closed reviews."
+
+### ris_search_announcements
+
+Sectoral official gazettes and executive documents — the Sonstige controller, minus Upts (which is decisions → `search_case_law`). Seven collections behind one `collection` enum, mirroring how `search_case_law` handles 17 courts. Five of the seven are **legally binding authentic publications**.
+
+| `collection` | Application | What it is | Authentic? |
+|:---|:---|:---|:---|
+| `social_insurance` | Avsv ✓ 4,700 | Amtliche Verlautbarungen der Sozialversicherung (2002+) | **Yes** |
+| `veterinary` | Avn ✓ 702 | Amtliche Veterinärnachrichten (2004-09-15+) | **Yes** |
+| `court_rules` | KmGer ✓ 53 | Kundmachungen der Gerichte — court rules of procedure & case-allocation plans (Geschäftsordnung/Geschäftsverteilung) | **Yes** |
+| `trade_exam_rules` | PruefGewO ✓ 170 | Prüfungsordnungen gemäß Gewerbeordnung (trade exam regulations) | **Yes** |
+| `health_structure_plans` | Spg ✓ 75 | Strukturpläne Gesundheit (ÖSG federal, RSG per-state) | **Yes** |
+| `ministerial_decrees` | Erlaesse ✓ 1,622 | Erlässe der Bundesministerien — decrees/circulars interpreting law (bind the administration, not citizens) | No |
+| `council_minutes` | Mrp ✓ 346 | Ministerratsprotokolle — council-of-ministers session records (2004+) | No |
+
+| Param | Type | Maps to | Valid for |
+|:---|:---|:---|:---|
+| `query` | string? | `Suchworte` | all |
+| `title` | string? | `Titel` | all except `council_minutes` (Mrp has no Titel) |
+| `number` | string? | `Avsvnummer` / `Avnnummer` / `Spgnummer` | social_insurance, veterinary, health_structure_plans |
+| `published_from/to` | ISO date? | `Kundmachung.Von/Bis` (Avsv, Avn) / `Kundmachungsdatum.Von/Bis` (KmGer, PruefGewO, Spg) / `Sitzungsdatum.Von/Bis` (Mrp) | all except ministerial_decrees (Erlässe date by force, below) |
+| `in_force_as_of` | ISO date? | `FassungVom` (`Fassung.FassungVom` where nested) | trade_exam_rules, health_structure_plans, veterinary, court_rules, ministerial_decrees — the consolidated-ish collections |
+| `entered_force_from/to` | ISO date? | `VonInkrafttretensdatum`/`BisInkrafttretensdatum` (flat, Erlaesse) | ministerial_decrees |
+| `issuer` | string? | `Urheber` (Avsv: ÖGK/SVS/BVAEB/AUVA/PVA/… enum) / `Bundesministerium` (Erlaesse — abbreviation expanded as in drafts) / `Einbringer` (Mrp ministry enum) | social_insurance, ministerial_decrees, council_minutes |
+| `norm` | string? | `Norm` | veterinary, ministerial_decrees (✓ Norm=DSG → 10 decrees) — "decrees citing the DSG" |
+| `case_number` | string? | `Geschaeftszahl` | veterinary, ministerial_decrees |
+| `type` | string? | `Typ` (PruefGewO: Befaehigungs-/Meisterpruefungsordnung; KmGer: Geschaeftsordnung/Geschaeftsverteilung) / `Typ.SucheIn…` (Avn) | trade_exam_rules, court_rules, veterinary |
+| `department` | string? | `Abteilung` | ministerial_decrees |
+| `plan_type` | enum? | `OsgSuchEinschraenkung.SpgStrukturplanType` / `RsgSuchEinschraenkung.SpgStrukturplanType` | health_structure_plans: `federal` (ÖSG) \| `regional` (RSG); value `expert_opinion`/`regulation` maps Gutachten/Verordnungen |
+| `plan_state` | enum? | `RsgSuchEinschraenkung.Land` | health_structure_plans (regional): one of the 9 Bundesländer |
+| `session_number` / `legislature` | string? | `Sitzungsnummer` / `Gesetzgebungsperiode` (✓ XXVII → 235) | council_minutes |
+| `changed_since`, `sort_by`, `sort_direction`, `page`, `page_size` | | `ImRisSeit`, `Sortierung.*`, paging | all; sort_by: `published` \| `number` where the app has the column |
+
+**Output** (per record): `document_number` (AVSV_2026_0040, AVN_…, KMGER_…, PRUEF_…, SPG_…, ERL_BMJ_…, MRP_20260701_59 ✓ all observed), `collection`, `title`/`summary`, `number`, `published`/`session_date`, `issuer` (Organ/Einbringer), `norms_cited` (where present), `binding` (`authentic` for the five authentic collections ✓ Authentisch DataType observed \| `administrative_directive` for decrees \| `record` for council minutes), `authentic_pdf_url` (where present), `content_urls`. Enrichment: totals/paging.
+
+**Errors:** `collection_filter_mismatch` (ValidationError, local — a param outside its "Valid for" set, message names the pair; recovery routes to this table via ris_list_reference topic collections), `invalid_query` and `upstream_error` as legislation.
+
+**Zero hits:** "0 documents in {collection}." + (`norm` set) "norm must match RIS's cited-norm format — copy from a result's norms_cited." + (`issuer` set) "issuer must match the RIS designation — abbreviations are expanded for ministries; social-insurance issuers: ris_list_reference topic issuing_bodies." + (`collection: court_rules`) "KmGer currently carries LVwG Tirol and Vorarlberg rules only."
 
 ### ris_lookup_citation
 
@@ -177,9 +290,10 @@ Citation-first is how Austrian legal work happens. Parses the citation type and 
 
 | Route | Trigger pattern | Upstream call |
 |:---|:---|:---|
-| Norm | "§ 6 DSG", "Art 10 B-VG", bare abbreviation "ABGB" | BrKons: `Titel={abbr}` + `Abschnitt.Von/Bis={n}` + `FassungVom` (today or `in_force_as_of`); falls back to LrKons only on explicit state hint |
-| Gazette | "BGBl. I Nr. 165/1999", "BGBl. II Nr. 171/2026" | year ≥ 2004 → BgblAuth `Bgblnummer=`; year < 2004 → BgblAlt |
+| Norm | "§ 6 DSG", "Art 10 B-VG", bare abbreviation "ABGB" | BrKons: `Titel={abbr}` + `Abschnitt.Von/Bis={n}` + `FassungVom` (today or `in_force_as_of`); `state` hint → LrKons with the Bundesland flag |
+| Gazette | "BGBl. I Nr. 165/1999", "BGBl. II Nr. 171/2026", "BGBl. Nr. 194/1961", "RGBl. Nr. 189/1902", "LGBl. Nr. 61/2026" (+ state hint) | year ≥ 2004 → BgblAuth `Bgblnummer=` ✓; 1945–2003 → BgblPdf `Bundesgesetzblatt=` ✓ (1 hit for "194/1961"); 1848–1940 (and RGBl./StGBl./GBlÖ prefixes) → BgblAlt `Gesetzblattnummer=` + `Jahrgang=`; LGBl + `state` hint → LgblAuth `Lgblnummer=` |
 | Case number | "2025-0.934.677" (DSB), "Ra 2019/22/0184" (VwGH), "G 287/2022" (VfGH), "6Ob56/25k" (OGH), "W256 …" (BVwG) | Judikatur `Geschaeftszahl=` against the pattern-matched application; `court` hint short-circuits; ambiguous formats probe ≤ 2 candidate applications sequentially |
+| Collection number | "VfSlg 19.632/2012", "VwSlg 18.000 A/2010" | Vfgh/Vwgh `Sammlungsnummer=` (input normalization — dots, /year suffix — confirmed at build) |
 
 **Output:** `found`, `kind` (what it parsed the citation as), `resolution_note` (which application + filter resolved it), and the resolved record in the same normalized shape as the corresponding search tool (single best document; `alternatives_count` when >1 hit, with a pointer to the search tool for the full set).
 
@@ -189,21 +303,31 @@ Citation-first is how Austrian legal work happens. Parses the citation type and 
 
 | Outcome | `kind` | guidance |
 |:---|:---|:---|
-| Citation didn't classify | `unknown` | "Could not classify '{input}'. Expected forms — norm: '§ 6 DSG' / 'Art 10 B-VG'; gazette: 'BGBl. I Nr. 165/1999'; case number: 'Ra 2019/22/0184'. Formats: ris_list_reference topic citation_formats. Or set kind explicitly; for keyword search use ris_search_legislation / ris_search_case_law." |
+| Citation didn't classify | `unknown` | "Could not classify '{input}'. Expected forms — norm: '§ 6 DSG' / 'Art 10 B-VG'; gazette: 'BGBl. I Nr. 165/1999' (also pre-2004 and RGBl/StGBl forms, and LGBl with a state hint); case number: 'Ra 2019/22/0184'; collection: 'VfSlg 19.632/2012'. Formats: ris_list_reference topic citation_formats. Or set kind explicitly; for keyword search use ris_search_legislation / ris_search_case_law." |
 | Norm parsed, no hit | `norm` | "No document for {abbr} § {n} in force on {date}. If the provision existed at another time, retry ris_search_legislation with title: '{abbr}', section_from/to: '{n}', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: '{abbr}*'. State law resolves only with an explicit state hint." |
-| Gazette parsed, no hit | `gazette` | "No gazette entry for {number}. Verify part (I/II/III) and year; browse the surrounding range with ris_search_gazette published_from/published_to to find the actual number." |
+| Gazette parsed, no hit | `gazette` | "No gazette entry for {number} in {tier application}. Verify part (I/II/III — none before 1997) and year; browse the surrounding range with ris_search_gazette published_from/published_to to find the actual number. State gazettes need the state hint." |
 | Case number parsed, no hit | `case_number` | "No decision for '{GZ}' in {applications probed}. Pass court explicitly if known — Geschäftszahl format examples per court: ris_list_reference topic courts. Note Justiz carries selected decisions only. Keyword fallback: ris_search_case_law with query." |
+| Collection number parsed, no hit | `collection_number` | "No decision for {VfSlg/VwSlg} {n}. Verify the number against the cite; fallback: ris_search_case_law court: {vfgh\|vwgh} with query." |
 
 ### ris_get_document
 
 Read + export. Two addressing modes:
 
-1. `document_number` + `application` (from any search/lookup result) — server constructs the content URL from the per-application path-segment map (✓ BrKons→`/Dokumente/Bundesnormen/`, LrKons→`/Dokumente/Landesnormen/`, BgblAuth→`/Dokumente/BgblAuth/`, Dsk→`/Dokumente/Dsk/`; remaining Judikatur segments confirmed at build).
+1. `document_number` + `application` (from any search/lookup result) — server constructs the content URL from the per-application path-segment map (✓ BrKons→`/Dokumente/Bundesnormen/`, LrKons→`/Dokumente/Landesnormen/`, BgblAuth→`/Dokumente/BgblAuth/`, Dsk→`/Dokumente/Dsk/`; remaining segments confirmed at build).
 2. `document_url` — any `https://www.ris.bka.gv.at/Dokumente/…` URL passed through from a search result. Validated: host + path-prefix allowlist, nothing else fetched (SSRF guard).
 
 `format`: `markdown` (default — fetch HTML, strip boilerplate CSS/layout, convert) | `html` (raw) | `xml` (RIS Nutzdaten schema) | `urls_only` (no fetch — all format links + authentic PDF).
 
-**Output:** `text` (unless urls_only), `format`, `byte_size`, `content_urls` (always, all DataTypes incl. `Authentisch` when present), `binding_status`: `authentic` (BgblAuth/LgblAuth — with `authentic_pdf_url`) \| `consolidated_informational` (BrKons/LrKons — RIS disclaims warranty; only the gazette wording is binding) \| `decision` (Judikatur), echoed identifiers. Oversized text is truncated at a byte cap with `truncated: true` + the URLs for the full artifact — never silently.
+**Format availability varies by application** (✓ probed 2026-07-05) — the tool degrades explicitly, never silently:
+
+| Application class | Renditions | markdown/html/xml behavior |
+|:---|:---|:---|
+| BrKons, LrKons, Gr, BgblAuth, BgblPdf, LgblAuth, Lgbl, LgblNO, Vbl, Begut, RegV, Erv, PruefGewO, Avsv, Spg, Avn, Erlaesse, Judikatur | Xml/Html/Rtf(/Pdf/Authentisch) ✓ | full support |
+| Bvb, GrA, KmGer | **Authentisch only** ✓ (signed PDF, no text renditions) | text formats return a `format_unavailable` notice + the authentic PDF URL |
+| Upts, Mrp | **Pdf only** ✓ | text formats return a `format_unavailable` notice + PDF URLs |
+| BgblAlt | **no content URLs** ✓ (metadata-only; scans hosted by the ÖNB) | all formats return the notice + the ÖNB DokumentUrl |
+
+**Output:** `text` (unless urls_only/unavailable), `format`, `byte_size`, `content_urls` (always, all DataTypes incl. `Authentisch` when present), `binding_status` (see Design Decisions › *Binding status*): `authentic` \| `consolidated_informational` \| `historical_record` \| `decision` \| `preparatory` \| `administrative_directive` \| `translation`, echoed identifiers. Oversized text is truncated at a byte cap with `truncated: true` + the URLs for the full artifact — never silently.
 
 **Errors** (typed contract):
 
@@ -211,16 +335,35 @@ Read + export. Two addressing modes:
 |:---|:---|:---|:---|
 | `invalid_addressing` | ValidationError | Neither or both addressing modes provided, or `document_number` without `application` — thrown locally | "Provide exactly one addressing mode: document_number plus application (both from one search result), or a document_url from a result's content_urls." |
 | `unsupported_url` | ValidationError | `document_url` fails the host + `/Dokumente/` path-prefix allowlist — thrown locally, nothing fetched | "Only ris.bka.gv.at /Dokumente/ URLs are fetchable — pass a URL exactly as returned in content_urls, or switch to document_number + application." |
-| `document_not_found` | NotFound | Constructed/passed content URL 404s | "The document_number/application pairing didn't resolve — copy both verbatim from a fresh ris_search_legislation / ris_search_case_law / ris_search_gazette result, or resolve the citation with ris_lookup_citation. Document numbers are application-specific." |
+| `document_not_found` | NotFound | Constructed/passed content URL 404s | "The document_number/application pairing didn't resolve — copy both verbatim from a fresh search result, or resolve the citation with ris_lookup_citation. Document numbers are application-specific." |
 | `upstream_error` | ServiceUnavailable (retryable) | Content host unreachable / 5xx | as legislation |
+
+`format_unavailable` is a **notice on a success result** (with the usable URLs), not an error — the agent's next step is fetching the PDF link, not retrying.
 
 **Limitation (upstream):** the REST API has no search-by-document-number parameter, so this tool returns *content*, not fresh metadata — metadata rides the search/lookup step. The description states the call order.
 
+### ris_track_changes
+
+The History controller: every document added or changed in an application within a date window — the precise delta feed for mirrors and monitors, and the **only surface that can report deletions**. `changed_since` (ImRisSeit) intervals are coarse and additive-only; this is exact-dated and deletion-aware.
+
+| Param | Type | Maps to | Notes |
+|:---|:---|:---|:---|
+| `application` | enum, required | `Anwendung` | Any RIS application. **History uses its own names for four** (✓ `Bundesnormen` accepted, `BrKons` rejected): the tool accepts the standard application codes and maps internally — BrKons→`Bundesnormen`, LrKons→`Landesnormen`, Gr→`Gemeinderecht`, GrA→`GemeinderechtAuth`. |
+| `changed_from` / `changed_to` | ISO date? | `AenderungenVon` / `AenderungenBis` | ✓ 1,417 BrKons changes in one 2-week window. |
+| `include_deleted` | boolean? | `IncludeDeletedDocuments=True` | Include documents removed from RIS. Per-document deletion marking in the response confirmed at build. |
+| `page`, `page_size` | | | as above |
+
+**Output** (per record): the normalized record shape of the owning document class (a changed BrKons doc looks like a `search_legislation` record ✓ — History responses reuse the standard metadata envelope), + `changed` (Allgemein.Geaendert). Enrichment: totals/paging + the applied window.
+
+**Errors:** `invalid_query` (Client passthrough — e.g. unknown application name), `upstream_error` — as legislation. No local conditional params to mismatch.
+
+**Zero hits:** "0 changes in {application} between {from} and {to}. Windows are exact dates — widen the range, or use the search tools' changed_since for coarse recency filtering."
+
 ### ris_list_reference
 
-Static, offline (no upstream call), from the XSD-derived tables in this doc. `topic` enum:
+Static, offline (no upstream call), from the handbook/XSD-derived tables in this doc. `topic` enum:
 
-`applications` (all controllers/applications by legal area, with coverage windows) · `courts` (the 16 Judikatur codes, English descriptions, active-vs-historical, Geschäftszahl format examples per court) · `states` (9 Bundesländer + enum spellings) · `decision_types` · `dpa_bodies` (Dsk's three Organ-separated bodies) · `changed_since_intervals` · `section_types` · `gazette_parts` (BGBl I/II/III semantics) · `law_types` (BG, V, K, …) · `search_syntax` (boolean operators, wildcard rules, phrase quoting) · `citation_formats` (the shapes `ris_lookup_citation` parses, with examples)
+`applications` (all ~35 applications by controller and document class, with coverage windows and content-format notes) · `courts` (the 17 case-law codes, English descriptions, active-vs-historical + successor mapping, Geschäftszahl format examples per court) · `states` (9 Bundesländer + enum spellings) · `decision_types` (headnote vs full text) · `decision_kinds` (per-court Entscheidungsart values) · `issuing_bodies` (dsk/dok/pvak/verg bodies + Avsv social-insurance issuers) · `ministries` (EinbringendeStelle/Bundesministerium designations incl. historical, with abbreviations) · `collections` (the 7 announcement collections + their per-collection param matrix) · `stages` (drafts pipeline) · `changed_since_intervals` · `section_types` · `gazette_parts` (BGBl I/II/III semantics + the pre-1997 partless era + era tiers) · `law_types` (BG, V, K, …) · `district_authorities` (the ~70 Bezirksverwaltungsbehörden names) · `justiz_subject_areas` (Fachgebiet taxonomy) · `search_syntax` (boolean operators, wildcard rules incl. the ≥2-chars-around-`*` minimum, phrase quoting) · `citation_formats` (the shapes `ris_lookup_citation` parses, with examples)
 
 **Errors:** no typed contract — static and closedWorld; an invalid `topic` fails Zod enum validation before the handler, and baseline codes cover the rest. This tool is the *target* of recovery routing, not a source: most other tools' recovery hints and zero-hit notices end here.
 
@@ -228,13 +371,18 @@ Static, offline (no upstream call), from the XSD-derived tables in this doc. `to
 
 | Noun | Operations | Upstream |
 |:-----|:-----------|:---------|
-| Consolidated norm (§-level doc) | search (title/fulltext/section/date), fetch-all-of-law (`law_id`), read, export | `GET /Bundesrecht?Applikation=BrKons`, `GET /Landesrecht?Applikation=LrKons`, content host |
+| Consolidated norm (§-level doc) | search (title/fulltext/section/date/force-window), fetch-all-of-law (`law_id`), read, export | `GET /Bundesrecht?Applikation=BrKons`, `GET /Landesrecht?Applikation=LrKons`, content host |
+| Municipal norm | search (state/municipality/fulltext/date) | `GET /Gemeinden?Applikation=Gr` |
+| English translation | search (fulltext/title) | `GET /Bundesrecht?Applikation=Erv` |
 | Law (Rechtsvorschrift) | group key only (`Gesetzesnummer`) — no law-level endpoint; the web view (`GesamteRechtsvorschriftUrl`) is linked | — |
-| Gazette issue (BGBl/LGBl) | browse (date/part/type/issuer), point lookup (number), read, export authentic PDF | `GET /Bundesrecht?Applikation=BgblAuth\|BgblAlt`, `GET /Landesrecht?Applikation=LgblAuth` |
-| Decision (Rechtssatz/Text) | search (court/norm/date/fulltext), point lookup (Geschäftszahl), read | `GET /Judikatur?Applikation={court}` |
+| Gazette issue — federal (3 eras), state (law + ordinance + non-authentic), district, municipal | browse (date/part/type/issuer/authority), point lookup (number), read, export authentic PDF | `GET /Bundesrecht?Applikation=BgblAuth\|BgblPdf\|BgblAlt`, `GET /Landesrecht?Applikation=LgblAuth\|Lgbl\|LgblNO\|Vbl`, `GET /Bezirke?Applikation=Bvb`, `GET /Gemeinden?Applikation=GrA` |
+| Decision (Rechtssatz/Text) | search (court/norm/date/fulltext/kind/body), point lookup (Geschäftszahl, Sammlungsnummer), read | `GET /Judikatur?Applikation={court}`, `GET /Sonstige?Applikation=Upts` |
+| Review draft / government bill | search (ministry/review-date/decision-date/fulltext), read | `GET /Bundesrecht?Applikation=Begut\|RegV` |
+| Sectoral announcement / decree / council minutes | search (collection-specific filters), read, export authentic PDF | `GET /Sonstige?Applikation=Avsv\|Avn\|KmGer\|PruefGewO\|Spg\|Erlaesse\|Mrp` |
+| Change set | window query per application, deletions opt-in | `GET /History?Anwendung={app}` |
 | Reference codes | list (static) | none |
 
-Out of scope v1 (deferred, deliberate): `Begut` (draft bills in review), `RegV` (government bills), `Erv` (English translations of selected laws), `Erlaesse` (ministerial decrees), Gemeinden/Bezirke (municipal/district), `History` controller (bulk change-sync — a future mirror's entry point, not an interactive surface).
+Nothing upstream is out of scope: v1 reaches all six search controllers (`Bundesrecht`, `Landesrecht`, `Bezirke`, `Gemeinden`, `Judikatur`, `Sonstige`) plus `History` and `Version`.
 
 ## Workflow Analysis
 
@@ -242,11 +390,11 @@ Out of scope v1 (deferred, deliberate): `Begut` (draft bills in review), `RegV` 
 
 | # | Call | Purpose | Arm |
 |:--|:-----|:--------|:----|
-| 1 | Parse citation locally | classify kind, extract abbr/§/number/year | always |
+| 1 | Parse citation locally | classify kind, extract abbr/§/number/year/tier | always |
 | 2 | Deterministic search on routed application | resolve to document(s) | always |
 | 3 | Second-candidate application probe | ambiguous case-number formats only | case_number, ≤ 1 retry |
 
-`ris_get_document` (0–1 upstream calls): construct/validate URL → fetch (skipped for `urls_only`) → convert. No metadata call exists (see Known Limitations).
+`ris_get_document` (0–1 upstream calls): construct/validate URL → fetch (skipped for `urls_only` and format-unavailable applications) → convert. No metadata call exists (see Known Limitations).
 
 All other tools: single upstream call. No internal pagination loops exist in v1 — the agent pages explicitly.
 
@@ -256,14 +404,17 @@ All other tools: single upstream call. No internal pagination loops exist in v1 
 |:--------|:------|:--------|
 | `RisService` | RIS OGD REST v2.6 (`data.bka.gv.at`) + document content host (`www.ris.bka.gv.at`) | all tools except `ris_list_reference` |
 
-One service, two base URLs. Methods: `searchLegislation`, `searchGazette`, `searchCaseLaw` (thin per-class param builders over one `search(controller, params)` core), `fetchDocumentContent(url)`. Plus the **normalizer** — the heart of the service layer:
+One service, two base URLs. Methods: `searchLegislation`, `searchGazette`, `searchCaseLaw`, `searchDrafts`, `searchAnnouncements`, `trackChanges` (thin per-class param builders over one `search(controller, params)` core), `fetchDocumentContent(url)`. Plus the **normalizer** — the heart of the service layer:
 
 - Unwrap `OgdSearchResult.OgdDocumentResults`; coerce `OgdDocumentReference` object-or-array → array (single-hit responses collapse ✓)
 - `Hits` `{@pageNumber, @pageSize, #text}` → `{ page, pageSize, total }` numbers
-- **Check `OgdSearchResult.Error` on every HTTP 200 before treating it as success** (✓ domain errors arrive in-band): `Error.@type = "Client"` → InvalidParams (pass RIS's message through — it enumerates valid elements/values); `"Server"` → ServiceUnavailable
+- **Check `OgdSearchResult.Error` on every response before treating it as success** (✓ domain errors arrive in-band on 200; Server errors also carry HTTP 500): `Error.@type = "Client"` → InvalidParams (pass RIS's message through — it enumerates valid elements/values); `"Server"` → ServiceUnavailable
+- Per-controller metadata classes: `Data.Metadaten.{Bundesrecht|Landesrecht|Judikatur|Bezirke|Gemeinden|Sonstige}` (✓ all six observed) — one field-map per class
 - Coerce object-or-array on `Geschaeftszahl.item`, `Normen.item`, `Indizes.item`, `ContentReference`
 - Strip `<br/>`/HTML remnants from Titel/Anmerkung fields; parse `[CELEX-Nr.: …]` → `celex_references`
-- Map `ContentUrl[]` `{DataType, Url}` → keyed `{ xml, html, pdf, rtf, authentic }`
+- Map `ContentUrl[]` `{DataType, Url}` → keyed `{ xml, html, pdf, rtf, authentic }`; absent Dokumentliste (BgblAlt ✓) → empty content_urls, format-unavailable path
+- Ministry-abbreviation expansion for exact-match issuer params ("BMF" → "BMF (Bundesministerium für Finanzen)"), from the static ministries table
+- History application-name aliasing (BrKons→Bundesnormen, LrKons→Landesnormen, Gr→Gemeinderecht, GrA→GemeinderechtAuth ✓)
 
 Resilience: `withRetry` at `baseDelayMs: 1500` (rate-limited-API calibration) wrapping fetch+parse; `fetchWithTimeout` for HTTP status handling; HTML-error-page detection classified transient, not SerializationError. **Never forward unmapped param names upstream — unknown flat params are silently ignored (✓), so a typo'd passthrough returns wrong results, not an error.** The service builds requests exclusively from the confirmed-spelling table (API Reference below).
 
@@ -275,86 +426,120 @@ Resilience: `withRetry` at `baseDelayMs: 1500` (rate-limited-API calibration) wr
 | `RIS_CONTENT_BASE_URL` | no | Default `https://www.ris.bka.gv.at` (document content + allowlist host for `document_url`) |
 | `RIS_CONTACT` | no | Contact string appended to the User-Agent (RIS netiquette asks integrators to be identifiable; `ris.it@bka.gv.at` is their contact) |
 
-No pagination/pacing knobs in v1 — there are no internal request loops to pace (the catalog sketch anticipated `RIS_PAGE_DELAY_MS`/`RIS_MAX_AUTO_PAGES`; dropped as speculative until a tool actually loops). Reactive backoff via `withRetry` covers upstream throttling.
+No pagination/pacing knobs in v1 — there are no internal request loops to pace. Reactive backoff via `withRetry` covers upstream throttling.
 
 ## Implementation Order
 
 1. Config + server setup (identity: `ris-austria-mcp-server`)
-2. `RisService` — request builder (confirmed-spelling table), normalizer, error-envelope handling; integration-test against live API (cheap, keyless)
+2. `RisService` — request builder (confirmed-spelling table), six-class normalizer, error-envelope handling, ministry expansion, History aliasing; integration-test against live API (cheap, keyless)
 3. `ris_list_reference` (static — no service dependency, grounds everything else)
-4. `ris_search_legislation`
-5. `ris_search_case_law`
-6. `ris_search_gazette`
-7. `ris_lookup_citation` (composes the three service methods)
-8. `ris_get_document` (content fetch + markdown conversion + binding labels)
-9. `ris://document/{application}/{documentNumber}` resource (thin over get_document path)
-10. Polish: descriptions audit vs this doc, `devcheck`, live field-test each document class
+4. `ris_search_legislation` (BrKons/LrKons core, then Gr + Erv routing)
+5. `ris_search_case_law` (17 applications, conditional-param guard matrix)
+6. `ris_search_gazette` (era-tier routing, then state series/non-authentic, district, municipal)
+7. `ris_search_drafts`
+8. `ris_search_announcements` (7 collections, per-collection param matrix)
+9. `ris_track_changes`
+10. `ris_lookup_citation` (composes the search methods; all four routes)
+11. `ris_get_document` (content fetch + markdown conversion + binding labels + format-availability matrix; confirm path segments per application)
+12. `ris://document/{application}/{documentNumber}` resource (thin over get_document path)
+13. Polish: descriptions audit vs this doc, `devcheck`, live field-test each document class
 
 ## Design Decisions
 
-- **`in_force_as_of` defaults to today.** Omitting `FassungVom` upstream searches *all historical versions* (✓ 436 vs 77 hits for the same query) — the wrong default for "what does the law say" and a silent-wrongness trap. Historical research is the explicit opt-in (`include_all_versions` or a past date). Output echoes the applied date so the default is never invisible.
-- **Three search tools, split by document class — not one, not per-application.** Legislation, case law, and gazette diverge on filter grammar *and* result semantics (in-force dates vs decision metadata vs promulgation record). Within each class, applications collapse into a `scope`/`court` enum. This *adds* a gazette search over the catalog sketch: the sketch's "no gazette search tool" reasoning was that keyword search would duplicate `lookup_citation` — correct, but date-range/issuer *browse* ("what landed in BGBl. II this month") is a real monitoring goal the resolver can't express, and it's the binding record, so it earns the third tool.
-- **No cross-court fan-out in `search_case_law`.** Upstream takes one Judikatur application per request; merging N applications server-side breaks pagination and hit-count semantics, and multiplies upstream load invisibly. The agent fans out explicitly — one call per court — and the description says so.
-- **A citation resolver is a first-class tool.** Austrian legal work is citation-first ("§ 1295 ABGB", a Geschäftszahl, a BGBl number). Deterministic filters (Abschnitt + Titel, Bgblnummer, Geschaeftszahl ✓ all exact-resolving) beat keyword search for this. `found: false` result on no-resolve, never a throw (fleet precedent: eur-lex `lookup_celex`, courtlistener/pubmed `lookup_citation`).
-- **Binding status is explicit output, everywhere.** RIS disclaims warranty on consolidated views; only the amtssigniert gazette wording is legally binding. Every `get_document`/gazette record carries `binding_status`, and the authentic `.pdfsig` URL is surfaced whenever the `Authentisch` DataType exists (✓). The server never presents consolidated text as the binding text.
-- **English surface, German as domain vocabulary.** Tool/param names are English (`query`, `in_force_as_of`, `court`); the service maps to RIS's German param names internally. German remains only where it *is* the identifier: Austrian legal proper nouns (Bundesgesetzblatt, Geschäftszahl, Rechtssatz — always glossed in descriptions) and returned legal text (data, not interface).
-- **Strict param allowlist in the service.** Unknown query params are silently ignored upstream (✓) — the single nastiest API trap here, since a typo returns *plausible but unfiltered* results. Only live-confirmed or XSD-verified spellings from the API Reference table are ever sent; new filters require a probe first.
+- **Full-surface v1 (2026-07-05).** Every OGD application ships in v1 — no deferred tier. Rationale: the architecture (class-split tools, conditional-param guards, one confirmed-spelling table) absorbs new applications as rows, not risk; a complete surface makes coverage questions answerable by `ris_list_reference` instead of "not supported."
+- **`in_force_as_of` defaults to today.** Omitting `FassungVom` upstream searches *all historical versions* (✓ 436 vs 77 hits for the same query) — the wrong default for "what does the law say" and a silent-wrongness trap. Historical research is the explicit opt-in (`include_all_versions`, a past date, or a force-window). Output echoes the applied date so the default is never invisible.
+- **Five search tools, split by document class — not one, not per-application.** Consolidated law, case law, promulgations, the lawmaking pipeline, and sectoral/executive publications diverge on filter grammar *and* result semantics. Within each class, applications collapse into an enum axis (`scope`+`series`, `court`, `stage`, `collection`) with locally-guarded conditional params — the pattern established by `court`-conditional filters, now applied uniformly. Per-application tools (~35) would bloat the surface; one mega-tool would bury the grammars.
+- **Gazette is jurisdictional; announcements are sectoral.** Both hold authentic publications, but the gazette tool's axes (era tiers, parts, state series) are jurisdiction-shaped while the Sonstige collections are domain-shaped with per-collection grammars (Urheber enums, Fachplan types, session numbers). Merging them would mix axes in one enum; the split keeps each tool's params coherent. The binding record therefore spans two tools — `binding`/`authentic_pdf_url` output fields are identical across both, and `ris_list_reference` topic `applications` maps the whole authentic set.
+- **Federal gazette era tiers are auto-routed, not user-selected.** BgblAuth (2004+), BgblPdf (1945–2003), BgblAlt (1848–1940) are one logical series with era-dependent applications, number params, and part semantics (parts exist only from 1997). The agent thinks "BGBl."; the server routes by year and says which tier served (notice). Getting this mapping right matters: the three tiers differ in bindingness and content availability.
+- **No cross-court fan-out in `search_case_law`.** Upstream takes one Judikatur application per request; merging N applications server-side breaks pagination and hit-count semantics, and multiplies upstream load invisibly. The agent fans out explicitly — one call per court — and the description says so. The same one-application-per-call rule holds for every search tool.
+- **Upts is case law, not an announcement.** It lives in the Sonstige controller upstream, but its documents are decisions (GZ, decision date, cited norms) — agents looking for party-transparency rulings will look in the case-law tool. Controller routing is an implementation detail; document class wins.
+- **A citation resolver is a first-class tool.** Austrian legal work is citation-first ("§ 1295 ABGB", a Geschäftszahl, a BGBl number, a VfSlg cite). Deterministic filters (Abschnitt + Titel, per-tier number params, Geschaeftszahl, Sammlungsnummer ✓ exact-resolving where probed) beat keyword search for this. `found: false` result on no-resolve, never a throw (fleet precedent: eur-lex `lookup_celex`, courtlistener/pubmed `lookup_citation`).
+- **Binding status is explicit output, everywhere — seven labels.** RIS disclaims warranty on consolidated views; only amtssignierte publications are legally binding. Every document-bearing output carries a binding label: `authentic` (BgblAuth, LgblAuth, Vbl, Bvb, GrA, Avsv, Avn, KmGer, PruefGewO, Spg), `consolidated_informational` (BrKons, LrKons, Gr, LgblNO), `historical_record` (BgblPdf, BgblAlt, Lgbl), `decision` (Judikatur, Upts), `preparatory` (Begut, RegV, Mrp), `administrative_directive` (Erlaesse — binds the administration, not citizens), `translation` (Erv — unofficial). The authentic `.pdfsig` URL is surfaced whenever the `Authentisch` DataType exists (✓). The server never presents non-authentic text as the binding text.
+- **English surface, German as domain vocabulary.** Tool/param names are English (`query`, `in_force_as_of`, `court`); the service maps to RIS's German param names internally — including Erv's English upstream names (`SearchTerms`/`Title` ✓) as just another mapping row. German remains only where it *is* the identifier: Austrian legal proper nouns (Bundesgesetzblatt, Geschäftszahl, Rechtssatz — always glossed in descriptions) and returned legal text (data, not interface).
+- **Ministry abbreviations are expanded server-side.** RIS issuer params are exact-match against full designations ("BMF (Bundesministerium für Finanzen)") including historical ministry names — hostile to agents. The service accepts the abbreviation, expands from the static table, and `ris_list_reference` topic `ministries` carries the inventory. A failed expansion is a local ValidationError naming near-misses, not a silent zero-hit.
+- **Strict param allowlist in the service.** Unknown query params are silently ignored upstream (✓) — the single nastiest API trap here, since a typo returns *plausible but unfiltered* results. Only live-confirmed or handbook/XSD-verified spellings from the API Reference table are ever sent; new filters require a probe first.
+- **Sort is exposed minimally.** `sort_by` maps to the per-application Sortierung columns that matter for monitoring (date, number/GZ/section) — not the full upstream column set. Default: upstream default order.
 - **No DataCanvas.** Search results are categorical legal metadata for find-then-drill-in workflows, not analytical row sets — fails the shape test regardless of size.
-- **No blanket per-call sleep.** RIS's ~1–2s pacing guidance targets bulk/paged retrieval, not interactive lookups. Reactive `withRetry` backoff (1.5s base) fires only when upstream actually signals distress; v1 has no internal loops to pace (and the pacing env knobs were dropped with them).
-- **No dead ends — every terminal surface routes to a named tool.** Error `recovery` strings, zero-hit enrichment notices, and `lookup_citation`'s `found: false` guidance each name the concrete next call (`ris_list_reference` topic X, `ris_lookup_citation`, the specific search tool) — never bare "check your input". The per-tool contract tables carry the verbatim strings; three shared mechanics: (1) RIS Client-error messages pass through verbatim (they enumerate valid values) with recovery routing to `ris_list_reference`; (2) conditional-param misuse (`court_filter_mismatch`, `scope_filter_mismatch`, `invalid_addressing`) is caught locally before any upstream call, message naming the actual offending pair; (3) zero hits are success + notice, never an error. Rationale: six tools over an opaque German-coded corpus is navigable only if every stuck-state says where to go next.
+- **No blanket per-call sleep.** RIS's ~1–2s pacing guidance targets bulk/paged retrieval, not interactive lookups. Reactive `withRetry` backoff (1.5s base) fires only when upstream actually signals distress; v1 has no internal loops to pace.
+- **No dead ends — every terminal surface routes to a named tool.** Error `recovery` strings, zero-hit enrichment notices, `format_unavailable` notices, and `lookup_citation`'s `found: false` guidance each name the concrete next call (`ris_list_reference` topic X, `ris_lookup_citation`, the specific search tool) — never bare "check your input". The per-tool contract tables carry the verbatim strings; three shared mechanics: (1) RIS Client-error messages pass through verbatim (they enumerate valid values) with recovery routing to `ris_list_reference`; (2) conditional-param misuse (`scope_filter_mismatch`, `court_filter_mismatch`, `stage_filter_mismatch`, `collection_filter_mismatch`, `invalid_addressing`) is caught locally before any upstream call, message naming the actual offending pair; (3) zero hits are success + notice, never an error. Rationale: nine tools over an opaque German-coded corpus is navigable only if every stuck-state says where to go next.
 - **Tool prefix `ris_`, name `ris-austria-mcp-server`** (settled in the fleet catalog 2026-07-04): official RIS brand + country disambiguator; clash-free in the fleet.
 
 ## Known Limitations
 
 - **No document-by-number search upstream** (no `Dokumentnummer` request param in any XSD; SOAP-only `GetDocNumbers` has no REST equivalent). `get_document` therefore fetches content via constructed/passed-through URLs and cannot return fresh metadata for a bare ID. Metadata comes from search/lookup results.
-- **One court application per case-law call** — cross-court coverage is N explicit calls.
-- **Coverage windows vary by application:** VfGH 1980+, VwGH 1990+ (older selected), BVwG/LVwG 2014+, Dsk 1990+ (selected), BgblAuth 2004+ (BgblAlt covers 1945–2003; 1848–1940 gazettes are ÖNB-hosted images, out of scope). Justiz is *selected* decisions, not the full ordinary-court record. `list_reference` carries the windows.
+- **One application per search call** — cross-court/cross-collection coverage is N explicit calls.
+- **Coverage windows vary by application:** VfGH 1980+, VwGH 1990+ (older selected), BVwG/LVwG 2014+, Dsk 1990+ (selected), BgblAuth 2004+ (BgblPdf 1945–2003, BgblAlt 1848–1940); Avsv 2002+, Avn 2004-09+, RegV/Mrp 2004+; district promulgations (Bvb) NÖ 2021-09+ / OÖ+Tirol 2022+ / Vorarlberg 2022-07+ / Burgenland 2023+ / Steiermark 2013+ — Salzburg districts publish in the Salzburg LGBl; Verordnungsblätter (Vbl) Tirol only, 2022+ (✓ all 550 docs are Tirol); municipal law (Gr) *selected* norms in Kärnten (all municipalities), NÖ, OÖ, Salzburg, Steiermark, Wien — no Burgenland/Tirol/Vorarlberg; KmGer currently LVwG Tirol + Vorarlberg only (✓ 53). Historical bodies are closed windows with successors: UVS 1991–2013 → LVwG, AsylGH 2008–2013 → BVwG, UBAS 1998–2008 → AsylGH, Umse/Bks end 2013, Datenschutzkommission ≤2013 → Datenschutzbehörde. Justiz is *selected* ordinary-court decisions, not the full record. `list_reference` carries the windows.
+- **Content-format availability varies** (✓ probed): Bvb, GrA, KmGer publish the signed PDF only; Upts and Mrp are plain-PDF-only; BgblAlt carries no content URLs at all (metadata + ÖNB-hosted scans). `get_document` returns explicit `format_unavailable` notices with the usable URLs for these — markdown conversion exists only where an Html rendition does.
 - **Per-§ document granularity:** one law = many documents sharing a `law_id`. "The whole DSG" is a `law_id`-filtered search (77 docs), not one document; the web `GesamteRechtsvorschriftUrl` is linked for humans. A stitched full-law markdown export is a deliberate non-goal for v1 (77 content fetches).
 - **Consolidated text is not legally binding** — inherent to RIS, handled by labeling, not solvable.
 - **A decision may appear as multiple documents** (N Rechtssatz docs + 1 Text doc sharing a Geschäftszahl). Results are type-labeled; deduplication is the agent's call.
 - **ELI coverage varies** — federal law/gazette hits carry ELI consistently; the LrKons probe returned no ELI at the expected path (✓). Field mapping per application verified at build; `eli` is optional in output schemas.
-- **German-language corpus:** legal text returns in German (Austrian law *is* German); `Erv` (English translations of selected laws) exists upstream and is a candidate future scope.
+- **German-language corpus:** legal text returns in German (Austrian law *is* German); `Erv` covers ~138 selected English translations (✓) — absence of a translation is not absence of the law.
+- **History change feed:** returns the changed documents' current records (✓ standard envelope); whether deleted documents carry an explicit flag vs. appearing only under `include_deleted` is confirmed at build.
 
-## API Reference (live-confirmed 2026-07-04)
+## API Reference (live-confirmed 2026-07-04/05)
 
 Base: `https://data.bka.gv.at/ris/api/v2.6/{controller}` — GET, JSON responses (JSON-serialized XML: `@attr`/`#text` nodes, object-or-array lists). Health: `GET /Version` → `{"OgdSearchResult":{"Version":"2.6"}}` ✓. Content host: `https://www.ris.bka.gv.at/Dokumente/{segment}/{DOKNR}/{DOKNR}.{xml|html|rtf|pdf}` (+ `.pdfsig` as `Authentisch`).
 
-**Controllers → applications** (✓ enumerated via schema-validation errors, which list valid child elements):
+**Controllers → applications** (✓ enumerated via schema-validation errors + Handbook V2.6 Table 1; every application below is in scope):
 
 | Controller | Applications | Shared top-level params |
 |:---|:---|:---|
-| `Bundesrecht` | BrKons, BgblAuth, BgblPdf, BgblAlt, Begut, RegV, Erv | `Suchworte`, `Titel` |
-| `Landesrecht` | LrKons, LgblAuth, Lgbl, LgblNO, Vbl | `Suchworte`, `Titel` |
+| `Bundesrecht` | BrKons, BgblAuth, BgblPdf (Staats-/BGBl **1945–2003**), BgblAlt (RGBl/StGBl/BGBl **1848–1940**), Begut, RegV, Erv | `Suchworte`, `Titel` (Erv: `SearchTerms`, `Title` ✓) |
+| `Landesrecht` | LrKons, LgblAuth, Lgbl (non-authentic; no NÖ/Wien), LgblNO (NÖ systematic), Vbl (Verordnungsblätter) | `Suchworte`, `Titel` |
+| `Bezirke` | Bvb (district promulgations ✓ 2,433) | `Suchworte`, `Titel` |
+| `Gemeinden` | Gr (municipal norms ✓ 18,250), GrA (authentic municipal promulgations ✓ 9,787) | `Suchworte`, `Titel` |
 | `Judikatur` | Vfgh, Vwgh, Normenliste, Justiz, Bvwg, Lvwg, Dsk, Dok, Pvak, Gbk, Uvs, AsylGH, Ubas, Umse, Bks, Verg | `Suchworte`, `Dokumenttyp`, `Geschaeftszahl`, `Norm`, `EntscheidungsdatumVon/Bis` |
-| `Sonstige` | PruefGewO, Avsv, Spg, Avn, KmGer, Upts, Mrp, Erlaesse | `Suchworte`, `Titel` |
-| `Bezirke`, `Gemeinden` | district/municipal promulgations | out of scope v1 |
-| `History` | change-sync per application (`Anwendung`, `AenderungenVon/Bis`, `IncludeDeletedDocuments`) | out of scope v1 |
+| `Sonstige` | PruefGewO, Avsv, Spg, Avn, KmGer, Upts, Mrp, Erlaesse | `Suchworte` (`Titel` except Mrp/Upts) |
+| `History` | change-sync per application — `Anwendung` (**own naming**: Bundesnormen/Landesnormen/Gemeinderecht/GemeinderechtAuth for BrKons/LrKons/Gr/GrA ✓), `AenderungenVon/Bis` ✓, `IncludeDeletedDocuments` | — |
 | `Version` | version string | health check |
 
-**Param notation (the key discovery):** scalar leaf params are flat query params (`FassungVom=2026-07-04` ✓, `EntscheidendeBehoerde=Datenschutzbehoerde` ✓, `KundmachungsdatumVon=…` ✓); children of complex-typed elements use **dot-paths** (`Abschnitt.Von=1&Abschnitt.Bis=1&Abschnitt.Typ=Paragraph` ✓, `Bundesland.SucheInWien=true` ✓, `Dokumenttyp.SucheInRechtssaetzen=true` ✓). **Unknown names — flat or dotted — are silently ignored, never errors** ✓. Invalid *values* of known enum/element params DO error (schema validation) ✓.
+**Param notation (the key discovery):** scalar leaf params are flat query params (`FassungVom=2026-07-04` ✓, `EntscheidendeBehoerde=Datenschutzbehoerde` ✓, `Bundesland=Tirol` ✓ Vbl/Bvb/Gr); children of complex-typed elements use **dot-paths** (`Abschnitt.Von=1&Abschnitt.Bis=1&Abschnitt.Typ=Paragraph` ✓, `Bundesland.SucheInWien=true` ✓ LrKons/Lgbl, `Dokumenttyp.SucheInRechtssaetzen=true` ✓, `Kundmachung.Von=…` ✓, `Kundgemacht.Von=…` ✓). Some date params exist in both spellings (`KundmachungsdatumVon` ≡ `Kundmachung.Von` on BgblAuth ✓ 60=60). **Unknown names — flat or dotted — are silently ignored, never errors** ✓. Invalid *values* of known enum/element params DO error (schema validation) ✓.
 
-**Paging/envelope params:** `Applikation` (required, selects the application within the controller), `DokumenteProSeite` ∈ {Ten, Twenty, Fifty, OneHundred} (default Twenty ✓), `Seitennummer` (1-based), `ImRisSeit` ∈ {EinerWoche, ZweiWochen, EinemMonat, DreiMonaten, SechsMonaten, EinemJahr}.
+**Paging/envelope params:** `Applikation` (required, selects the application within the controller), `DokumenteProSeite` ∈ {Ten, Twenty, Fifty, OneHundred} (default Twenty ✓), `Seitennummer` (1-based), `ImRisSeit` ∈ {EinerWoche, ZweiWochen, EinemMonat, DreiMonaten, SechsMonaten, EinemJahr} (not on the gazette-law applications — their `Kundmachung.Periode` option is the equivalent).
 
-**Search expression types** (from the OGD handbook + XSDs): `Suchworte` is a FulltextSearchExpression — RIS web grammar (boolean `UND/ODER/NICHT` + English equivalents, parens, quoted phrases; wildcard `*` trailing-only). `Titel`, `Bgblnummer`, `EinbringendeStelle`, `Kundmachungsorgan(nummer)` are Phrase/Term expressions — `*` allowed leading *or* trailing. `Gesetzesnummer` is exact-match, no wildcards.
+**Search expression types** (from the OGD handbook + XSDs): `Suchworte` is a FulltextSearchExpression — RIS web grammar (boolean `UND/ODER/NICHT` + English equivalents, parens, quoted phrases; wildcard `*` trailing-only). `Titel`, `Bgblnummer`, `Lgblnummer`, `EinbringendeStelle`, `Kundmachungsorgan(nummer)`, `Gemeinde`, `Avnnummer` are Phrase expressions — `*` allowed leading *or* trailing, **≥2 characters required on each side of `*`** (handbook error example). `Gesetzesnummer`, `Kundmachungsnummer`, `Urheber`, `Bundesministerium`, `Sitzungsnummer`, `Gesetzgebungsperiode`, `Gliederungszahl` are exact-match, no wildcards. `Geschaeftszahl`/`Norm`/`GZ` are fulltext-typed.
 
-**Application-specific request params** (✓ = live-verified; others XSD-verified, confirm spelling at build):
+**Application-specific request params** (✓ = live-verified 2026-07-04/05; others handbook-verified, spelling confirmed at build):
 
 | Application | Params |
 |:---|:---|
-| BrKons | `FassungVom` ✓ (omit = all versions ✓), `Abschnitt.Von/Bis/Typ` ✓ (Typ ∈ Alle/Artikel/Paragraph/Anlage), `Gesetzesnummer`, `Index`, `Typ`, `Kundmachungsorgan`, `Kundmachungsorgannummer`, `Unterzeichnungsdatum`, `Sortierung.SortDirection/SortedByColumn` |
-| LrKons | `Bundesland.SucheIn{Burgenland,Kaernten,Niederoesterreich,Oberoesterreich,Salzburg,Steiermark,Tirol,Vorarlberg,Wien}` ✓, `FassungVom`, `Abschnitt.*`, `Index`, `Typ` |
-| BgblAuth | `Bgblnummer` ✓, `KundmachungsdatumVon/Bis` ✓, `Teil.SucheInTeil1/2/3`, `Typ.SucheIn{Gesetzen,Verordnungen,Kundmachungen,Sonstiges}`, `EinbringendeStelle` |
-| Judikatur (all) | `Geschaeftszahl` ✓ (exact GZ → 1 hit), `Norm`, `EntscheidungsdatumVon/Bis`, `Dokumenttyp.SucheInRechtssaetzen` ✓ / `.SucheInEntscheidungstexten` |
-| Dsk | `EntscheidendeBehoerde` ✓ ∈ {Datenschutzkommission, Datenschutzbehoerde} (1864 total → 452 for DSB ✓), `Entscheidungsart` (DskEntscheidungsart enum) |
-| Justiz | `Gericht` (court name within Justiz), `Rechtsgebiet` ∈ {Strafrecht, Zivilrecht}, `Fachgebiet`, `Rechtssatznummer`, `Entscheidungsart`, `RechtlicheBeurteilung`, `Spruch`, `Fundstelle` |
-| Vfgh / Vwgh | `Entscheidungsart` (per-court enum), `Index`, `Sammlungsnummer` |
-| Bvwg | `Entscheidungsart` |
-| Lvwg | `Entscheidungsart`, `Bundesland` (single-value enum, not the SucheIn* flags) |
+| BrKons | `FassungVom` ✓ (omit = all versions ✓), `Fassung.VonInkrafttretensdatum`/`.BisInkrafttretensdatum`/`.VonAusserkrafttretensdatum`/`.BisAusserkrafttretensdatum` (force windows, alternative to FassungVom), `Abschnitt.Von/Bis/Typ` ✓ (Typ ∈ Alle/Artikel/Paragraph/Anlage), `Gesetzesnummer`, `Index`, `Typ`, `Kundmachungsorgan`, `Kundmachungsorgannummer`, `Unterzeichnungsdatum`, `Sortierung.SortDirection/SortedByColumn` (ArtikelParagraphAnlage/Kurzinformation/Inkrafttretensdatum/Ausserkrafttretensdatum) |
+| LrKons | `Bundesland.SucheIn{9 Länder}` ✓, `FassungVom`, `Fassung.*` windows, `Abschnitt.*`, `Gesetzesnummer`, `Index`, `Typ`, `Kundmachungsorgan(nummer)`, `Unterzeichnungsdatum` |
+| BgblAuth | `Bgblnummer` ✓, `KundmachungsdatumVon/Bis` ✓ (≡ `Kundmachung.Von/Bis` ✓), `Teil.SucheInTeil1/2/3`, `Typ.SucheIn{Gesetzen,Verordnungen,Kundmachungen,Sonstiges}`, `EinbringendeStelle` (ministry enum) |
+| BgblPdf | `Bundesgesetzblatt` ✓ ("194/1961" → 1 hit), `Kundgemacht.Von/Bis` ✓ (1975 → 663), `Teil.SucheIn{Alt,Teil1,Teil2,Teil3}` (Alt = pre-1997 partless), `Typ.SucheIn{…}` — Xml/Html/Pdf renditions ✓ |
+| BgblAlt | `Jahrgang` ✓ (1900 → 234), `Gesetzblattnummer`, `Stuecknummer`, `Titel`, `Kundgemacht.Von/Bis` ✓ — **no content URLs** ✓ (ÖNB scans) |
+| Begut | `InBegutachtungAm` ✓ (→ 13 open reviews), `EinbringendeStelle` (ministry enum), `ImRisSeit`, Sortierung (Kurztitel/EinbringendeStelle/EndeBegutachtungsfrist) |
+| RegV | `BeschlussdatumVon/Bis` ✓ (2026 → 48), `EinbringendeStelle`, `ImRisSeit`, Sortierung (Kurztitel/EinbringendeStelle/Beschlussdatum) |
+| Erv | **English param names** ✓: `SearchTerms` (→ 109), `Title` (→ 2), `Source`; `ImRisSeit`; no date/section/number params |
+| LgblAuth | `Lgblnummer`, `Bundesland.SucheIn{9}`, `Kundmachung.Von/Bis` ✓ (Jun 2026 → 74) or `.Periode`, `Typ.SucheIn{…}` |
+| Lgbl | `Lgblnummer`, `Bundesland.SucheIn{7 — no NÖ, no Wien}` ✓ (Salzburg → 1,547), `Kundmachung.Von/Bis`, `Typ.SucheIn{…}` |
+| LgblNO | `Gliederungszahl`, `Typ.SucheIn{…}`, `Index` (10-value enum), `FassungVom`, `Ausgabedatum.Von/Bis`, `ImRisSeit` |
+| Vbl | `Bundesland` ✓ (flat enum; Tirol → 550 = all), `Einbringer` ∈ {Landeshauptmann/frau, Landesregierung, Amt der Landesregierung, Sonstige Landesbehörden}, `Kundmachungsnummer`, `Kundmachungsdatum.Von/Bis`, `ImRisSeit` |
+| Bvb | `Bundesland` ✓ (Steiermark → 182), `Bezirksverwaltungsbehoerde` (~70-value enum), `Kundmachungsnummer`, `Kundmachungsdatum.Von/Bis`, `ImRisSeit` — Authentisch-only renditions ✓ |
+| Gr | `Bundesland` ✓ (Wien → 869), `Gemeinde`, `Geschaeftszahl`, `Index` (10-value enum), `FassungVom` ✓ accepted, `ImRisSeit` |
+| GrA | `Bundesland`, `Bezirk`, `Gemeinde`, `Gemeindeverband`, `Kundmachungsnummer`, `Kundmachungsdatum.Von/Bis`, `ImRisSeit` — Authentisch-only ✓ |
+| Judikatur (all) | `Geschaeftszahl` ✓ (exact GZ → 1 hit), `Norm`, `EntscheidungsdatumVon/Bis`, `Dokumenttyp.SucheInRechtssaetzen` ✓ / `.SucheInEntscheidungstexten` (not Gbk), `Entscheidungsart` (per-court enums), `ImRisSeit` |
+| Vfgh / Vwgh | `Entscheidungsart` (Vfgh: Beschluss/Erkenntnis/Vergleich/KeineAngabe; Vwgh: +BeschlussVS/ErkenntnisVS), `Index`, `Sammlungsnummer` |
+| Normenliste | `Norm`, `Titel`, `Index`, `Typ`, `Kundmachungsorgan` — **no GZ/date/Dokumenttyp** (norm index, not decisions) |
+| Justiz | `Gericht`, `Rechtsgebiet` ∈ {Zivilrecht, Strafrecht}, `Fachgebiet` (~45-value taxonomy), `Rechtssatznummer`, `Entscheidungsart` (4 values), `RechtlicheBeurteilung`, `Spruch`, `Fundstelle` |
+| Bvwg / Lvwg / AsylGH / Uvs / Ubas / Umse / Bks | `Entscheidungsart` (per-court); Lvwg/Uvs: `Bundesland` (single enum); Uvs: `Index`, `Sammlungsnummer`; Ubas: `Verfasser`, `Index`, `Spruch`; Umse: `Kurzbezeichnung`; Bks: `Bereich` (media-statute enum) |
+| Dsk | `EntscheidendeBehoerde` ✓ ∈ {Datenschutzkommission, Datenschutzbehoerde} (1864 → 452 ✓), `Entscheidungsart` (Bescheid* taxonomy, 12 values) |
+| Dok / Pvak / Verg | `EntscheidendeBehoerde` (per-app body enums); Verg: `Entscheidungsart` ∈ {Bescheid, Beschluss, Empfehlung, Gutachten, Vorabentscheidungsantrag, Vorabentscheidung} |
+| PruefGewO | `Typ` ∈ {Befaehigungspruefungsordnung, Meisterpruefungsordnung}, `Kundmachungsdatum.Von/Bis`, `Fassung.FassungVom`/windows |
+| Avsv | `Urheber` (insurance-carrier enum), `Avsvnummer`, `Dokumentart`, `Kundmachung.Von/Bis` or `.Periode` |
+| Spg | `Spgnummer`, `OsgSuchEinschraenkung.SpgStrukturplanType` / `RsgSuchEinschraenkung.SpgStrukturplanType` ∈ {Alle, Gutachten, Verordnungen}, `RsgSuchEinschraenkung.Land` (9 Länder), `Kundmachungsdatum.Von/Bis`, `Fassung.*` |
+| Avn | `Avnnummer`, `Typ.SucheIn{Kundmachungen, VeroeffentlichungenAufGrundVEVO, SonstigeVeroeffentlichungen}`, `Kundmachung.Von/Bis`, `FassungVom`, `Geschaeftszahl`, `Norm` |
+| KmGer | `Typ` ∈ {Geschaeftsordnung, Geschaeftsverteilung}, `Gericht` (currently LVwG Tirol/Vorarlberg), `Kundmachungsdatum.Von/Bis`, `Fassung.*` — Authentisch-only ✓ |
+| Upts | `GZ`, `Norm`, `Entscheidungsdatum.Von/Bis`, `Partei` ∈ {ÖVP, SPÖ, FPÖ, KPÖ, BZÖ, Team Stronach} — Pdf-only ✓ |
+| Mrp | `Einbringer` (ministry enum), `Sitzungsdatum.Von/Bis`, `Sitzungsnummer`, `Gesetzgebungsperiode` ✓ (XXVII → 235) — Pdf-only ✓ (no Titel) |
+| Erlaesse | `Bundesministerium` (historical-inclusive enum), `Abteilung`, `Fundstelle`, `Geschaeftszahl`, `Norm` ✓ (DSG → 10), `VonInkrafttretensdatum`/`BisInkrafttretensdatum`, `FassungVom` |
+| History | `Anwendung` ✓ (own names for the four konsolidiert/municipal apps ✓ — `BrKons` rejected with "Application BrKons not found"), `AenderungenVon/Bis` ✓ (2-week BrKons window → 1,417), `IncludeDeletedDocuments` |
 
-**Response envelope:** success → `OgdSearchResult.OgdDocumentResults` with `Hits {@pageNumber, @pageSize, #text}` ✓ and `OgdDocumentReference` (object when 1 hit, array when >1 ✓). Each hit: `Data.Metadaten.Technisch {ID, Applikation, Organ, Einbringer?}`, `Data.Metadaten.Allgemein {Veroeffentlicht, Geaendert, DokumentUrl}`, `Data.Metadaten.{Bundesrecht|Landesrecht|Judikatur} {…class fields incl. Eli / EuropeanCaseLawIdentifier}` ✓, `Data.Dokumentliste.ContentReference{,[]}` with `ContentType` ∈ {MainDocument, Attachment, Material, Statement, Letter, EmbeddedAttachment, BaseDocument} and `Urls.ContentUrl[] {DataType, Url}`, DataType ∈ {Xml, Html, Pdf, Rtf, Authentisch, Gif, Jpg, Tiff, Png, Odt, Docx, Unknown} ✓ (Authentisch = amtssigniert `.pdfsig`).
+**Response envelope:** success → `OgdSearchResult.OgdDocumentResults` with `Hits {@pageNumber, @pageSize, #text}` ✓ and `OgdDocumentReference` (object when 1 hit, array when >1 ✓). Each hit: `Data.Metadaten.Technisch {ID, Applikation, Organ, Einbringer?}`, `Data.Metadaten.Allgemein {Veroeffentlicht, Geaendert, DokumentUrl}`, `Data.Metadaten.{Bundesrecht|Landesrecht|Judikatur|Bezirke|Gemeinden|Sonstige}` ✓ (per-controller class fields incl. Eli / EuropeanCaseLawIdentifier), `Data.Dokumentliste.ContentReference{,[]}` with `ContentType` ∈ {MainDocument, Attachment, Material, Statement, Letter, EmbeddedAttachment, BaseDocument} and `Urls.ContentUrl[] {DataType, Url}`, DataType ∈ {Xml, Html, Pdf, Rtf, Authentisch, Gif, Jpg, Tiff, Png, Odt, Docx, Unknown} ✓ (Authentisch = amtssigniert `.pdfsig`). Dokumentliste may be absent entirely (BgblAlt ✓).
 
-**Errors arrive in-band on HTTP 200** ✓: `OgdSearchResult.Error {@type: "Client"|"Server", Applikation, Message}` — Client messages are schema-validation errors that enumerate valid elements/values (useful passthrough). **A not-found document/GZ is NOT an error** — status ok, `Hits = 0` ✓.
+**Errors arrive in-band** ✓: `OgdSearchResult.Error {@type: "Client"|"Server", Applikation, Message}` — Client messages are schema-validation errors that enumerate valid elements/values (useful passthrough) and ride HTTP 200 ✓; Server errors additionally carry HTTP 500 (handbook). **A not-found document/GZ is NOT an error** — status ok, `Hits = 0` ✓.
 
 **Netiquette** (RIS OGD guidance): descriptive User-Agent + contact; pace paged/bulk retrieval ~1–2 s (interactive lookups exempt); notify `ris.it@bka.gv.at` before mass downloads; prefer off-hours for bulk. Hosted posture: search-read-export traffic is well within guidance; no full-corpus crawls through the tool surface.
 
-**Licensing:** RIS OGD data CC BY 4.0 (attribution required — server description credits RIS/BKA); underlying legal texts are copyright-free official works (UrhG §7). Only the authentic Bundesgesetzblatt wording is legally binding.
+**Licensing:** RIS OGD data CC BY 4.0 (attribution required — server description credits RIS/BKA); underlying legal texts are copyright-free official works (UrhG §7). Only amtssignierte publications are legally binding.
