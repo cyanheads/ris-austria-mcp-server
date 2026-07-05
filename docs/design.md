@@ -29,7 +29,7 @@ None in v1. An EU→AT transposition research prompt was considered and deferred
 
 The Austrian-national counterpart to `eur-lex-mcp-server`. RIS is the Austrian government's official legal database: consolidated federal and state law, case law across every Austrian court and tribunal, and the authentic (legally binding) Bundesgesetzblatt. The OGD REST API is keyless and CC BY 4.0.
 
-**Audience:** Austrian legal practitioners, compliance/regulatory teams, GovTech, legal-research agents. Commissioned by a healthcare-sector user — data-protection compliance (DSG/DSGVO, Datenschutzbehörde + BVwG/VwGH/VfGH case law) is the anchor use case: "current in-force text as of date X" and DPA case law are the daily questions.
+**Audience:** Austrian legal practitioners, compliance/regulatory teams, GovTech, legal-research agents. Data-protection compliance (DSG/DSGVO, Datenschutzbehörde + BVwG/VwGH/VfGH case law) is the anchor use case: "current in-force text as of date X" and DPA case law are the daily questions.
 
 **Three document classes** drive the tool split:
 
@@ -41,7 +41,7 @@ The Austrian-national counterpart to `eur-lex-mcp-server`. RIS is the Austrian g
 
 ## Requirements
 
-- Search, read, export across all three document classes (the commissioned tasks: search, read, export)
+- Search, read, export across all three document classes
 - Keyless upstream; no auth on the server
 - In-force-as-of date handling correct by default (see Design Decisions)
 - Authentic-vs-consolidated binding status explicit on every document output
