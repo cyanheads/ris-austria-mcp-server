@@ -1,0 +1,54 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "7"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "REGV_COO_2026_0005",
+                "Applikation": "RegV",
+                "Einbringer": "BMF"
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=RegV&Dokumentnummer=REGV_COO_2026_0005"
+              },
+              "Bundesrecht": {
+                "Titel": "Regierungsvorlage betreffend ein Bundesgesetz, mit dem das Umsatzsteuergesetz 1994 geändert wird",
+                "Kurztitel": "Umsatzsteuergesetz-Novelle 2026",
+                "RegV": {
+                  "Abkuerzung": "USt-Novelle 2026",
+                  "Beschlussdatum": "2026-06-24",
+                  "EinbringendeStelle": "BMF"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/RegV/REGV_COO_2026_0005/REGV_COO_2026_0005.html"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/RegV/REGV_COO_2026_0005/REGV_COO_2026_0005.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

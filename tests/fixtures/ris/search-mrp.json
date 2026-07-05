@@ -1,0 +1,345 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "346"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "MRP_20260701_59",
+                "Applikation": "Mrp",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "Einbringer": "BMEIA (Bundesministerium für europäische und internationale Angelegenheiten)BKA (Bundeskanzleramt)BMWKMS (Bundesministerium für Wohnen, Kunst, Kultur, Medien und Sport)BMF (Bundesministerium für Finanzen)BMWET (Bundesministerium für Wirtschaft, Energie und Tourismus)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Mrp&Dokumentnummer=MRP_20260701_59"
+              },
+              "Sonstige": {
+                "Mrp": {
+                  "Einbringer": {
+                    "item": [
+                      "BMEIA (Bundesministerium für europäische und internationale Angelegenheiten)",
+                      "BKA (Bundeskanzleramt)",
+                      "BMWKMS (Bundesministerium für Wohnen, Kunst, Kultur, Medien und Sport)",
+                      "BMF (Bundesministerium für Finanzen)",
+                      "BMWET (Bundesministerium für Wirtschaft, Energie und Tourismus)"
+                    ]
+                  },
+                  "Sitzungsdatum": "2026-07-01",
+                  "Sitzungsnummer": "59",
+                  "Gesetzgebungsperiode": "XXVIII"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/MRP_20260701_59.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "Mitteilungen und Resolutionen",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/001_000.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "Tagung des Rates für Auswärtige Angelegenheiten am 11. Mai 2026 in Brüssel",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/002_000.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "Protokoll mit der Schweiz zur Änderung des Abkommens zur Vermeidung der Doppelbesteuerung; Unterzeichnung und Inkraftsetzung",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/003_000.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "59_6 Änderungsprotokoll",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/003_001.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "59_6 Vorblatt und WFA",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/003_002.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "59_6 Erläuterungen",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/003_003.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "Abkommen mit Indonesien über die Aufhebung der Sichtvermerkspflicht für Inhaber von Diplomaten- und Dienstpässen; Verhandlungen",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/004_000.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "Humanitäre Krise in Venezuela; Bereitstellung von Mitteln aus dem Hilfsfonds für Katastrophenfälle im Ausland",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/005_000.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "59_8 WFA",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/005_001.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "Salzburger Landtag; Aufhebung Bauten-Grundsteuerbefreiungsgesetz 1998",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/006_000.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "59_9 Beilage",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/006_001.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "Wiener Landtag; Änderung Gebrauchsabgabegesetz 1966",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/007_000.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "59_10 Beilage",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/007_001.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "Strategische Gasreserve Verlängerungs-Verordnung",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/008_000.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "59_11 VO",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/008_001.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "59_11 WFA",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/008_002.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "59_11 Erläuterungen",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/008_003.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "Novelle zur Gewerbeordnung 1994; Entbürokratisierung",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/009_000.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "59_12 Gesetz",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/009_001.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "59_12 WFA",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/009_002.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "59_12 Erläuterungen",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/009_003.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "59_12 Textgegenüberstellung",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260701_59/009_004.pdf"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "MRP_20260630_58b",
+                "Applikation": "Mrp",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "Einbringer": "BMWET (Bundesministerium für Wirtschaft, Energie und Tourismus)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Mrp&Dokumentnummer=MRP_20260630_58b"
+              },
+              "Sonstige": {
+                "Mrp": {
+                  "Einbringer": {
+                    "item": "BMWET (Bundesministerium für Wirtschaft, Energie und Tourismus)"
+                  },
+                  "Sitzungsdatum": "2026-06-30",
+                  "Sitzungsnummer": "58b",
+                  "Gesetzgebungsperiode": "XXVIII"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260630_58b/MRP_20260630_58b.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "Änderung der Verordnung der Bundesregierung zur Margenbegrenzung bei Treibstoffen gem. § 5aa des Preisgesetzes",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260630_58b/001_000.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "58b_1 VO",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Mrp/MRP_20260630_58b/001_001.pdf"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

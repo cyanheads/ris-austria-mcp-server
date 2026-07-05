@@ -1,0 +1,179 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "24057"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFR_20260428_26E00033_01",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-06-25",
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_20260428_26E00033_01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": [
+                    "E33/2026 ua",
+                    "E3622/2025",
+                    "E214/2026 ua",
+                    "E217/2026",
+                    "E219/2026 ua",
+                    "E234/2026 ua",
+                    "E256/2026 ua",
+                    "E338/2026 ua",
+                    "E349/2026 ua"
+                  ]
+                },
+                "Normen": {
+                  "item": [
+                    "EMRK Art8",
+                    "AsylG 2005 §7, §9, §34, §35",
+                    "FremdenpolizeiG 2005 §26",
+                    "Familienzusammenführungsrichtlinie 2003/86/EG ",
+                    "VfGG §7 Abs2"
+                  ]
+                },
+                "Entscheidungsdatum": "2026-04-28",
+                "Schlagworte": "Asylrecht, Privat- und Familienleben, Entscheidungsbegründung, Aufenthaltsrecht, EU-Recht, Kinder, Rechtsstaatsprinzip",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:2026:E33.2026",
+                "Vfgh": {
+                  "Entscheidungsart": "Erkenntnis",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": "41/02 Staatsbürgerschaft, Pass- und Melderecht, Fremdenrecht, Asylrecht"
+                  },
+                  "Leitsatz": "Verletzung im Recht auf Achtung des Privat- und Familienlebens betreffend das Verfahren auf Erteilung von Einreisetiteln an Familienangehörige einer zum internationalen Schutz berechtigten Bezugsperson syrischer Staatsangehörigkeit mangels eigenständiger Beurteilung der Wahrscheinlichkeit der Gewährung eines Schutzstatus  ",
+                  "Entscheidungstexte": {
+                    "item": [
+                      {
+                        "Geschaeftszahl": "E33/2026 ua",
+                        "Dokumenttyp": "Text",
+                        "Gericht": "VfGH",
+                        "Entscheidungsdatum": "2026-04-28",
+                        "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260428_26E00033_00",
+                        "Dokumentnummer": "JFT_20260428_26E00033_00",
+                        "Entscheidungsart": "Erkenntnis"
+                      },
+                      {
+                        "Geschaeftszahl": "E3622/2025",
+                        "Dokumenttyp": "Text",
+                        "Gericht": "VfGH",
+                        "Entscheidungsdatum": "2026-04-28",
+                        "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260428_25E03622_00",
+                        "Dokumentnummer": "JFT_20260428_25E03622_00",
+                        "Entscheidungsart": "Erkenntnis"
+                      },
+                      {
+                        "Geschaeftszahl": "E214/2026 ua",
+                        "Dokumenttyp": "Text",
+                        "Gericht": "VfGH",
+                        "Entscheidungsdatum": "2026-04-28",
+                        "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260428_26E00214_00",
+                        "Dokumentnummer": "JFT_20260428_26E00214_00",
+                        "Entscheidungsart": "Erkenntnis"
+                      },
+                      {
+                        "Geschaeftszahl": "E217/2026",
+                        "Dokumenttyp": "Text",
+                        "Gericht": "VfGH",
+                        "Entscheidungsdatum": "2026-04-28",
+                        "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260428_26E00217_00",
+                        "Dokumentnummer": "JFT_20260428_26E00217_00",
+                        "Entscheidungsart": "Erkenntnis"
+                      },
+                      {
+                        "Geschaeftszahl": "E219/2026 ua",
+                        "Dokumenttyp": "Text",
+                        "Gericht": "VfGH",
+                        "Entscheidungsdatum": "2026-04-28",
+                        "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260428_26E00219_00",
+                        "Dokumentnummer": "JFT_20260428_26E00219_00",
+                        "Entscheidungsart": "Erkenntnis"
+                      },
+                      {
+                        "Geschaeftszahl": "E234/2026 ua",
+                        "Dokumenttyp": "Text",
+                        "Gericht": "VfGH",
+                        "Entscheidungsdatum": "2026-04-28",
+                        "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260428_26E00234_00",
+                        "Dokumentnummer": "JFT_20260428_26E00234_00",
+                        "Entscheidungsart": "Erkenntnis"
+                      },
+                      {
+                        "Geschaeftszahl": "E256/2026 ua",
+                        "Dokumenttyp": "Text",
+                        "Gericht": "VfGH",
+                        "Entscheidungsdatum": "2026-04-28",
+                        "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260428_26E00256_00",
+                        "Dokumentnummer": "JFT_20260428_26E00256_00",
+                        "Entscheidungsart": "Erkenntnis"
+                      },
+                      {
+                        "Geschaeftszahl": "E338/2026 ua",
+                        "Dokumenttyp": "Text",
+                        "Gericht": "VfGH",
+                        "Entscheidungsdatum": "2026-04-28",
+                        "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260428_26E00338_00",
+                        "Dokumentnummer": "JFT_20260428_26E00338_00",
+                        "Entscheidungsart": "Erkenntnis"
+                      },
+                      {
+                        "Geschaeftszahl": "E349/2026 ua",
+                        "Dokumenttyp": "Text",
+                        "Gericht": "VfGH",
+                        "Entscheidungsdatum": "2026-04-28",
+                        "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260428_26E00349_00",
+                        "Dokumentnummer": "JFT_20260428_26E00349_00",
+                        "Entscheidungsart": "Erkenntnis"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260428_26E00033_01/JFR_20260428_26E00033_01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260428_26E00033_01/JFR_20260428_26E00033_01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260428_26E00033_01/JFR_20260428_26E00033_01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260428_26E00033_01/JFR_20260428_26E00033_01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

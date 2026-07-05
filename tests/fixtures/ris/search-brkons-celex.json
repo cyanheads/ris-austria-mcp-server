@@ -1,0 +1,86 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "77"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "NOR40262691",
+                "Applikation": "BrKons",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2024-07-05",
+                "Geaendert": "2025-07-30",
+                "DokumentUrl": "https://www.ris.bka.gv.at/eli/bgbl/i/1999/165/P0/NOR40262691"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "Datenschutzgesetz",
+                "Titel": "Bundesgesetz zum Schutz natürlicher Personen bei der Verarbeitung personenbezogener Daten (Datenschutzgesetz – DSG)<br/>StF: BGBl. I Nr. 165/1999 (NR: GP XX RV 1613 AB 2028 S. 179. BR: 5992 AB 6034 S. 657.)<br/>[CELEX-Nr.: 395L0046]",
+                "Eli": "https://ris.bka.gv.at/eli/bgbl/i/1999/165/P0/NOR40262691",
+                "BrKons": {
+                  "Kundmachungsorgan": "BGBl. I Nr. 165/1999 zuletzt geändert durch BGBl. I Nr. 70/2024 ",
+                  "Typ": "BG",
+                  "Dokumenttyp": "Norm",
+                  "ArtikelParagraphAnlage": "§ 0",
+                  "Paragraphnummer": "0",
+                  "StammnormPublikationsorgan": "BGBl. I Nr.",
+                  "StammnormBgblnummer": "165/1999",
+                  "NovellenPublikationsorgan": "BGBl. I Nr.",
+                  "NovellenBgblnummer": "70/2024",
+                  "NovellenBeziehung": "zuletzt geändert durch",
+                  "Inkrafttretensdatum": "2024-07-15",
+                  "Abkuerzung": "DSG",
+                  "Indizes": {
+                    "item": "10/10 Grundrechte, Datenschutz, Auskunftspflicht"
+                  },
+                  "Aenderung": "BGBl. I Nr. 136/2001 (NR: GP XXI RV 742 AB 824 S. 81. BR: 6458 AB 6459 S. 681.)\r\nBGBl. I Nr. 13/2005 (NR: GP XXII IA 515/A AB 821 S. 96. BR: AB 7228 S. 719.)\r\nBGBl. I Nr. 2/2008 (1. BVRBG) (NR: GP XXIII RV 314 AB 370 S. 41. BR: 7799 AB 7830 S. 751.)\r\nBGBl. I Nr. 133/2009 (NR: GP XXIV RV 472 AB 531 S. 49. BR: 8220 AB 8225 S. 780.)\r\nBGBl. I Nr. 135/2009 (NR: GP XXIV RV 485 AB 558 S. 49. BR: 8217 AB 8228 S. 780.)\r\nBGBl. I Nr. 112/2011 (NR: GP XXIV RV 1494 AB 1500 S. 130. BR: 8602 AB 8603 S. 802.)\r\n[CELEX-Nr.: 32009L0133, 32010L0024]\r\nBGBl. I Nr. 51/2012 (NR: GP XXIV RV 1618 AB 1771 S. 155. BR: 8730 AB 8731 S. 809.)\r\nBGBl. I Nr. 57/2013 (NR: GP XXIV RV 2131 AB 2245 S. 194. BR: AB 8940 S. 819.)\r\nBGBl. I Nr. 83/2013 (NR: GP XXIV RV 2168 AB 2268 S. 200. BR: AB 8968 S. 820.)\r\n[CELEX-Nr.: 31995L0046]\r\nBGBl. I Nr. 132/2015 (VfGH)\r\nBGBl. I Nr. 120/2017 (NR: GP XXV RV 1664 AB 1761 S. 190. BR: 9824 AB 9856 S. 871.)\r\n[CELEX-Nr.: 32016L0680]\r\nBGBl. I Nr. 23/2018 (NR: GP XXVI IA 188/A AB 99 S. 21. BR: AB 9958 S. 879.)\r\nBGBl. I Nr. 24/2018 (NR: GP XXVI IA 189/A AB 98 S. 21. BR: AB 9948 S. 879.)\r\nBGBl. I Nr. 14/2019 (NR: GP XXVI RV 301 AB 463 S. 57. BR: AB 10104 S. 888.)\r\nBGBl. I Nr. 148/2021 (NR: GP XXVII RV 937 AB 963 S. 117. BR: AB 10729 S. 929.)\r\nBGBl. I Nr. 2/2023 (VfGH)\r\nBGBl. I Nr. 62/2024 (NR: GP XXVII IA 4031/A AB 2566 S. 266. BR: 11496 AB 11507 S. 968.)\r\nBGBl. I Nr. 70/2024 (NR: GP XXVII AB 2594 S. 268. BR: AB 11514 S. 968.)\r\nBGBl. I Nr. 50/2025 (NR: GP XXVIII RV 129 AB 151 S. 35. BR: 11651 AB 11654 S. 980.)",
+                  "Anmerkung": "1. Der Titel, der Kurztitel und die Abkürzung wurden mit Wirksamkeit vom 25.5.2018 geändert (vgl. BGBl. I Nr. 120/2017). Aus dokumentalistischen Gründen wurden auch in den Dokumenten bereits außer Kraft getretener Bestimmungen der Kurztitel und die Abkürzung angepasst.<br/>2. Zu dieser Rechtsvorschrift ist eine englische Übersetzung in der Applikation „Austrian Laws“ vorhanden: <A href=\"http://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Erv&Dokumentnummer=ERV_1999_1_165\" target=\"_blank\">Protection of Personal Data</A><br/>3. Das Inhaltsverzeichnis wurde gemäß BGBl. I Nr. 148/2021 angepasst.",
+                  "Schlagworte": "e-rk3, Inh<br/>Gewinnabsicht,  2. Euro-Umstellungsgesetz – Bund (BGBl. I Nr. 136/2001), DSG-Novelle 2010 (BGBl. I Nr. 133/2009), Budgetbegleitgesetz 2012 (BGBl. I Nr. 112/2011), Verwaltungsgerichtsbarkeits-Novelle 2012 (BGBl. I Nr. 51/2012), DSG-Novelle 2014 (BGBl. I Nr. 83/2013), Datenschutz-Anpassungsgesetz 2018 (BGBl. I Nr. 120/2017), Datenschutz-Deregulierungs-Gesetz 2018 (BGBl. I Nr. 24/2018), Informationsfreiheits-Anpassungsgesetz (BGBl. I Nr. 50/2025)",
+                  "Gesetzesnummer": "10001597",
+                  "GesamteRechtsvorschriftUrl": "https://www.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=Bundesnormen&Gesetzesnummer=10001597"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

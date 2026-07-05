@@ -1,0 +1,56 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "2433"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "BVB_BU_JE_20260703_9",
+                "Applikation": "Bvb",
+                "Organ": "Bezirkshauptmannschaft Jennersdorf",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Bvb&Dokumentnummer=BVB_BU_JE_20260703_9"
+              },
+              "Bezirke": {
+                "Kurztitel": "Auftreten der Goldgelben Vergilbung der Rebe und der Amerikanischen Rebzikade, Anordnung von Bekämpfungsmaßnahmen in festgelegten Befalls- und Sicherheitszonen im Bezirk Jennersdorf",
+                "Titel": "Verordnung der Bezirkshauptmannschaft Jennersdorf über Maßnahmen zur Bekämpfung der Goldgelben Vergilbung der Rebe und der Amerikanischen Rebzikade; Anordnung von Bekämpfungsmaßnahmen in festgelegten Befallszonen und Sicherheitszonen",
+                "Bundesland": "Burgenland",
+                "Bvb": {
+                  "Kundmachungsdatum": "2026-07-03",
+                  "Kundmachungsorgan": "VBl. JE Nr.",
+                  "Kundmachungsnummer": "9/2026",
+                  "Typ": "Verordnung",
+                  "Bezirksverwaltungsbehoerde": "Bezirkshauptmannschaft Jennersdorf",
+                  "Schlagworte": "Goldgelbe Vergilbung, Amerikanische Rebzikade, Befallszone, Sicherheitszone, Bekämpfungsmaßnahmen"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": {
+                    "DataType": "Authentisch",
+                    "Url": "https://www.ris.bka.gv.at/Dokumente/Bvb/BVB_BU_JE_20260703_9/BVB_BU_JE_20260703_9.pdf"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

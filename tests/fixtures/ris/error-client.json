@@ -1,0 +1,8 @@
+{
+  "OgdSearchResult": {
+    "Error": {
+      "Applikation": "BrKons",
+      "Message": "soap:Client. Schema Validation Error: The 'http://ris.bka.gv.at/ogd/V2_6:FassungVom' element is invalid - The value 'notadate' is invalid according to its datatype 'http://www.w3.org/2001/XMLSchema:date' - The string 'notadate' is not a valid Date value."
+    }
+  }
+}

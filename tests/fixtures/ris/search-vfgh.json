@@ -1,0 +1,178 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "24057"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFR_20260616_26V00023_01",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-06-23",
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_20260616_26V00023_01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "V23/2026 (V23/2026-12)"
+                },
+                "Normen": {
+                  "item": [
+                    "B-VG Art139 Abs1 Z2",
+                    "BienenseuchenG §3a",
+                    "TiergesundheitsG 2024 E55, §79",
+                    "Oö VerlautbarungsG 2015 §1, §5, §16",
+                    "Verordnung der Bezirkshauptmannschaft Gmunden betreffend die Bekämpfung der Bösartigen Faulbrut (Amerikanische Faulbrut) der Bienen vom 30.03.2023 §1, §2, §3, §4, §5",
+                    "AufhebungsV der Bezirkshauptmannschaft Gmunden vom 07.07.2023 §1, §2",
+                    "VfGG §7 Abs2"
+                  ]
+                },
+                "Entscheidungsdatum": "2026-06-16",
+                "Schlagworte": "Verordnung Kundmachung, Tierschutz, Tierseuchen, Geltungsbereich (zeitlicher) einer Verordnung",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:2026:V23.2026",
+                "Vfgh": {
+                  "Entscheidungsart": "Erkenntnis",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": "86/01 Veterinärrecht allgemein"
+                  },
+                  "Leitsatz": "Verstoß einer Verordnung zur Bekämpfung der Bösartigen Faulbrut gegen die Kundmachungsanordnung des BienenseuchenG auf Grund (ausschließlich) elektronischer Kundmachung im Amtsblatt der Bezirkshauptmannschaft Gmunden im Rahmen des RIS anstelle ordnungsgemäßer Kundmachung durch Anschlag an der Amtstafel ",
+                  "Entscheidungstexte": {
+                    "item": {
+                      "Geschaeftszahl": "V23/2026 (V23/2026-12)",
+                      "Dokumenttyp": "Text",
+                      "Gericht": "VfGH",
+                      "Entscheidungsdatum": "2026-06-16",
+                      "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260616_26V00023_00",
+                      "Dokumentnummer": "JFT_20260616_26V00023_00",
+                      "Entscheidungsart": "Erkenntnis"
+                    }
+                  }
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260616_26V00023_01/JFR_20260616_26V00023_01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260616_26V00023_01/JFR_20260616_26V00023_01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260616_26V00023_01/JFR_20260616_26V00023_01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260616_26V00023_01/JFR_20260616_26V00023_01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFR_20260616_25V00259_01",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-06-29",
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_20260616_25V00259_01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "V259/2025 (V259/2025-11)"
+                },
+                "Normen": {
+                  "item": [
+                    "B-VG Art139 Abs1 Z3",
+                    "Stmk Landes-StraßenverwaltungsG 1964 §2, §3, §4, §5, §6, §7, §8",
+                    "Verordnung des Gemeinderates der Stadtgemeinde Schladming vom 13.09.2016 über die Kategorisierung von öffentlichen Straßen ",
+                    "VfGG §7 Abs2"
+                  ]
+                },
+                "Entscheidungsdatum": "2026-06-16",
+                "Schlagworte": "Interessentenweg, Einreihungsverordnung, Straßenverwaltung, Ermittlungsverfahren, Gemeingebrauch (einer Straße), Gemeindestraße",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:2026:V259.2025",
+                "Vfgh": {
+                  "Entscheidungsart": "Erkenntnis",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": "L8500 Straßen"
+                  },
+                  "Leitsatz": "Aufhebung von Teilen einer Einreihungsverordnung betreffend die Kategorisierung einer Straße als öffentlichen Interessentenweg mangels hinreichender Dokumentation der Voraussetzungen für die Erlassung insbesondere hinsichtlich des Gemeingebrauchs ",
+                  "Entscheidungstexte": {
+                    "item": {
+                      "Geschaeftszahl": "V259/2025 (V259/2025-11)",
+                      "Dokumenttyp": "Text",
+                      "Gericht": "VfGH",
+                      "Entscheidungsdatum": "2026-06-16",
+                      "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260616_25V00259_00",
+                      "Dokumentnummer": "JFT_20260616_25V00259_00",
+                      "Entscheidungsart": "Erkenntnis"
+                    }
+                  }
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260616_25V00259_01/JFR_20260616_25V00259_01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260616_25V00259_01/JFR_20260616_25V00259_01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260616_25V00259_01/JFR_20260616_25V00259_01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260616_25V00259_01/JFR_20260616_25V00259_01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

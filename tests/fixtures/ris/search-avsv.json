@@ -1,0 +1,53 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "1204"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "AVSV_2026_0040",
+                "Applikation": "Avsv"
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Avsv&Dokumentnummer=AVSV_2026_0040"
+              },
+              "Sonstige": {
+                "Titel": "Verlautbarung der Österreichischen Gesundheitskasse betreffend die Höchstbeitragsgrundlage 2027",
+                "Kundmachungsdatum": "2026-07-02",
+                "Avsv": {
+                  "Avsvnummer": "40",
+                  "Urheber": "ÖGK",
+                  "Kurzinformation": "Anpassung der Höchstbeitragsgrundlage für das Kalenderjahr 2027."
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Avsv/AVSV_2026_0040/AVSV_2026_0040.pdf"
+                    },
+                    {
+                      "DataType": "Authentisch",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Avsv/AVSV_2026_0040/AVSV_2026_0040.pdfsig"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

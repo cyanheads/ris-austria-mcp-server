@@ -1,0 +1,78 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "42"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "BEGUT_COO_2026_0001",
+                "Applikation": "Begut",
+                "Einbringer": "BMF"
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Begut&Dokumentnummer=BEGUT_COO_2026_0001"
+              },
+              "Bundesrecht": {
+                "Titel": "Entwurf eines Bundesgesetzes, mit dem das Einkommensteuergesetz 1988 geändert wird",
+                "Kurztitel": "Einkommensteuergesetz-Novelle 2026",
+                "Begut": {
+                  "Abkuerzung": "EStG-Novelle 2026",
+                  "BeginnBegutachtungsfrist": "2026-06-01",
+                  "EndeBegutachtungsfrist": "2026-07-15",
+                  "EinbringendeStelle": "BMF",
+                  "Schlagworte": "Einkommensteuer, Novelle"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/BEGUT_COO_2026_0001.html"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/BEGUT_COO_2026_0001.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "BEGUT_COO_2026_0002",
+                "Applikation": "Begut",
+                "Einbringer": "BMJ"
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Begut&Dokumentnummer=BEGUT_COO_2026_0002"
+              },
+              "Bundesrecht": {
+                "Titel": "Entwurf eines Bundesgesetzes über die Änderung des Strafgesetzbuches",
+                "Begut": {
+                  "BeginnBegutachtungsfrist": "2026-06-10",
+                  "EndeBegutachtungsfrist": "2026-07-22"
+                }
+              }
+            },
+            "Dokumentliste": ""
+          }
+        }
+      ]
+    }
+  }
+}

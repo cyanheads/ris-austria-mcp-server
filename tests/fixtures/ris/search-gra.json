@@ -1,0 +1,55 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "9787"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "GEMREA_OB_41203_20260703_3",
+                "Applikation": "GrA",
+                "Organ": "Aurolzmünster",
+                "Einbringer": "Aurolzmünster",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=GemeinderechtAuth&Dokumentnummer=GEMREA_OB_41203_20260703_3"
+              },
+              "Gemeinden": {
+                "Kurztitel": "Hebesatzverordnung 2026",
+                "Titel": "Verordnung des Gemeinderates der Marktgemeinde Aurolzmünster betreffend die Gemeindeabgaben 2026 (Hebesatzverordnung).",
+                "Bundesland": "Oberösterreich",
+                "Typ": "Verordnung",
+                "GrA": {
+                  "Bezirk": "Ried",
+                  "KundmachungsorganNr": "VBl. Nr. 3/2026",
+                  "Kundmachungsdatum": "2026-07-03"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": {
+                    "DataType": "Authentisch",
+                    "Url": "https://www.ris.bka.gv.at/Dokumente/GemeinderechtAuth/GEMREA_OB_41203_20260703_3/GEMREA_OB_41203_20260703_3.pdf"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

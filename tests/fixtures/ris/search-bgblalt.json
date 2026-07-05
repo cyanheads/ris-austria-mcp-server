@@ -1,0 +1,75 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "28547"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "glo1940_0049_00357",
+                "Applikation": "BgblAlt",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=BgblAlt&Dokumentnummer=glo1940_0049_00357"
+              },
+              "Bundesrecht": {
+                "Titel": "Kundmachung des Reichskommissars für die Wiedervereinigung Österreichs mit dem Deutschen Reich, wodurch die Verordnung über die technische Überwachung der Dampfkessel und der sonstigen überwachungspflichtigen Anlagen in der Ostmark vom 19. März 1940 bekanntgemacht wird.",
+                "BgblAlt": {
+                  "Fundstelle": "49/1940",
+                  "Kundmachungsorgan": "Gesetzblatt für das Land Österreich",
+                  "Typ": "Kundmachung",
+                  "Stueck": "25",
+                  "Kundmachungsdatum": "1940-03-31",
+                  "Anfangsseite": "357",
+                  "AlexUrl": "http://alex.onb.ac.at/cgi-content/alex?aid=glo&datum=19400004&seite=00000357"
+                }
+              }
+            },
+            "Dokumentliste": ""
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "glo1940_0048_00347",
+                "Applikation": "BgblAlt",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=BgblAlt&Dokumentnummer=glo1940_0048_00347"
+              },
+              "Bundesrecht": {
+                "Titel": "Kundmachung des Reichskommissars für die Wiedervereinigung Österreichs mit dem Deutschen Reich, wodurch die Verordnung über die Einführung des Handwerksrechts in der Ostmark vom 24. Februar 1940 bekanntgemacht wird.",
+                "BgblAlt": {
+                  "Fundstelle": "48/1940",
+                  "Kundmachungsorgan": "Gesetzblatt für das Land Österreich",
+                  "Typ": "Kundmachung",
+                  "Stueck": "25",
+                  "Kundmachungsdatum": "1940-03-31",
+                  "Anfangsseite": "347",
+                  "AlexUrl": "http://alex.onb.ac.at/cgi-content/alex?aid=glo&datum=19400004&seite=00000347"
+                }
+              }
+            },
+            "Dokumentliste": ""
+          }
+        }
+      ]
+    }
+  }
+}

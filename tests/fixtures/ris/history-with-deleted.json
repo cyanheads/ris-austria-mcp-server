@@ -1,0 +1,188 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "100",
+        "#text": "101"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "NOR40278538",
+                "Applikation": "BrKons",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "ImportTimestamp": "2026-06-17T15:50:17"
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2026-06-17",
+                "Geaendert": "2026-06-17",
+                "DokumentUrl": "https://www.ris.bka.gv.at/eli/bgbl/ii/2016/442/P7/NOR40278538"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "Grundausbildungsverordnung BMLV – M BUO 2017",
+                "Eli": "https://ris.bka.gv.at/eli/bgbl/ii/2016/442/P7/NOR40278538",
+                "BrKons": {
+                  "Kundmachungsorgan": "BGBl. II Nr. 442/2016 zuletzt geändert durch BGBl. II Nr. 140/2026 ",
+                  "Typ": "V",
+                  "Dokumenttyp": "Paragraph",
+                  "ArtikelParagraphAnlage": "§ 7",
+                  "Paragraphnummer": "7",
+                  "StammnormPublikationsorgan": "BGBl. II Nr.",
+                  "StammnormBgblnummer": "442/2016",
+                  "NovellenPublikationsorgan": "BGBl. II Nr.",
+                  "NovellenBgblnummer": "140/2026",
+                  "NovellenBeziehung": "zuletzt geändert durch",
+                  "Inkrafttretensdatum": "2026-06-17",
+                  "Indizes": {
+                    "item": "63/01 Beamten-Dienstrechtsgesetz 1979"
+                  },
+                  "Aenderung": "",
+                  "Schlagworte": "Inkrafttreten",
+                  "Gesetzesnummer": "20009768",
+                  "GesamteRechtsvorschriftUrl": "https://www.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=Bundesnormen&Gesetzesnummer=20009768"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40278538/NOR40278538.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40278538/NOR40278538.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40278538/NOR40278538.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40278538/NOR40278538.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "NOR40234331",
+                "Applikation": "BrKons",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "ImportTimestamp": "2026-06-17T15:49:17"
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2021-05-26",
+                "Geaendert": "2026-06-17",
+                "DokumentUrl": "https://www.ris.bka.gv.at/eli/bgbl/ii/2016/442/P7/NOR40234331"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "Grundausbildungsverordnung BMLV – M BUO 2017",
+                "Eli": "https://ris.bka.gv.at/eli/bgbl/ii/2016/442/P7/NOR40234331",
+                "BrKons": {
+                  "Kundmachungsorgan": "BGBl. II Nr. 442/2016 zuletzt geändert durch BGBl. II Nr. 232/2021 ",
+                  "Typ": "V",
+                  "Dokumenttyp": "Paragraph",
+                  "ArtikelParagraphAnlage": "§ 7",
+                  "Paragraphnummer": "7",
+                  "StammnormPublikationsorgan": "BGBl. II Nr.",
+                  "StammnormBgblnummer": "442/2016",
+                  "NovellenPublikationsorgan": "BGBl. II Nr.",
+                  "NovellenBgblnummer": "232/2021",
+                  "NovellenBeziehung": "zuletzt geändert durch",
+                  "Inkrafttretensdatum": "2021-05-26",
+                  "Ausserkrafttretensdatum": "2026-06-16",
+                  "Indizes": {
+                    "item": "63/01 Beamten-Dienstrechtsgesetz 1979"
+                  },
+                  "Aenderung": "",
+                  "Schlagworte": "Inkrafttreten",
+                  "Gesetzesnummer": "20009768",
+                  "GesamteRechtsvorschriftUrl": "https://www.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=Bundesnormen&Gesetzesnummer=20009768"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40234331/NOR40234331.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40234331/NOR40234331.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40234331/NOR40234331.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40234331/NOR40234331.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Deleted": {
+            "ID": "NOR30003318",
+            "Applikation": "Bundesnormen",
+            "Organ": "BKA",
+            "ImportTimestamp": "2026-06-17T14:46:31"
+          }
+        },
+        {
+          "Deleted": {
+            "ID": "NOR30002262",
+            "Applikation": "Bundesnormen",
+            "Organ": "BKA",
+            "ImportTimestamp": "2026-06-15T15:14:50"
+          }
+        },
+        {
+          "Deleted": {
+            "ID": "NOR40032409",
+            "Applikation": "Bundesnormen",
+            "Organ": "BKA",
+            "ImportTimestamp": "2026-06-15T15:14:50"
+          }
+        },
+        {
+          "Deleted": {
+            "ID": "NOR11002699",
+            "Applikation": "Bundesnormen",
+            "Organ": "BKA",
+            "ImportTimestamp": "2026-06-15T15:11:47"
+          }
+        },
+        {
+          "Deleted": {
+            "ID": "NOR12033643",
+            "Applikation": "Bundesnormen",
+            "Organ": "BKA",
+            "ImportTimestamp": "2026-06-15T15:11:47"
+          }
+        }
+      ]
+    }
+  }
+}

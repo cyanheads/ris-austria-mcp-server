@@ -1,0 +1,222 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "439471"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "NOR11013238",
+                "Applikation": "BrKons",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2025-10-28",
+                "DokumentUrl": "https://www.ris.bka.gv.at/eli/bgbl/ii/1998/130/P0/NOR11013238"
+              },
+              "Bundesrecht": {
+                "Kurztitel": " Auflassung eines für den Durchzugsverkehr entbehrlich gewordenen Abschnittes der B 65 Gleisdorfer Straße im Bereich der Gemeinde Ludersdorf-Wilfersdorf",
+                "Titel": "Verordnung des Bundesministers für wirtschaftliche Angelegenheiten betreffend die Auflassung eines für den Durchzugsverkehr entbehrlich gewordenen Abschnittes der B 65 Gleisdorfer Straße im Bereich der Gemeinde Ludersdorf-Wilfersdorf<br/>StF: BGBl. II Nr. 130/1998<br/>",
+                "Eli": "https://ris.bka.gv.at/eli/bgbl/ii/1998/130/P0/NOR11013238",
+                "BrKons": {
+                  "Kundmachungsorgan": "BGBl. II Nr. 130/1998 aufgehoben durch BGBl. I Nr. 61/2018 ",
+                  "Typ": "V",
+                  "Dokumenttyp": "Norm",
+                  "ArtikelParagraphAnlage": "§ 0",
+                  "Paragraphnummer": "0",
+                  "StammnormPublikationsorgan": "BGBl. II Nr.",
+                  "StammnormBgblnummer": "130/1998",
+                  "NovellenPublikationsorgan": "BGBl. I Nr.",
+                  "NovellenBgblnummer": "61/2018",
+                  "NovellenBeziehung": "aufgehoben durch",
+                  "Inkrafttretensdatum": "1998-04-24",
+                  "Ausserkrafttretensdatum": "2018-12-31",
+                  "Indizes": {
+                    "item": "96/01 Bundesstraßengesetz 1971"
+                  },
+                  "Aenderung": "BGBl. I Nr. 61/2018 (NR: GP XXVI RV 192 AB 225 S. 34. BR: AB 10012 S. 882.)",
+                  "Schlagworte": "BGBl. Nr. 286/1971, Zweites Bundesrechtsbereinigungsgesetz – 2. BRBG (BGBl. I Nr. 61/2018)<br/><br/><br/>",
+                  "Gesetzesnummer": "10012838",
+                  "AlteDokumentnummer": "N9199813323I",
+                  "GesamteRechtsvorschriftUrl": "https://www.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=Bundesnormen&Gesetzesnummer=10012838"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR11013238/NOR11013238.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR11013238/NOR11013238.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR11013238/NOR11013238.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR11013238/NOR11013238.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "NOR12158924",
+                "Applikation": "BrKons",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2025-10-28",
+                "DokumentUrl": "https://www.ris.bka.gv.at/eli/bgbl/ii/1998/130/A1/NOR12158924"
+              },
+              "Bundesrecht": {
+                "Kurztitel": " Auflassung eines für den Durchzugsverkehr entbehrlich gewordenen Abschnittes der B 65 Gleisdorfer Straße im Bereich der Gemeinde Ludersdorf-Wilfersdorf",
+                "Eli": "https://ris.bka.gv.at/eli/bgbl/ii/1998/130/A1/NOR12158924",
+                "BrKons": {
+                  "Kundmachungsorgan": "BGBl. II Nr. 130/1998 aufgehoben durch BGBl. I Nr. 61/2018 ",
+                  "Typ": "V",
+                  "Dokumenttyp": "Paragraph",
+                  "ArtikelParagraphAnlage": "Art. 1",
+                  "Artikelnummer": "1",
+                  "StammnormPublikationsorgan": "BGBl. II Nr.",
+                  "StammnormBgblnummer": "130/1998",
+                  "NovellenPublikationsorgan": "BGBl. I Nr.",
+                  "NovellenBgblnummer": "61/2018",
+                  "NovellenBeziehung": "aufgehoben durch",
+                  "Inkrafttretensdatum": "1998-04-24",
+                  "Ausserkrafttretensdatum": "2018-12-31",
+                  "Indizes": {
+                    "item": "96/01 Bundesstraßengesetz 1971"
+                  },
+                  "Aenderung": "",
+                  "Gesetzesnummer": "10012838",
+                  "AlteDokumentnummer": "N9199813324I",
+                  "GesamteRechtsvorschriftUrl": "https://www.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=Bundesnormen&Gesetzesnummer=10012838"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12158924/NOR12158924.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12158924/NOR12158924.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12158924/NOR12158924.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12158924/NOR12158924.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "NOR40148597",
+                "Applikation": "BrKons",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2013-03-06",
+                "Geaendert": "2014-05-19",
+                "DokumentUrl": "https://www.ris.bka.gv.at/eli/bgbl/iii/2013/62/P0/NOR40148597"
+              },
+              "Bundesrecht": {
+                "Kurztitel": " Gegenseitige Vertretung im Verfahren der Visaerteilung in Nikosia und Skopje (Schweiz)",
+                "Titel": "Vereinbarung zwischen dem Bundesministerium für europäische und internationale Angelegenheiten der Republik Österreich und dem Eidgenössischen Departement für auswärtige Angelegenheiten der Schweizerischen Eidgenossenschaft über die Durchführung des Abkommens zwischen der Österreichischen Bundesregierung und dem Schweizerischen Bundesrat über die Vertretung der Schweiz im Verfahren der Visaerteilung in Nikosia und Skopje<br/>StF: BGBl. III Nr. 62/2013",
+                "Eli": "https://www.ris.bka.gv.at/eli/bgbl/iii/2013/62/P0/NOR40148597",
+                "BrKons": {
+                  "Kundmachungsorgan": "BGBl. III Nr. 62/2013",
+                  "Typ": "Vertrag – Schweiz",
+                  "Dokumenttyp": "Norm",
+                  "ArtikelParagraphAnlage": "§ 0",
+                  "Paragraphnummer": "0",
+                  "StammnormPublikationsorgan": "BGBl. III Nr.",
+                  "StammnormBgblnummer": "62/2013",
+                  "Inkrafttretensdatum": "2013-02-06",
+                  "Indizes": {
+                    "item": "49/05 Reisedokumente, Sichtvermerke"
+                  },
+                  "Aenderung": "",
+                  "Gesetzesnummer": "20008302",
+                  "GesamteRechtsvorschriftUrl": "https://www.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=Bundesnormen&Gesetzesnummer=20008302"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40148597/NOR40148597.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40148597/NOR40148597.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40148597/NOR40148597.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40148597/NOR40148597.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

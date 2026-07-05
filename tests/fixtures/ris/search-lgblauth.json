@@ -1,0 +1,147 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "11839"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "LGBLA_SA_20260703_62",
+                "Applikation": "LgblAuth",
+                "Organ": "LReg Salzburg",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/eli/lgbl/SA/2026/62/20260703"
+              },
+              "Landesrecht": {
+                "Kurztitel": "Verordnung des Gemeinderates der Landeshauptstadt Salzburg; Teilaufhebung durch den Verfassungsgerichtshof",
+                "Titel": "Kundmachung der Salzburger Landesregierung vom 2. Juli 2026 über die Aufhebung von Teilen einer Verordnung des Gemeinderates der Landeshauptstadt Salzburg vom 18. Juli 2013, Z 05/04/56482/2010/010, betreffend ein Halte- und Parkverbot (Ladezone) in der Haydnstrasse durch den Verfassungsgerichtshof",
+                "Kundmachungsdatum": "2026-07-03",
+                "Bundesland": "Salzburg",
+                "LgblAuth": {
+                  "Lgblnummer": "LGBl. Nr. 62/2026",
+                  "Typ": "Kundmachung",
+                  "EuropeanLegislationIdentifier": "https://www.ris.bka.gv.at/eli/lgbl/SA/2026/62/20260703"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_SA_20260703_62/LGBLA_SA_20260703_62.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_SA_20260703_62/LGBLA_SA_20260703_62.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_SA_20260703_62/LGBLA_SA_20260703_62.rtf"
+                      },
+                      {
+                        "DataType": "Authentisch",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_SA_20260703_62/LGBLA_SA_20260703_62.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Landesgesetzblatt Salzburg",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Jpg",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_SA_20260703_62/image001.jpg"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "LGBLA_ST_20260703_60",
+                "Applikation": "LgblAuth",
+                "Organ": "LReg Steiermark",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/eli/lgbl/ST/2026/60/20260703"
+              },
+              "Landesrecht": {
+                "Kurztitel": "Aufhebung von Teilen einer Verordnung des Gemeinderates der Stadtgemeinde Schladming durch den Verfassungsgerichtshof",
+                "Titel": "Kundmachung der Steiermärkischen Landesregierung vom 2. Juli 2026 über die Aufhebung von Teilen einer Verordnung des Gemeinderates der Stadtgemeinde Schladming durch den Verfassungsgerichtshof",
+                "Kundmachungsdatum": "2026-07-03",
+                "Bundesland": "Steiermark",
+                "LgblAuth": {
+                  "Lgblnummer": "LGBl. Nr. 60/2026",
+                  "Typ": "Kundmachung",
+                  "EuropeanLegislationIdentifier": "https://www.ris.bka.gv.at/eli/lgbl/ST/2026/60/20260703"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_ST_20260703_60/LGBLA_ST_20260703_60.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_ST_20260703_60/LGBLA_ST_20260703_60.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_ST_20260703_60/LGBLA_ST_20260703_60.rtf"
+                      },
+                      {
+                        "DataType": "Authentisch",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_ST_20260703_60/LGBLA_ST_20260703_60.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Landesgesetzblatt Steiermark",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Jpg",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_ST_20260703_60/image001.jpg"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
