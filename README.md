@@ -19,7 +19,7 @@
 
 ---
 
-> **Status:** pre-release. The tool surface below is the settled v1 design ([`docs/design.md`](./docs/design.md)); implementation is in progress and the package is not yet published.
+> **Status:** pre-release. The tool surface below is the settled v1 design ([`docs/design.md`](./docs/design.md)); the implementation is complete and tested, and the package is not yet published to npm.
 
 [RIS](https://www.ris.bka.gv.at/) (Rechtsinformationssystem des Bundes) is the Austrian government's official legal database: consolidated federal, state, and municipal law, case law across every Austrian court and tribunal, the authentic gazettes at every level of government (whose promulgated text is binding under Austrian law), the pre-parliamentary lawmaking pipeline, and ministerial decrees. This server wraps the keyless RIS OGD REST API (v2.6, CC BY 4.0) for MCP agents — the **entire** OGD application surface, back to the Reichsgesetzblatt of 1848. It labels every document's binding status and never presents non-authentic text as the authentic wording.
 
@@ -60,7 +60,7 @@ Search decisions and headnotes across Austria's courts and tribunals — 17 appl
 - Filter by cited provision (`norm` — "DSG §1", "DSGVO Art32"), exact case number (`case_number`, Geschäftszahl), decision date range, decision kind (Erkenntnis/Beschluss/…), and full-text query
 - `decision_type` targets headnotes (Rechtssätze), full decision texts, or both
 - Court-conditional filters: `issuing_body` (dsk/dok/pvak/verg), `court_name`, `legal_area`, `subject_area` (justiz — "Datenschutzrecht", "Insolvenzrecht"), `state` (lvwg/uvs), `collection_number` (VfSlg/VwSlg cites), `party` (upts), commission/senate/discrimination ground (gbk), media statute (bks)
-- Output per decision: case numbers, decision date, ECLI, cited norms, keywords, and headnote/decision URLs
+- Output per decision: case numbers, decision date, ECLI, cited norms, keywords, the guiding principle (Leitsatz) on headnote documents, and headnote/decision URLs
 
 ---
 
@@ -73,7 +73,7 @@ Browse the promulgation record at every level of government — what `ris_lookup
 - Filter by publication date range, gazette `part` (BGBl. I/II/III, or `pre_1997` for the partless era), document `type`, issuing ministry, district authority, or municipality
 - State scopes serve the authentic Landesgesetzblätter by default; `series: ordinance_gazette` switches to the Verordnungsblätter, `include_non_authentic` adds the historical non-authentic gazettes
 - Point lookup by gazette number ("BGBl. II Nr. 171/2026" or "171/2026")
-- Every record carries a binding label (`authentic` vs `historical_record`) and the amtssigniert PDF URL when present
+- Every record carries a binding label (`authentic`, `historical_record`, or `consolidated_informational`) and the amtssigniert PDF URL when present; the metadata-only 1848–1940 gazettes link to their ÖNB ALEX scan
 
 ---
 
@@ -94,7 +94,7 @@ Sectoral official gazettes and executive documents — seven collections, five o
 
 - `collection`: `social_insurance` (Avsv), `veterinary` (Avn), `court_rules` (KmGer), `trade_exam_rules` (PruefGewO), `health_structure_plans` (Spg — ÖSG/RSG), `ministerial_decrees` (Erlässe), `council_minutes` (Ministerratsprotokolle)
 - Collection-aware filters: issue numbers, issuers (insurance carriers, ministries), cited norm ("decrees citing the DSG"), in-force date for the consolidated collections, plan type/state for health plans, session number/legislature for council minutes
-- Binding labels per collection: `authentic`, `administrative_directive` (decrees bind the administration, not citizens), or `record`
+- Binding labels per collection: `authentic`, `administrative_directive` (decrees bind the administration, not citizens), or `preparatory` (council minutes)
 
 ---
 
@@ -150,7 +150,7 @@ Built on [`@cyanheads/mcp-ts-core`](https://www.npmjs.com/package/@cyanheads/mcp
 
 RIS-specific:
 
-- **The full RIS OGD surface** — all ~35 applications across every controller: consolidated law (federal/state/municipal), authentic gazettes at four levels of government, three federal gazette era tiers back to 1848, 17 court/tribunal applications, the lawmaking pipeline, sectoral gazettes, ministerial decrees, English translations, and the per-application change feed
+- **The full RIS OGD surface** — all 39 applications across every controller: consolidated law (federal/state/municipal), authentic gazettes at four levels of government, three federal gazette era tiers back to 1848, 17 court/tribunal applications, the lawmaking pipeline, sectoral gazettes, ministerial decrees, English translations, and the per-application change feed
 - Strict parameter allowlist — RIS silently ignores unknown query params (a typo returns plausible but unfiltered results), so only live-confirmed spellings are ever sent upstream
 - Normalizer for RIS's JSON-serialized-XML envelope: object-or-array coercion, in-band error detection, six per-controller metadata classes, `<br/>` cleanup, CELEX reference parsing, ministry-abbreviation expansion
 - English tool surface over RIS's German API — Austrian legal terms (Geschäftszahl, Rechtssatz, Bundesgesetzblatt) kept as domain vocabulary and glossed in descriptions

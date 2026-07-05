@@ -1,6 +1,6 @@
 # ris-austria-mcp-server - Directory Structure
 
-Generated on: 2026-07-05 11:52:15
+Generated on: 2026-07-05 20:09:31
 
 ```text
 ris-austria-mcp-server/
@@ -124,26 +124,87 @@ ris-austria-mcp-server/
 │   └── tool-defs-analysis/
 │       └── SKILL.md
 ├── src/
+│   ├── config/
+│   │   └── server-config.ts
 │   ├── mcp-server/
-│   │   ├── prompts/
-│   │   │   └── definitions/
-│   │   │       └── echo.prompt.ts
 │   │   ├── resources/
 │   │   │   └── definitions/
-│   │   │       ├── echo-app-ui.app-resource.ts
-│   │   │       └── echo.resource.ts
+│   │   │       └── ris-document.resource.ts
 │   │   └── tools/
 │   │       └── definitions/
-│   │           ├── echo-app.app-tool.ts
-│   │           └── echo.tool.ts
+│   │           ├── _shared.ts
+│   │           ├── ris-get-document.tool.ts
+│   │           ├── ris-list-reference.tool.ts
+│   │           ├── ris-lookup-citation.tool.ts
+│   │           ├── ris-search-announcements.tool.ts
+│   │           ├── ris-search-case-law.tool.ts
+│   │           ├── ris-search-drafts.tool.ts
+│   │           ├── ris-search-gazette.tool.ts
+│   │           ├── ris-search-legislation.tool.ts
+│   │           └── ris-track-changes.tool.ts
+│   ├── services/
+│   │   └── ris/
+│   │       ├── reference/
+│   │       │   ├── applications.ts
+│   │       │   ├── changed-since-intervals.ts
+│   │       │   ├── citation-formats.ts
+│   │       │   ├── collections.ts
+│   │       │   ├── courts.ts
+│   │       │   ├── decision-kinds.ts
+│   │       │   ├── decision-types.ts
+│   │       │   ├── district-authorities.ts
+│   │       │   ├── gazette-parts.ts
+│   │       │   ├── index.ts
+│   │       │   ├── issuing-bodies.ts
+│   │       │   ├── justiz-subject-areas.ts
+│   │       │   ├── law-types.ts
+│   │       │   ├── ministries.ts
+│   │       │   ├── search-syntax.ts
+│   │       │   ├── section-types.ts
+│   │       │   ├── stages.ts
+│   │       │   └── states.ts
+│   │       ├── normalizer.ts
+│   │       ├── request-builder.ts
+│   │       ├── ris-service.ts
+│   │       └── types.ts
 │   └── index.ts
 ├── tests/
-│   ├── prompts/
-│   │   └── echo.prompt.test.ts
+│   ├── fixtures/
+│   │   └── ris/
+│   │       ├── error-client.json
+│   │       ├── error-server-500.json
+│   │       ├── history-with-deleted.json
+│   │       ├── search-avsv.json
+│   │       ├── search-begut.json
+│   │       ├── search-bgblalt.json
+│   │       ├── search-brkons-celex.json
+│   │       ├── search-brkons-multi.json
+│   │       ├── search-bvb.json
+│   │       ├── search-gra.json
+│   │       ├── search-gz-array.json
+│   │       ├── search-lgblauth.json
+│   │       ├── search-mrp.json
+│   │       ├── search-regv.json
+│   │       ├── search-upts-single.json
+│   │       ├── search-vfgh.json
+│   │       └── search-zero-hits.json
 │   ├── resources/
-│   │   └── echo.resource.test.ts
+│   │   └── ris-document.resource.test.ts
+│   ├── services/
+│   │   └── ris/
+│   │       ├── normalizer.test.ts
+│   │       ├── request-builder.test.ts
+│   │       └── ris-service.test.ts
 │   └── tools/
-│       └── echo.tool.test.ts
+│       ├── ris-get-document.tool.test.ts
+│       ├── ris-list-reference.tool.test.ts
+│       ├── ris-lookup-citation.tool.test.ts
+│       ├── ris-search-announcements.tool.test.ts
+│       ├── ris-search-case-law.tool.test.ts
+│       ├── ris-search-drafts.tool.test.ts
+│       ├── ris-search-gazette.tool.test.ts
+│       ├── ris-search-legislation.tool.test.ts
+│       └── ris-track-changes.tool.test.ts
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
