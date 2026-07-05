@@ -21,18 +21,18 @@
 
 > **Status:** pre-release. The tool surface below is the settled v1 design ([`docs/design.md`](./docs/design.md)); implementation is in progress and the package is not yet published.
 
-[RIS](https://www.ris.bka.gv.at/) (Rechtsinformationssystem des Bundes) is the Austrian government's official legal database: consolidated federal and state law, case law across every Austrian court and tribunal, and the authentic — legally binding — Bundesgesetzblatt. This server wraps the keyless RIS OGD REST API (v2.6, CC BY 4.0) for MCP agents.
+[RIS](https://www.ris.bka.gv.at/) (Rechtsinformationssystem des Bundes) is the Austrian government's official legal database: consolidated federal and state law, case law across every Austrian court and tribunal, and the authentic Bundesgesetzblatt, whose promulgated text is binding under Austrian law. This server wraps the keyless RIS OGD REST API (v2.6, CC BY 4.0) for MCP agents; it labels every document's binding status and never presents consolidated text as the authentic wording.
 
 ## Tools
 
-Six tools split by document class — consolidated law, case law, and the authentic gazette record — plus a deterministic citation resolver, document retrieval, and an offline vocabulary reference:
+Six tools split by document class (consolidated law, case law, and the authentic gazette record), plus a deterministic citation resolver, document retrieval, and an offline vocabulary reference:
 
 | Tool | Description |
 |:---|:---|
 | `ris_search_legislation` | Search consolidated federal and state law — one document per §/Artikel/Anlage — filtered to the version in force on a given date (defaults to today). |
 | `ris_search_case_law` | Search Austrian case law (Judikatur) in one court or tribunal per call — VfGH, VwGH, ordinary courts, BVwG, LVwG, DSB, and ten more. |
 | `ris_search_gazette` | Browse authentic promulgations (Bundesgesetzblatt / Landesgesetzblätter) by date range, part, type, or issuer — the compliance-monitoring surface. |
-| `ris_lookup_citation` | Resolve one Austrian legal citation — "§ 6 DSG", "BGBl. I Nr. 165/1999", a Geschäftszahl — deterministically to its canonical document. |
+| `ris_lookup_citation` | Resolve one Austrian legal citation ("§ 6 DSG", "BGBl. I Nr. 165/1999", a Geschäftszahl) deterministically to its canonical document. |
 | `ris_get_document` | Fetch one document's full text as markdown/HTML/XML, or its export URLs, with binding-status labeling and the authentic PDF for gazette documents. |
 | `ris_list_reference` | Ground the domain vocabulary offline — applications and coverage windows, court codes, Bundesländer, decision types, gazette parts, citation formats, search syntax. |
 
@@ -125,6 +125,10 @@ Agent-friendly output:
 - Structured no-resolve results (`found: false` + guidance) instead of throws on citation lookup
 - Upstream schema-validation messages passed through — RIS enumerates valid values, which lets agents self-correct
 - Explicit truncation flags with export URLs, never silent cuts
+
+## Localization
+
+Tool and parameter descriptions are English-only today. German (`de-AT`) descriptions are planned, pending opt-in localization support in the framework ([cyanheads/mcp-ts-core#259](https://github.com/cyanheads/mcp-ts-core/issues/259)); the English surface stays the default and fallback.
 
 ## Getting started
 
