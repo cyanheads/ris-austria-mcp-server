@@ -5,19 +5,34 @@
  */
 
 import { createApp } from '@cyanheads/mcp-ts-core';
-import { echoPrompt } from './mcp-server/prompts/definitions/echo.prompt.js';
-import { echoResource } from './mcp-server/resources/definitions/echo.resource.js';
-import { echoAppUiResource } from './mcp-server/resources/definitions/echo-app-ui.app-resource.js';
-import { echoTool } from './mcp-server/tools/definitions/echo.tool.js';
-import { echoAppTool } from './mcp-server/tools/definitions/echo-app.app-tool.js';
+import { risDocumentResource } from './mcp-server/resources/definitions/ris-document.resource.js';
+import { risGetDocument } from './mcp-server/tools/definitions/ris-get-document.tool.js';
+import { risListReference } from './mcp-server/tools/definitions/ris-list-reference.tool.js';
+import { risLookupCitation } from './mcp-server/tools/definitions/ris-lookup-citation.tool.js';
+import { risSearchAnnouncements } from './mcp-server/tools/definitions/ris-search-announcements.tool.js';
+import { risSearchCaseLaw } from './mcp-server/tools/definitions/ris-search-case-law.tool.js';
+import { risSearchDrafts } from './mcp-server/tools/definitions/ris-search-drafts.tool.js';
+import { risSearchGazette } from './mcp-server/tools/definitions/ris-search-gazette.tool.js';
+import { risSearchLegislation } from './mcp-server/tools/definitions/ris-search-legislation.tool.js';
+import { risTrackChanges } from './mcp-server/tools/definitions/ris-track-changes.tool.js';
+import { initRisService } from './services/ris/ris-service.js';
 
 await createApp({
   name: 'ris-austria-mcp-server',
   title: 'ris-austria-mcp-server',
-  tools: [echoTool, echoAppTool],
-  resources: [echoResource, echoAppUiResource],
-  prompts: [echoPrompt],
-  // instructions: 'Server-level orientation forwarded to the model on every initialize.\n' +
-  //   '- Use shortcut `X` for the most common case\n' +
-  //   '- Tools require auth via the `inventory:read` scope',
+  tools: [
+    risSearchLegislation,
+    risSearchCaseLaw,
+    risSearchGazette,
+    risSearchDrafts,
+    risSearchAnnouncements,
+    risLookupCitation,
+    risGetDocument,
+    risTrackChanges,
+    risListReference,
+  ],
+  resources: [risDocumentResource],
+  setup(core) {
+    initRisService(core.config);
+  },
 });
