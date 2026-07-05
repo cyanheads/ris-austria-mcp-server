@@ -83,7 +83,22 @@ One tool spans federal (BrKons) and state (LrKons) consolidated law — the filt
 
 **Output** (per record): `document_number` (Technisch.ID, e.g. NOR40262691), `application`, `short_title`, `title` (cleaned of `<br/>` markup), `abbreviation`, `section_label` (ArtikelParagraphAnlage), `law_id` + `law_url` (GesamteRechtsvorschriftUrl), `in_force_from` (Inkrafttretensdatum), `promulgation` (Kundmachungsorgan), `type` (BG/V/K…), `index`, `eli`, `celex_references` (parsed from Titel/Aenderung `[CELEX-Nr.: …]` markers — the EU-transposition hook), `content_urls` {xml, html, pdf, rtf}. Enrichment: total hits, page info, truncation, and an **echo of the applied `in_force_as_of`** (the server defaults it; the agent must see what was applied).
 
-**Errors:** `invalid_query` (InvalidParams — upstream schema-validation `Error type="Client"`, message passed through since RIS enumerates valid values), `upstream_error` (ServiceUnavailable, retryable). Zero hits = success + notice (suggest dropping filters / no leading wildcards / historical versions).
+**Errors** (typed contract — shared conventions in Design Decisions › *No dead ends*):
+
+| reason | code | when | recovery |
+|:---|:---|:---|:---|
+| `invalid_query` | ValidationError | RIS rejected a parameter value (in-band `Error @type="Client"` — message passed through verbatim; it enumerates valid elements/values) | "Correct the parameter RIS names in the message. Ground valid codes with ris_list_reference (topic: states, section_types, changed_since_intervals, or search_syntax)." |
+| `upstream_error` | ServiceUnavailable (retryable) | RIS unreachable, 5xx, in-band `@type="Server"`, or HTML error page | "RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the query." |
+
+**Zero hits = success + enrichment notice**, composed from the applicable fragments:
+
+| Condition | Notice fragment |
+|:---|:---|
+| always | "0 documents matched." |
+| `in_force_as_of` applied (i.e. not `include_all_versions`) | "Only versions in force on {date} were searched — a repealed or not-yet-enacted provision returns nothing. Set include_all_versions: true to search all historical versions." |
+| `query` set | "query wildcards are trailing-only ('Datenschutz*', never '*schutz'); boolean operators UND/ODER/NICHT or AND/OR/NOT. Syntax reference: ris_list_reference topic search_syntax." |
+| `title` set | "title matches title, short title, and abbreviation — try the official abbreviation ('DSG') with a trailing *." |
+| looks like a citation (§/BGBl/GZ shape in `query` or `title`) | "For a specific citation, ris_lookup_citation resolves it deterministically instead of keyword search." |
 
 ### ris_search_case_law
 
@@ -104,7 +119,22 @@ One Judikatur application per call — upstream requires it, and merged cross-co
 
 **Output** (per record): `document_number` (e.g. DSBT_20251114_…, JFT_…, JJT_…), `court` (application), `organ` (Technisch.Organ — issuing body name), `case_numbers` (Geschaeftszahl — normalize to array; upstream is object-or-array), `decision_date`, `decision_type` (Rechtssatz \| Text), `summary` (Kurzinformation), `norms_cited` (array), `keywords` (Schlagworte), `ecli` (EuropeanCaseLawIdentifier), `decision_url` (GesamteEntscheidungUrl), `headnotes_url` (RechtssaetzeUrl), `content_urls`, `legal_force_note` (Anfechtung, where present). Enrichment: totals/paging.
 
-**Errors:** same contract as legislation. Conditional-param misuse (e.g. `issuing_body` with `court: vfgh`) → `invalid_query` thrown locally before any upstream call, message naming the valid pairing.
+**Errors** (typed contract):
+
+| reason | code | when | recovery |
+|:---|:---|:---|:---|
+| `court_filter_mismatch` | ValidationError | A court-conditional filter was sent with the wrong `court` — thrown **locally, before any upstream call**; message names the actual offending pair (e.g. "issuing_body applies only to court 'dsk', got 'vfgh'") | "Drop the filter or switch court: issuing_body → dsk, court_name → justiz, state → lvwg. Court codes: ris_list_reference topic courts." |
+| `invalid_query` | ValidationError | as legislation (RIS Client-error passthrough) | "Correct the parameter RIS names in the message. Valid court codes, decision types, and syntax: ris_list_reference (topic: courts, decision_types, or search_syntax)." |
+| `upstream_error` | ServiceUnavailable (retryable) | as legislation | as legislation |
+
+**Zero hits = success + enrichment notice**, composed from the applicable fragments:
+
+| Condition | Notice fragment |
+|:---|:---|
+| always | "0 decisions in {court}. Other courts are separate calls — repeat per court." |
+| `case_number` set | "Geschäftszahl formats differ per court ('Ra 2019/22/0184' = VwGH, 'G 287/2022' = VfGH, '6Ob56/25k' = OGH/justiz) — ris_lookup_citation auto-detects the court from the format; examples per court: ris_list_reference topic courts." |
+| `norm` set | "norm must match RIS's cited-norm format ('DSG §1', 'DSGVO Art32' style as returned in norms_cited) — run a broader search first and copy the exact string from a result's norms_cited." |
+| `decided_from/to` set and range predates the court's coverage window | "{court} coverage starts {year} — earlier decisions are not in RIS. Windows: ris_list_reference topic courts." |
 
 ### ris_search_gazette
 
@@ -123,19 +153,46 @@ Date-range/issuer browse of the *binding* promulgation record — the monitoring
 
 **Output** (per record): `document_number` (BGBLA_2026_II_171), `gazette_number` (Bgblnummer), `part` (Teil), `type` (Typ: Gesetz/Verordnung/…), `published` (Ausgabedatum), `issuer` (Einbringer/Organ), `title`, `short_title`, `eli`, `binding: "authentic"`, `authentic_pdf_url` (the `Authentisch` DataType — amtssigniert .pdfsig ✓), `content_urls`. Enrichment: totals/paging + which application served the query (BgblAuth vs BgblAlt).
 
+**Errors** (typed contract):
+
+| reason | code | when | recovery |
+|:---|:---|:---|:---|
+| `scope_filter_mismatch` | ValidationError | `part` sent with a Bundesland `scope` — thrown locally; Landesgesetzblätter have no parts | "part (I/II/III) applies only to scope: federal — drop it for state gazettes. Part semantics: ris_list_reference topic gazette_parts." |
+| `invalid_query` | ValidationError | as legislation (RIS Client-error passthrough) | "Correct the parameter RIS names in the message. Part and type semantics: ris_list_reference topic gazette_parts or law_types." |
+| `upstream_error` | ServiceUnavailable (retryable) | as legislation | as legislation |
+
+**Zero hits = success + enrichment notice**, composed from the applicable fragments:
+
+| Condition | Notice fragment |
+|:---|:---|
+| always | "0 gazette entries matched." |
+| `number` set | "Verify part and year — a 'BGBl. II' number returns nothing when filtered to part1. For a single known number, ris_lookup_citation resolves it directly (and routes pre-2004 numbers to BgblAlt)." |
+| `number` set with `part` also set and they disagree | "number names part {X} but the part filter is {Y} — drop one." (local consistency check; a notice, not an error) |
+| `issuer` set | "issuer is a phrase field — try the ministry abbreviation with a trailing * ('BMK*')." |
+| date range predates 2004 (federal) | (auto-route already fired) "Range served by BgblAlt (1945–2003); pre-1945 gazettes are not in RIS." |
+
 ### ris_lookup_citation
 
 Citation-first is how Austrian legal work happens. Parses the citation type and routes to the right application with a deterministic filter — bypassing keyword search. Returns `{ found: false, guidance }` (never a throw) when nothing resolves.
 
 | Route | Trigger pattern | Upstream call |
 |:---|:---|:---|
-| Norm | "§ 6 DSG", "Art 10 B-VG", bare abbreviation "ABGB" | BrKons: `Titel=<abbr>` + `Abschnitt.Von/Bis=<n>` + `FassungVom` (today or `in_force_as_of`); falls back to LrKons only on explicit state hint |
+| Norm | "§ 6 DSG", "Art 10 B-VG", bare abbreviation "ABGB" | BrKons: `Titel={abbr}` + `Abschnitt.Von/Bis={n}` + `FassungVom` (today or `in_force_as_of`); falls back to LrKons only on explicit state hint |
 | Gazette | "BGBl. I Nr. 165/1999", "BGBl. II Nr. 171/2026" | year ≥ 2004 → BgblAuth `Bgblnummer=`; year < 2004 → BgblAlt |
 | Case number | "2025-0.934.677" (DSB), "Ra 2019/22/0184" (VwGH), "G 287/2022" (VfGH), "6Ob56/25k" (OGH), "W256 …" (BVwG) | Judikatur `Geschaeftszahl=` against the pattern-matched application; `court` hint short-circuits; ambiguous formats probe ≤ 2 candidate applications sequentially |
 
 **Output:** `found`, `kind` (what it parsed the citation as), `resolution_note` (which application + filter resolved it), and the resolved record in the same normalized shape as the corresponding search tool (single best document; `alternatives_count` when >1 hit, with a pointer to the search tool for the full set).
 
-**Errors:** `upstream_error` only. Unparseable/unresolvable input is a `found: false` *result*, not an error — the agent self-corrects better from structured guidance than from a throw (fleet lesson: eur-lex #22).
+**Errors** (typed contract): `upstream_error` only (ServiceUnavailable, retryable — as legislation). Unparseable/unresolvable input is a `found: false` *result*, not an error — the agent self-corrects better from structured guidance than from a throw (fleet lesson: eur-lex #22).
+
+**`found: false` guidance strings** (per parse outcome — `guidance` is the recovery surface here, so every branch routes to a named tool):
+
+| Outcome | `kind` | guidance |
+|:---|:---|:---|
+| Citation didn't classify | `unknown` | "Could not classify '{input}'. Expected forms — norm: '§ 6 DSG' / 'Art 10 B-VG'; gazette: 'BGBl. I Nr. 165/1999'; case number: 'Ra 2019/22/0184'. Formats: ris_list_reference topic citation_formats. Or set kind explicitly; for keyword search use ris_search_legislation / ris_search_case_law." |
+| Norm parsed, no hit | `norm` | "No document for {abbr} § {n} in force on {date}. If the provision existed at another time, retry ris_search_legislation with title: '{abbr}', section_from/to: '{n}', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: '{abbr}*'. State law resolves only with an explicit state hint." |
+| Gazette parsed, no hit | `gazette` | "No gazette entry for {number}. Verify part (I/II/III) and year; browse the surrounding range with ris_search_gazette published_from/published_to to find the actual number." |
+| Case number parsed, no hit | `case_number` | "No decision for '{GZ}' in {applications probed}. Pass court explicitly if known — Geschäftszahl format examples per court: ris_list_reference topic courts. Note Justiz carries selected decisions only. Keyword fallback: ris_search_case_law with query." |
 
 ### ris_get_document
 
@@ -148,7 +205,14 @@ Read + export. Two addressing modes:
 
 **Output:** `text` (unless urls_only), `format`, `byte_size`, `content_urls` (always, all DataTypes incl. `Authentisch` when present), `binding_status`: `authentic` (BgblAuth/LgblAuth — with `authentic_pdf_url`) \| `consolidated_informational` (BrKons/LrKons — RIS disclaims warranty; only the gazette wording is binding) \| `decision` (Judikatur), echoed identifiers. Oversized text is truncated at a byte cap with `truncated: true` + the URLs for the full artifact — never silently.
 
-**Errors:** `document_not_found` (NotFound — content URL 404s; message: verify document_number/application pairing, or re-run the search), `unsupported_url` (InvalidParams — not a ris.bka.gv.at /Dokumente/ URL), `upstream_error`.
+**Errors** (typed contract):
+
+| reason | code | when | recovery |
+|:---|:---|:---|:---|
+| `invalid_addressing` | ValidationError | Neither or both addressing modes provided, or `document_number` without `application` — thrown locally | "Provide exactly one addressing mode: document_number plus application (both from one search result), or a document_url from a result's content_urls." |
+| `unsupported_url` | ValidationError | `document_url` fails the host + `/Dokumente/` path-prefix allowlist — thrown locally, nothing fetched | "Only ris.bka.gv.at /Dokumente/ URLs are fetchable — pass a URL exactly as returned in content_urls, or switch to document_number + application." |
+| `document_not_found` | NotFound | Constructed/passed content URL 404s | "The document_number/application pairing didn't resolve — copy both verbatim from a fresh ris_search_legislation / ris_search_case_law / ris_search_gazette result, or resolve the citation with ris_lookup_citation. Document numbers are application-specific." |
+| `upstream_error` | ServiceUnavailable (retryable) | Content host unreachable / 5xx | as legislation |
 
 **Limitation (upstream):** the REST API has no search-by-document-number parameter, so this tool returns *content*, not fresh metadata — metadata rides the search/lookup step. The description states the call order.
 
@@ -156,7 +220,9 @@ Read + export. Two addressing modes:
 
 Static, offline (no upstream call), from the XSD-derived tables in this doc. `topic` enum:
 
-`applications` (all controllers/applications by legal area, with coverage windows) · `courts` (the 16 Judikatur codes, English descriptions, active-vs-historical, Geschäftszahl format examples per court) · `states` (9 Bundesländer + enum spellings) · `decision_types` · `dpa_bodies` (Dsk's three Organ-separated bodies) · `changed_since_intervals` · `section_types` · `gazette_parts` (BGBl I/II/III semantics) · `law_types` (BG, V, K, …) · `search_syntax` (boolean operators, wildcard rules, phrase quoting)
+`applications` (all controllers/applications by legal area, with coverage windows) · `courts` (the 16 Judikatur codes, English descriptions, active-vs-historical, Geschäftszahl format examples per court) · `states` (9 Bundesländer + enum spellings) · `decision_types` · `dpa_bodies` (Dsk's three Organ-separated bodies) · `changed_since_intervals` · `section_types` · `gazette_parts` (BGBl I/II/III semantics) · `law_types` (BG, V, K, …) · `search_syntax` (boolean operators, wildcard rules, phrase quoting) · `citation_formats` (the shapes `ris_lookup_citation` parses, with examples)
+
+**Errors:** no typed contract — static and closedWorld; an invalid `topic` fails Zod enum validation before the handler, and baseline codes cover the rest. This tool is the *target* of recovery routing, not a source: most other tools' recovery hints and zero-hit notices end here.
 
 ## Domain Mapping
 
@@ -165,7 +231,7 @@ Static, offline (no upstream call), from the XSD-derived tables in this doc. `to
 | Consolidated norm (§-level doc) | search (title/fulltext/section/date), fetch-all-of-law (`law_id`), read, export | `GET /Bundesrecht?Applikation=BrKons`, `GET /Landesrecht?Applikation=LrKons`, content host |
 | Law (Rechtsvorschrift) | group key only (`Gesetzesnummer`) — no law-level endpoint; the web view (`GesamteRechtsvorschriftUrl`) is linked | — |
 | Gazette issue (BGBl/LGBl) | browse (date/part/type/issuer), point lookup (number), read, export authentic PDF | `GET /Bundesrecht?Applikation=BgblAuth\|BgblAlt`, `GET /Landesrecht?Applikation=LgblAuth` |
-| Decision (Rechtssatz/Text) | search (court/norm/date/fulltext), point lookup (Geschäftszahl), read | `GET /Judikatur?Applikation=<court>` |
+| Decision (Rechtssatz/Text) | search (court/norm/date/fulltext), point lookup (Geschäftszahl), read | `GET /Judikatur?Applikation={court}` |
 | Reference codes | list (static) | none |
 
 Out of scope v1 (deferred, deliberate): `Begut` (draft bills in review), `RegV` (government bills), `Erv` (English translations of selected laws), `Erlaesse` (ministerial decrees), Gemeinden/Bezirke (municipal/district), `History` controller (bulk change-sync — a future mirror's entry point, not an interactive surface).
@@ -235,6 +301,7 @@ No pagination/pacing knobs in v1 — there are no internal request loops to pace
 - **Strict param allowlist in the service.** Unknown query params are silently ignored upstream (✓) — the single nastiest API trap here, since a typo returns *plausible but unfiltered* results. Only live-confirmed or XSD-verified spellings from the API Reference table are ever sent; new filters require a probe first.
 - **No DataCanvas.** Search results are categorical legal metadata for find-then-drill-in workflows, not analytical row sets — fails the shape test regardless of size.
 - **No blanket per-call sleep.** RIS's ~1–2s pacing guidance targets bulk/paged retrieval, not interactive lookups. Reactive `withRetry` backoff (1.5s base) fires only when upstream actually signals distress; v1 has no internal loops to pace (and the pacing env knobs were dropped with them).
+- **No dead ends — every terminal surface routes to a named tool.** Error `recovery` strings, zero-hit enrichment notices, and `lookup_citation`'s `found: false` guidance each name the concrete next call (`ris_list_reference` topic X, `ris_lookup_citation`, the specific search tool) — never bare "check your input". The per-tool contract tables carry the verbatim strings; three shared mechanics: (1) RIS Client-error messages pass through verbatim (they enumerate valid values) with recovery routing to `ris_list_reference`; (2) conditional-param misuse (`court_filter_mismatch`, `scope_filter_mismatch`, `invalid_addressing`) is caught locally before any upstream call, message naming the actual offending pair; (3) zero hits are success + notice, never an error. Rationale: six tools over an opaque German-coded corpus is navigable only if every stuck-state says where to go next.
 - **Tool prefix `ris_`, name `ris-austria-mcp-server`** (settled in the fleet catalog 2026-07-04): official RIS brand + country disambiguator; clash-free in the fleet.
 
 ## Known Limitations

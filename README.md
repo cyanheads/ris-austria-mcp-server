@@ -34,7 +34,7 @@ Six tools split by document class — consolidated law, case law, and the authen
 | `ris_search_gazette` | Browse authentic promulgations (Bundesgesetzblatt / Landesgesetzblätter) by date range, part, type, or issuer — the compliance-monitoring surface. |
 | `ris_lookup_citation` | Resolve one Austrian legal citation — "§ 6 DSG", "BGBl. I Nr. 165/1999", a Geschäftszahl — deterministically to its canonical document. |
 | `ris_get_document` | Fetch one document's full text as markdown/HTML/XML, or its export URLs, with binding-status labeling and the authentic PDF for gazette documents. |
-| `ris_list_reference` | Ground the domain vocabulary offline — applications, court codes, Bundesländer, decision types, gazette parts, search syntax. |
+| `ris_list_reference` | Ground the domain vocabulary offline — applications and coverage windows, court codes, Bundesländer, decision types, gazette parts, citation formats, search syntax. |
 
 ### `ris_search_legislation`
 
@@ -64,7 +64,7 @@ Search decisions and headnotes across Austria's courts and tribunals.
 
 Browse the legally binding promulgation record — what `ris_lookup_citation` (point lookup) can't express.
 
-- Filter by publication date range, gazette `part` (BGBl. I/II/III), document `type` (laws, regulations, announcements), or issuing ministry
+- Filter by publication date range, gazette `part` (BGBl. I/II/III — federal scope only), document `type` (laws, regulations, announcements), or issuing ministry
 - Point lookup by gazette number ("BGBl. II Nr. 171/2026" or "171/2026")
 - Federal date ranges before 2004 route to the BgblAlt archive (1945–2003) automatically, with a notice
 - Every record is labeled `authentic` and carries the amtssigniert PDF URL when present
@@ -90,6 +90,7 @@ Read and export a single document.
 - `format`: `markdown` (default, boilerplate stripped), raw `html`, RIS `xml`, or `urls_only`
 - Binding status on every response: `authentic` (with amtssigniert PDF URL), `consolidated_informational`, or `decision` — consolidated text is never presented as the binding text
 - Oversized text truncates explicitly (`truncated: true`) with export URLs for the full artifact
+- Returns content, not fresh metadata — the upstream API has no document-by-number search, so document numbers come from a prior search or lookup result
 
 ## Resource
 
@@ -118,6 +119,8 @@ RIS-specific:
 
 Agent-friendly output:
 
+- No dead ends — error recovery hints, zero-hit notices, and `found: false` guidance each name the concrete next call (`ris_list_reference` topic, the right search tool, `ris_lookup_citation`), never a bare "check your input"
+- Zero hits are success plus a composed notice, never an error; conditional-parameter misuse (a court-specific filter with the wrong court, `part` outside federal scope, bad addressing) is caught locally before any upstream call
 - Applied-filter echo — the `in_force_as_of` default is never invisible to the calling agent
 - Structured no-resolve results (`found: false` + guidance) instead of throws on citation lookup
 - Upstream schema-validation messages passed through — RIS enumerates valid values, which lets agents self-correct

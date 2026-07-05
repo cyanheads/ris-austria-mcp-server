@@ -15,7 +15,7 @@
 
 Scaffolded 2026-07-04 (`mcp-ts-core init` @0.10.10); the v1 design was settled the same day. **Implementation has not started** — the template echo definitions are still registered in `src/`.
 
-Before implementing anything, read [`docs/design.md`](./docs/design.md): the settled tool surface (6 tools + 1 resource), the service/normalizer spec, the Implementation Order, and a live-confirmed RIS OGD v2.6 API reference (param spellings, dot-path notation, in-band error envelope, content URL segments). The design's hard rules: **strict param allowlist** (RIS silently ignores unknown query params — never forward unverified spellings), **`in_force_as_of` defaults to today** (and is echoed in output), and **binding status is explicit on every document output**.
+Before implementing anything, read [`docs/design.md`](./docs/design.md): the settled tool surface (6 tools + 1 resource), the service/normalizer spec, the Implementation Order, and a live-confirmed RIS OGD v2.6 API reference (param spellings, dot-path notation, in-band error envelope, content URL segments). The design's hard rules: **strict param allowlist** (RIS silently ignores unknown query params — never forward unverified spellings), **`in_force_as_of` defaults to today** (and is echoed in output), **binding status is explicit on every document output**, and **no dead ends** (every error `recovery` string, zero-hit notice, and `found: false` guidance names the next tool to call — the per-tool contract tables in the design doc carry the verbatim strings; transcribe them into `errors: [...]` when scaffolding each tool).
 
 ---
 
