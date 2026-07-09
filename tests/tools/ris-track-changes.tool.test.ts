@@ -72,6 +72,22 @@ describe('risTrackChanges — deletion records', () => {
     expect(text).toContain('NOR30003318 — deleted');
     expect(text).toContain('**Deleted:** yes (2026-06-17T14:46:31)');
   });
+
+  it('renders an explicit "**Deleted:** no" line for a non-deleted changed record', async () => {
+    trackChanges.mockResolvedValue(parseHistoryResponse(fixture('history-with-deleted.json')));
+    const ctx = createMockContext();
+    const input = risTrackChanges.input.parse({ application: 'BrKons', include_deleted: true });
+    const result = await risTrackChanges.handler(input, ctx);
+    const changed = result.results.find((r) => !r.deleted);
+    expect(changed, 'fixture should carry a non-deleted changed record').toBeDefined();
+    // Isolate the single deleted:false record so the assertion is unambiguous — content-only
+    // clients must see its explicit "no", which the old truthy-gated render dropped entirely.
+    const text = (
+      risTrackChanges.format!({ results: [changed!] })[0] as { type: 'text'; text: string }
+    ).text;
+    expect(text).toContain('**Deleted:** no');
+    expect(text).not.toContain('**Deleted:** yes');
+  });
 });
 
 describe('risTrackChanges — changed-document record shape', () => {
@@ -213,6 +229,8 @@ describe('risTrackChanges — format() parity', () => {
     for (const record of result.results) {
       expect(text).toContain(record.document_number);
       expect(text).toContain(record.binding_status);
+      // deleted renders for BOTH states — true → "yes"/"yes (ts)", false → "no" (was truthy-gated).
+      expect(text).toContain(`**Deleted:** ${record.deleted ? 'yes' : 'no'}`);
       if (record.short_title !== undefined) expect(text).toContain(record.short_title);
       if (record.organ !== undefined) expect(text).toContain(record.organ);
       if (record.title !== undefined) expect(text).toContain(record.title);

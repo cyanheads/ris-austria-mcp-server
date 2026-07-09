@@ -289,8 +289,9 @@ export const risTrackChanges = tool('ris_track_changes', {
           `**Changed:** ${r.changed ?? 'unknown'}${r.published !== undefined ? ` | **Published:** ${r.published}` : ''}`,
         );
       }
-      if (r.deleted)
-        lines.push(`**Deleted:** yes${r.deleted_at !== undefined ? ` (${r.deleted_at})` : ''}`);
+      lines.push(
+        `**Deleted:** ${r.deleted ? `yes${r.deleted_at !== undefined ? ` (${r.deleted_at})` : ''}` : 'no'}`,
+      );
       if (r.document_url !== undefined) lines.push(`**RIS view:** ${r.document_url}`);
       if (r.authentic_pdf_url !== undefined)
         lines.push(`**Authentic PDF:** ${r.authentic_pdf_url}`);
