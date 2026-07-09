@@ -231,6 +231,46 @@ describe('risSearchCaseLaw — zero-hit notices', () => {
   });
 });
 
+describe('risSearchCaseLaw — enrichment: truncation disclosure', () => {
+  // A declared enrichment field, once set via ctx.enrich, is merged into structuredContent
+  // AND auto-appended to content[] as the framework's enrichment trailer; getEnrichment(ctx)
+  // reads that merged surface, so it stands in for both what structured- and content-only
+  // clients receive (matching how ris-track-changes asserts its own truncated field).
+  it('sets truncated=true when the total exceeds the current page', async () => {
+    // Mirrors issue #3's live case: page 1 of pageSize 10 with far more matches beyond it.
+    const base = parseSearchResponse(fixture('search-vfgh.json'));
+    searchCaseLaw.mockResolvedValue({ ...base, total: 625, page: 1, pageSize: 10 });
+    const ctx = createMockContext();
+    const input = risSearchCaseLaw.input.parse({
+      court: 'vwgh',
+      query: 'Datenschutz',
+      page_size: 10,
+    });
+    await risSearchCaseLaw.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.totalCount).toBe(625);
+    expect(enrichment.page).toBe(1);
+    expect(enrichment.pageSize).toBe(10);
+    expect(enrichment.truncated).toBe(true);
+  });
+
+  it('leaves truncated unset when the page holds every match', async () => {
+    const base = parseSearchResponse(fixture('search-vfgh.json'));
+    // total equals the hits on this single page → nothing exists beyond it.
+    searchCaseLaw.mockResolvedValue({ ...base, total: base.hits.length, page: 1, pageSize: 10 });
+    const ctx = createMockContext();
+    const input = risSearchCaseLaw.input.parse({
+      court: 'vwgh',
+      query: 'Datenschutz',
+      page_size: 10,
+    });
+    await risSearchCaseLaw.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.totalCount).toBe(base.hits.length);
+    expect(enrichment.truncated).toBeUndefined();
+  });
+});
+
 describe('risSearchCaseLaw — record mapping and format() parity', () => {
   it('normalizes an array Geschäftszahl into multiple case_numbers, all rendered in format()', async () => {
     searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-gz-array.json')));

@@ -328,6 +328,10 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
     totalCount: z.number().describe('Total matching documents across all pages.'),
     page: z.number().describe('1-based page number RIS served.'),
     pageSize: z.number().describe('Page size RIS applied.'),
+    truncated: z
+      .boolean()
+      .optional()
+      .describe('Present and true when more pages exist beyond this one — raise page to continue.'),
     notice: z
       .string()
       .optional()
@@ -509,6 +513,9 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
 
     ctx.enrich.total(result.total);
     ctx.enrich({ page: result.page, pageSize: result.pageSize });
+    if (result.total > (result.page - 1) * result.pageSize + result.hits.length) {
+      ctx.enrich({ truncated: true });
+    }
 
     if (result.total === 0) {
       const fragments = [
