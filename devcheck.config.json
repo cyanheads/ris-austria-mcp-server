@@ -2,6 +2,7 @@
   "depcheck": {
     "ignores": [
       "@types/*",
+      "@socketsecurity/bun-security-scanner",
       "pino-pretty",
       "typescript",
       "tsc-alias",
