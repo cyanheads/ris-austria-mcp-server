@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.6](changelog/0.1.x/0.1.6.md) — 2026-07-09
+
+A public hosted instance is now available at https://ris-austria.caseyjhand.com/mcp, reachable over Streamable HTTP with no install. Advertised via the server.json remotes array and documented in the README.
+
 ## [0.1.5](changelog/0.1.x/0.1.5.md) — 2026-07-09
 
 First public release — published to npm, the MCP Registry, and GHCR. README adds install badges (Claude Desktop, Cursor, VS Code), npm and Docker header badges, and an npm-first Getting started section.

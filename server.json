@@ -6,14 +6,20 @@
     "url": "https://github.com/cyanheads/ris-austria-mcp-server",
     "source": "github"
   },
-  "version": "0.1.5",
+  "version": "0.1.6",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://ris-austria.caseyjhand.com/mcp"
+    }
+  ],
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/ris-austria-mcp-server",
       "runtimeHint": "node",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "packageArguments": [
         {
           "type": "positional",
@@ -48,7 +54,7 @@
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/ris-austria-mcp-server",
       "runtimeHint": "node",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "packageArguments": [
         {
           "type": "positional",
