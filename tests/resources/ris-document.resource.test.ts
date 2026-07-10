@@ -1,6 +1,7 @@
 /**
  * @fileoverview Tests for the ris://document/{application}/{documentNumber} resource — the
- * markdown-only twin of ris_get_document, backed by the shared `renderDocument` helper.
+ * markdown-only twin of ris_get_document, backed by the shared `renderDocument` helper,
+ * including overflow degradation to a section outline plus a tool-retrieval notice.
  * Mocked the same way as the get_document tool suite: `buildDocumentContentUrl` delegates
  * to a real `RisService` instance (pure URL construction), `fetchDocumentContent` is a
  * `vi.fn()` resolving canned content.
@@ -46,6 +47,12 @@ async function captureError(promise: Promise<unknown>): Promise<McpError> {
   return err;
 }
 
+/** HTML whose markdown conversion exceeds the outline budget, split into `## Artikel N` sections. */
+function oversizedArticlesHtml(): string {
+  const body = (n: number) => `<p>${`xSECTIONx${n}x `.repeat(4000)}</p>`;
+  return Array.from({ length: 15 }, (_, i) => `<h2>Artikel ${i + 1}</h2>${body(i + 1)}`).join('\n');
+}
+
 beforeEach(() => {
   buildDocumentContentUrl.mockClear();
   fetchDocumentContent.mockReset();
@@ -78,6 +85,43 @@ describe('risDocumentResource — resolves via the shared renderDocument helper'
     const result = await risDocumentResource.handler(params, ctx);
     expect(result).toContain('Bvb publishes only the signed authentic PDF');
     expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+});
+
+describe('risDocumentResource — overflow degradation', () => {
+  it('degrades an oversized document to a section outline plus a tool-retrieval notice', async () => {
+    const html = oversizedArticlesHtml();
+    fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
+    const ctx = createMockContext({ uri: new URL('ris://document/BrKons/NOR40262691') });
+    const params = risDocumentResource.params!.parse({
+      application: 'BrKons',
+      documentNumber: 'NOR40262691',
+    });
+    const result = await risDocumentResource.handler(params, ctx);
+
+    expect(typeof result).toBe('string');
+    // Lists section names and points the caller at the tool (the resource has no selector).
+    expect(result).toContain('Artikel 1');
+    expect(result).toContain('sections');
+    expect(result).toContain('ris_get_document');
+    // The full document body is not inlined — only the outline.
+    expect(result).not.toContain('xSECTIONx1x');
+  });
+
+  it('returns markdown text in full for a document under the budget', async () => {
+    fetchDocumentContent.mockResolvedValue({
+      text: '<p>Kurzer <b>Text</b></p>',
+      byteSize: 24,
+      url: 'https://x',
+    });
+    const ctx = createMockContext({ uri: new URL('ris://document/BrKons/NOR40262691') });
+    const params = risDocumentResource.params!.parse({
+      application: 'BrKons',
+      documentNumber: 'NOR40262691',
+    });
+    const result = await risDocumentResource.handler(params, ctx);
+    expect(result).toContain('Text');
+    expect(result).not.toContain('sections');
   });
 });
 

@@ -3,14 +3,21 @@
  * of ris_get_document. Reads the same content path (HTML rendition converted to markdown) for
  * an (application, documentNumber) pair. Applications with no text rendition (authentic-PDF-only,
  * PDF-only, or metadata-only) return a short note pointing at the usable artifact instead of
- * text. Backed by the shared renderDocument helper from the tool definition.
+ * text. Oversized text degrades to the same §/Artikel/Anlage section outline the tool emits,
+ * plus a note pointing at ris_get_document (which carries the sections selector this bare-string
+ * resource cannot). Backed by the shared renderDocument helper from the tool definition.
  * @module mcp-server/resources/definitions/ris-document
  */
 
 import { resource, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 
-import { renderDocument } from '@/mcp-server/tools/definitions/ris-get-document.tool.js';
+import {
+  exampleSectionNames,
+  outlineDocument,
+  renderDocument,
+  renderOutlineSections,
+} from '@/mcp-server/tools/definitions/ris-get-document.tool.js';
 import { RIS_APPLICATIONS } from '@/services/ris/reference/index.js';
 
 const APPLICATION_CODES = RIS_APPLICATIONS.map((app) => app.code) as [string, ...string[]];
@@ -76,6 +83,18 @@ export const risDocumentResource = resource('ris://document/{application}/{docum
       throw err;
     });
 
-    return rendition.text ?? rendition.unavailableNotice ?? '';
+    if (rendition.unavailableNotice !== undefined) return rendition.unavailableNotice;
+    if (rendition.text === undefined) return '';
+
+    // Oversized markdown degrades to a section outline plus a notice pointing at the
+    // ris_get_document tool — this bare-string surface carries no section selector.
+    const decision = outlineDocument(
+      rendition.text,
+      (sections) =>
+        `Document too large to inline${rendition.byteSize !== undefined ? ` (${rendition.byteSize} bytes)` : ''}. Use the ris_get_document tool with sections:[…] to retrieve specific sections — e.g. ${exampleSectionNames(sections)}. This resource carries no section selector.`,
+    );
+    return decision.kind === 'full'
+      ? decision.text
+      : `${renderOutlineSections(decision.sections)}\n\n${decision.notice}`;
   },
 });

@@ -1,8 +1,8 @@
 /**
  * @fileoverview Tests for the ris_get_document tool — local addressing/URL-allowlist guards
  * (rejected before any network call), format handling (markdown/html/xml/urls_only) across
- * full, authentic_pdf_only, pdf_only, and metadata-only applications, byte-cap truncation,
- * error-contract mapping, and format() parity. The RIS service module is mocked so the
+ * full, authentic_pdf_only, pdf_only, and metadata-only applications, overflow-to-outline and
+ * selective section retrieval, error-contract mapping, and format() parity. The RIS service module is mocked so the
  * suite is fully offline: `buildDocumentContentUrl` delegates to a real `RisService`
  * instance (pure URL construction — no network), `fetchDocumentContent` is a `vi.fn()`
  * resolving canned content.
@@ -46,6 +46,16 @@ async function captureError(promise: Promise<unknown>): Promise<McpError> {
   const err = await promise.catch((e: unknown) => e);
   if (!(err instanceof McpError)) throw new Error('unreachable — expected an McpError');
   return err;
+}
+
+/**
+ * HTML whose markdown conversion exceeds the outline budget (~720 KB), split into 15
+ * `## Artikel N` sections each carrying a section-unique `xSECTIONxNx` token so a selective
+ * re-call can be checked to return only the requested section's text.
+ */
+function oversizedArticlesHtml(): string {
+  const body = (n: number) => `<p>${`xSECTIONx${n}x `.repeat(4000)}</p>`;
+  return Array.from({ length: 15 }, (_, i) => `<h2>Artikel ${i + 1}</h2>${body(i + 1)}`).join('\n');
 }
 
 beforeEach(() => {
@@ -255,8 +265,79 @@ describe('risGetDocument — format_unavailable degradation (notice, not error)'
   });
 });
 
-describe('risGetDocument — byte-cap truncation', () => {
-  it('truncates oversized text, reports truncated: true, and keeps content_urls intact', async () => {
+describe('risGetDocument — overflow (outline + selective retrieval)', () => {
+  it('returns a §/Artikel section outline for an oversized markdown document', async () => {
+    const html = oversizedArticlesHtml();
+    fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
+    const ctx = createMockContext();
+    const input = risGetDocument.input.parse({
+      document_number: 'NOR40262691',
+      application: 'BrKons',
+    });
+    const result = await risGetDocument.handler(input, ctx);
+
+    expect(result.kind).toBe('outline');
+    expect(result.truncated).toBe(true);
+    expect(result.text).toBeUndefined();
+    expect(result.byte_size).toBeGreaterThan(500_000);
+    expect(result.sections?.length).toBeGreaterThanOrEqual(2);
+    expect(result.sections?.map((section) => section.name)).toContain('Artikel 1');
+    // Sections come largest-first with a positive byte size.
+    expect(result.sections?.every((section) => section.bytes > 0)).toBe(true);
+    // The content URLs for the whole artifact stay on the outline arm.
+    expect(result.content_urls.html).toContain('/Dokumente/');
+
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('ris_get_document');
+    expect(notice).toContain('sections');
+
+    // format() renders the outline arm (kind + section names/sizes) for content[] clients.
+    const text = (risGetDocument.format!(result)[0] as { type: 'text'; text: string }).text;
+    expect(text).toContain('outline');
+    expect(text).toContain('Artikel 1');
+    expect(text).toContain('truncated');
+  });
+
+  it('returns the selected section’s text on a sections re-call', async () => {
+    const html = oversizedArticlesHtml();
+    fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
+    const ctx = createMockContext();
+    const input = risGetDocument.input.parse({
+      document_number: 'NOR40262691',
+      application: 'BrKons',
+      sections: ['Artikel 2'],
+    });
+    const result = await risGetDocument.handler(input, ctx);
+
+    expect(result.kind).toBe('full');
+    expect(result.sections).toBeUndefined();
+    expect(result.truncated).toBeUndefined();
+    expect(result.text).toContain('xSECTIONx2x');
+    expect(result.text).not.toContain('xSECTIONx5x');
+    expect(result.byte_size).toBeGreaterThan(0);
+  });
+
+  it('returns full text unchanged for a document under the budget', async () => {
+    fetchDocumentContent.mockResolvedValue({
+      text: '<p>Hello <b>World</b></p>',
+      byteSize: 25,
+      url: 'https://x',
+    });
+    const ctx = createMockContext();
+    const input = risGetDocument.input.parse({
+      document_number: 'NOR40262691',
+      application: 'BrKons',
+    });
+    const result = await risGetDocument.handler(input, ctx);
+
+    expect(result.kind).toBe('full');
+    expect(result.text).toContain('World');
+    expect(result.truncated).toBeUndefined();
+    expect(result.sections).toBeUndefined();
+    expect(result.byte_size).toBeLessThan(1000);
+  });
+
+  it('returns oversized raw html in full — no structural headings to outline', async () => {
     const bigText = 'A'.repeat(500_050);
     fetchDocumentContent.mockResolvedValue({
       text: bigText,
@@ -270,31 +351,14 @@ describe('risGetDocument — byte-cap truncation', () => {
       format: 'html',
     });
     const result = await risGetDocument.handler(input, ctx);
-    expect(result.truncated).toBe(true);
-    expect(result.byte_size).toBe(500_050);
-    expect(result.text).toHaveLength(500_000);
+
+    expect(result.kind).toBe('full');
+    expect(result.text).toHaveLength(500_050);
+    expect(result.truncated).toBeUndefined();
+    expect(result.sections).toBeUndefined();
     expect(result.content_urls.html).toBe(
       'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
     );
-  });
-
-  it('does not truncate text under the byte cap', async () => {
-    const smallText = 'Hello world';
-    fetchDocumentContent.mockResolvedValue({
-      text: smallText,
-      byteSize: smallText.length,
-      url: 'https://x',
-    });
-    const ctx = createMockContext();
-    const input = risGetDocument.input.parse({
-      document_number: 'NOR40262691',
-      application: 'BrKons',
-      format: 'html',
-    });
-    const result = await risGetDocument.handler(input, ctx);
-    expect(result.truncated).toBeUndefined();
-    expect(result.byte_size).toBe(11);
-    expect(result.text).toBe(smallText);
   });
 });
 

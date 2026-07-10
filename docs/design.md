@@ -318,6 +318,8 @@ Read + export. Two addressing modes:
 
 `format`: `markdown` (default — fetch HTML, strip boilerplate CSS/layout, convert) | `html` (raw) | `xml` (RIS Nutzdaten schema) | `urls_only` (no fetch — all format links + authentic PDF).
 
+`sections`: optional array — after an overflow outline, re-call with the section names (copied verbatim) to retrieve just those (see Output).
+
 **Format availability varies by application** (✓ probed 2026-07-05) — the tool degrades explicitly, never silently:
 
 | Application class | Renditions | markdown/html/xml behavior |
@@ -327,7 +329,7 @@ Read + export. Two addressing modes:
 | Upts, Mrp | **Pdf only** ✓ | text formats return a `format_unavailable` notice + PDF URLs |
 | BgblAlt | **no content URLs** ✓ (metadata-only; scans hosted by the ÖNB) | all formats return the notice + the ÖNB DokumentUrl |
 
-**Output:** `text` (unless urls_only/unavailable), `format`, `byte_size`, `content_urls` (always, all DataTypes incl. `Authentisch` when present), `binding_status` (see Design Decisions › *Binding status*): `authentic` \| `consolidated_informational` \| `historical_record` \| `decision` \| `preparatory` \| `administrative_directive` \| `translation`, echoed identifiers. Oversized text is truncated at a byte cap with `truncated: true` + the URLs for the full artifact — never silently.
+**Output:** `kind` (`full` | `outline`), `text` (unless urls_only/unavailable/outline), `format`, `byte_size`, `content_urls` (always, all DataTypes incl. `Authentisch` when present), `binding_status` (see Design Decisions › *Binding status*): `authentic` \| `consolidated_informational` \| `historical_record` \| `decision` \| `preparatory` \| `administrative_directive` \| `translation`, echoed identifiers. When the markdown text overflows the byte budget the response becomes a `kind: outline` arm instead of truncating — `sections` lists the document's §/Artikel/Anlage units (name + byte size) with `truncated: true`, and an enrichment `notice` names the re-call; a follow-up call passing `sections:[…]` returns just those. Raw html/xml renditions carry no such headings and return in full — never a silent cut.
 
 **Errors** (typed contract):
 

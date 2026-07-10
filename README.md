@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.1.1-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![TypeScript](https://img.shields.io/badge/TypeScript-^6.0.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.1.2-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![TypeScript](https://img.shields.io/badge/TypeScript-^6.0.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -117,7 +117,7 @@ Read and export a single document.
 - `format`: `markdown` (default, boilerplate stripped), raw `html`, RIS `xml`, or `urls_only`
 - Binding status on every response: `authentic` (with amtssigniert PDF URL), `consolidated_informational`, `historical_record`, `decision`, `preparatory`, `administrative_directive`, or `translation` — non-authentic text is never presented as the binding text
 - Format availability is explicit: applications that publish only the signed PDF (district/municipal promulgations, court rules) or only scans (1848–1940 gazettes, ÖNB-hosted) return a `format_unavailable` notice with the usable URLs instead of failing
-- Oversized text truncates explicitly (`truncated: true`) with export URLs for the full artifact
+- Oversized markdown returns a retrievable §/Artikel/Anlage section outline (`kind: outline`) instead of truncating — re-call with `sections:[…]` to pull just the sections you need
 - Returns content, not fresh metadata — the upstream API has no document-by-number search, so document numbers come from a prior search or lookup result
 
 ---
@@ -162,7 +162,7 @@ Agent-friendly output:
 - Applied-filter echo — the `in_force_as_of` default is never invisible to the calling agent
 - Structured no-resolve results (`found: false` + guidance) instead of throws on citation lookup
 - Upstream schema-validation messages passed through — RIS enumerates valid values, which lets agents self-correct
-- Explicit truncation flags with export URLs, never silent cuts
+- Oversized documents return a retrievable section outline, never a silent cut — re-call with the chosen `sections` for selective retrieval
 
 ## Localization
 
