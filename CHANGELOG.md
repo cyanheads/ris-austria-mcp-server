@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.5](changelog/0.1.x/0.1.5.md) — 2026-07-09
+
+First public release — published to npm, the MCP Registry, and GHCR. README adds install badges (Claude Desktop, Cursor, VS Code), npm and Docker header badges, and an npm-first Getting started section.
+
 ## [0.1.4](changelog/0.1.x/0.1.4.md) — 2026-07-09
 
 ris_get_document's document_url mode now rejects content-attachment / non-rendition URLs (Materialien_…, Anlagen_…, or a file whose stem doesn't match the document number) with an unsupported_url error instead of silently fetching the main document.
