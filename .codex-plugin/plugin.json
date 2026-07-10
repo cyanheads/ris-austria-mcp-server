@@ -17,7 +17,7 @@
     "shortDescription": "Search Austrian consolidated federal & state law, court decisions, and the authentic Bundesgesetzblatt from the official RIS; resolve legal citations.",
     "longDescription": "Austrian legal research over the official RIS (Rechtsinformationssystem des Bundes) OGD API. Search consolidated federal and state law as in force on any date, case law across every Austrian court and tribunal (VfGH, VwGH, OGH/Justiz, BVwG, LVwG, Datenschutzbehörde), and the legally binding Bundesgesetzblatt. Resolve citations — '§ 6 DSG', 'BGBl. I Nr. 165/1999', a Geschäftszahl — deterministically to canonical documents, read full texts as markdown, and export the authentic amtssignierte PDF. ELI, ECLI, and CELEX identifiers surfaced for cross-referencing EU law. No API key required.",
     "developerName": "cyanheads",
-    "category": "Legal",
+    "category": "Government Data",
     "capabilities": ["Read"],
     "websiteURL": "https://github.com/cyanheads/ris-austria-mcp-server#readme",
     "defaultPrompt": []
