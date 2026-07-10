@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.3](changelog/0.1.x/0.1.3.md) — 2026-07-09
+
+ris_lookup_citation now parses abbreviation-first norm citations (e.g. DSG §1, DSGVO Art32), including trailing sub-provisions and multi-token abbreviations, so ris_search_case_law's norms_cited output round-trips into citation lookup.
+
 ## [0.1.2](changelog/0.1.x/0.1.2.md) — 2026-07-09
 
 ris_get_document returns a retrievable §/Artikel/Anlage section outline for oversized documents instead of truncating, with a sections re-call for selective retrieval; the ris://document/... resource degrades the same way.
