@@ -18,7 +18,10 @@ import {
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { risGetDocument } from '@/mcp-server/tools/definitions/ris-get-document.tool.js';
+import {
+  parseDocumentUrl,
+  risGetDocument,
+} from '@/mcp-server/tools/definitions/ris-get-document.tool.js';
 import type { RisContentFormat } from '@/services/ris/ris-service.js';
 
 const { buildDocumentContentUrl, fetchDocumentContent } = vi.hoisted(() => ({
@@ -125,6 +128,30 @@ describe('risGetDocument — addressing guards (no fetch)', () => {
     expect(err.message).toContain('outside the /Dokumente/ tree');
     expect(fetchDocumentContent).not.toHaveBeenCalled();
   });
+
+  it('rejects a content-attachment document_url (Materialien_…) as unsupported_url', async () => {
+    const ctx = createMockContext({ errors: risGetDocument.errors });
+    const input = risGetDocument.input.parse({
+      document_url:
+        'https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/Materialien_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.html',
+    });
+    const err = await captureError(risGetDocument.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(err.data).toMatchObject({ reason: 'unsupported_url' });
+    expect(err.message).toContain('content attachment');
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+
+  it('rejects a content-attachment document_url (Anlagen_…) as unsupported_url', async () => {
+    const ctx = createMockContext({ errors: risGetDocument.errors });
+    const input = risGetDocument.input.parse({
+      document_url:
+        'https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/Anlagen_0002_1A2B3C4D_5E6F_7081_9A0B_C1D2E3F40506.pdf',
+    });
+    const err = await captureError(risGetDocument.handler(input, ctx));
+    expect(err.data).toMatchObject({ reason: 'unsupported_url' });
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
 });
 
 describe('risGetDocument — format handling', () => {
@@ -203,6 +230,23 @@ describe('risGetDocument — format handling', () => {
       'https://www.ris.bka.gv.at/Dokumente/BgblAuth/NOR40262691/NOR40262691.pdfsig',
     );
     expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+
+  it('resolves a main-document rendition document_url and fetches it', async () => {
+    fetchDocumentContent.mockResolvedValue({
+      text: '<p>Body</p>',
+      byteSize: 11,
+      url: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
+    });
+    const ctx = createMockContext();
+    const input = risGetDocument.input.parse({
+      document_url: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
+    });
+    const result = await risGetDocument.handler(input, ctx);
+    // Reverse-mapped from the URL's path segment; the fetch is not over-rejected.
+    expect(result.application).toBe('BrKons');
+    expect(result.document_number).toBe('NOR40262691');
+    expect(fetchDocumentContent).toHaveBeenCalledWith(expect.stringContaining('.html'), ctx);
   });
 });
 
@@ -416,5 +460,46 @@ describe('risGetDocument — format() parity', () => {
       if (url !== undefined) expect(text).toContain(url);
     }
     expect(text).toContain('World');
+  });
+});
+
+describe('parseDocumentUrl (errors-as-values)', () => {
+  const CONTENT_BASE = 'https://www.ris.bka.gv.at';
+
+  it('rejects a content-attachment URL (Materialien_…) with a clear error', () => {
+    const parsed = parseDocumentUrl(
+      'https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/Materialien_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.html',
+      CONTENT_BASE,
+    );
+    expect(parsed).toHaveProperty('error');
+    if ('error' in parsed) expect(parsed.error).toContain('content attachment');
+  });
+
+  it('rejects a content-attachment URL (Anlagen_…)', () => {
+    const parsed = parseDocumentUrl(
+      'https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/Anlagen_0002_1A2B3C4D_5E6F_7081_9A0B_C1D2E3F40506.pdf',
+      CONTENT_BASE,
+    );
+    expect(parsed).toHaveProperty('error');
+  });
+
+  it('parses main-document rendition URLs (.html/.pdf/.pdfsig) to {application, documentNumber}', () => {
+    for (const ext of ['html', 'pdf', 'pdfsig'] as const) {
+      const parsed = parseDocumentUrl(
+        `https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.${ext}`,
+        CONTENT_BASE,
+      );
+      expect(parsed).toEqual({ application: 'BrKons', documentNumber: 'NOR40262691' });
+    }
+  });
+
+  it('parses a folder URL with and without a trailing slash', () => {
+    for (const suffix of ['', '/'] as const) {
+      const parsed = parseDocumentUrl(
+        `https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691${suffix}`,
+        CONTENT_BASE,
+      );
+      expect(parsed).toEqual({ application: 'BrKons', documentNumber: 'NOR40262691' });
+    }
   });
 });

@@ -26,7 +26,11 @@ import { NodeHtmlMarkdown } from 'node-html-markdown';
 import { getServerConfig } from '@/config/server-config.js';
 import type { RisApplication, RisBindingStatus } from '@/services/ris/reference/index.js';
 import { RIS_APPLICATIONS } from '@/services/ris/reference/index.js';
-import { getRisService, type RisContentFormat } from '@/services/ris/ris-service.js';
+import {
+  getRisService,
+  RIS_CONTENT_FORMATS,
+  type RisContentFormat,
+} from '@/services/ris/ris-service.js';
 
 /** The seven canonical binding labels (Design Decisions › Binding status). */
 const BINDING_STATUSES = [
@@ -63,6 +67,16 @@ const APPLICATION_BY_SEGMENT = new Map<string, RisApplication>(
     app.contentPathSegment !== null ? [[app.contentPathSegment, app] as const] : [],
   ),
 );
+
+/**
+ * Lowercase file extensions a main-document rendition URL may end in — the constructible
+ * `RisContentFormat` set plus the derived `.pdfsig` authentic variant (see
+ * {@link authenticPdfFrom}). A `document_url`'s trailing filename must be
+ * `{documentNumber}.{ext}` for one of these; any other filename (a `Materialien_`/`Anlagen_…`
+ * content attachment, an unknown extension) addresses non-main content this tool would
+ * otherwise silently swap for the main document.
+ */
+const RENDITION_EXTENSIONS = new Set<string>([...RIS_CONTENT_FORMATS, 'pdfsig']);
 
 /** Map an empty string from a form-based client to `undefined`. */
 function meaningful(value: string | undefined): string | undefined {
@@ -122,15 +136,34 @@ export function parseDocumentUrl(url: string, contentBaseUrl: string): ParsedDoc
   if (!parsed.pathname.startsWith('/Dokumente/')) {
     return { error: 'the path is outside the /Dokumente/ tree' };
   }
-  const [, segment, documentNumber] = parsed.pathname.split('/').filter((part) => part !== '');
-  if (segment === undefined || documentNumber === undefined) {
+  const [, segment, rawDocumentNumber, filename, ...rest] = parsed.pathname
+    .split('/')
+    .filter((part) => part !== '');
+  if (segment === undefined || rawDocumentNumber === undefined) {
     return { error: 'the path is not /Dokumente/{segment}/{documentNumber}/…' };
   }
   const app = APPLICATION_BY_SEGMENT.get(segment);
   if (!app) {
     return { error: `path segment "${segment}" is not a recognized RIS application` };
   }
-  return { application: app.code, documentNumber: decodeURIComponent(documentNumber) };
+  const documentNumber = decodeURIComponent(rawDocumentNumber);
+  // A folder URL (…/{segment}/{documentNumber}[/]) carries no trailing filename and resolves
+  // fine. A trailing filename is a main-document rendition only when it is exactly
+  // {documentNumber}.{ext} for a known rendition extension; a content attachment
+  // (Materialien_/Anlagen_… memoranda and annexes) or any deeper nesting names non-main
+  // content the fetch would silently swap for the main document — reject it here instead.
+  if (filename !== undefined) {
+    const decodedFilename = decodeURIComponent(filename);
+    const dot = decodedFilename.lastIndexOf('.');
+    const stem = dot === -1 ? decodedFilename : decodedFilename.slice(0, dot);
+    const extension = dot === -1 ? '' : decodedFilename.slice(dot + 1).toLowerCase();
+    if (rest.length > 0 || stem !== documentNumber || !RENDITION_EXTENSIONS.has(extension)) {
+      return {
+        error: `"${decodedFilename}" points at a content attachment or non-rendition file, not a main-document rendition — pass a main-document URL as returned in content_urls`,
+      };
+    }
+  }
+  return { application: app.code, documentNumber };
 }
 
 /** Derive the `.pdfsig` (Authentisch) URL from a constructed `.pdf` rendition URL. */
@@ -386,7 +419,7 @@ export const risGetDocument = tool('ris_get_document', {
       .string()
       .optional()
       .describe(
-        'A https://www.ris.bka.gv.at/Dokumente/… rendition URL from a result’s content_urls — the alternative to document_number + application. Only this host’s /Dokumente/ tree is fetchable.',
+        'A https://www.ris.bka.gv.at/Dokumente/… main-document rendition URL as returned in a result’s content_urls — the alternative to document_number + application. Must address a main-document rendition ({documentNumber}.{ext}); content-attachment URLs (Materialien_/Anlagen_… memoranda and annexes) are not fetchable this way.',
       ),
     format: z
       .enum(['markdown', 'html', 'xml', 'urls_only'])

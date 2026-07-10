@@ -47,7 +47,8 @@ const CONTENT_TIMEOUT_MS = 20_000;
 const RETRY_BASE_DELAY_MS = 1_500;
 
 /** Rendition formats a content URL can be constructed for. */
-export type RisContentFormat = 'html' | 'pdf' | 'rtf' | 'xml';
+export const RIS_CONTENT_FORMATS = ['html', 'pdf', 'rtf', 'xml'] as const;
+export type RisContentFormat = (typeof RIS_CONTENT_FORMATS)[number];
 
 /** Document numbers observed live use letters (incl. umlauts), digits, `_`, `.`, `~`, `-`. */
 const DOCUMENT_NUMBER_PATTERN = /^[\p{L}\p{N}_.~-]+$/u;
