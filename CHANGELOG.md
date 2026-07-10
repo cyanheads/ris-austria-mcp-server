@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.4](changelog/0.1.x/0.1.4.md) — 2026-07-09
+
+ris_get_document's document_url mode now rejects content-attachment / non-rendition URLs (Materialien_…, Anlagen_…, or a file whose stem doesn't match the document number) with an unsupported_url error instead of silently fetching the main document.
+
 ## [0.1.3](changelog/0.1.x/0.1.3.md) — 2026-07-09
 
 ris_lookup_citation now parses abbreviation-first norm citations (e.g. DSG §1, DSGVO Art32), including trailing sub-provisions and multi-token abbreviations, so ris_search_case_law's norms_cited output round-trips into citation lookup.
