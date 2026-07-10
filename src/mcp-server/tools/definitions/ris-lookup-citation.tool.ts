@@ -67,14 +67,52 @@ interface NormParse {
 }
 
 /**
- * Parse a norm citation into an abbreviation and optional §/Artikel number. Sub-provision
- * refs (Abs / Z / lit / Satz) are stripped from the abbreviation — RIS filters on the
- * §/Artikel number only, and the document carries every Absatz.
+ * Parse a norm citation into an abbreviation and optional §/Artikel number. Handles both
+ * orders: section-first ("§ 6 DSG", "Art 10 B-VG") and abbreviation-first ("DSG §1",
+ * "DSGVO Art32", "DSG §22 Abs1") — the latter is the shape ris_search_case_law emits in its
+ * `norms_cited` output, so a cited norm round-trips straight back into this lookup. Sub-provision
+ * refs (Abs / Z / lit / Satz) are dropped either way — RIS filters on the §/Artikel number only,
+ * and the document carries every Absatz.
  */
 function parseNorm(input: string): NormParse | null {
   const s = input.trim();
   const stripSubRefs = (rest: string): string =>
     rest.replace(/^(?:Abs\.?\s*\d+\w?\s+|Z\s*\d+\s+|lit\.?\s*\w+\s+|Satz\s*\d+\s+)+/i, '').trim();
+
+  /*
+   * Abbreviation-first shape — the abbreviation precedes the §/Artikel marker ("DSG §1",
+   * "DSGVO Art32"), optionally with a trailing sub-provision that is discarded ("DSG §22 Abs1",
+   * "DSGVO Art6 Abs1 litc", "DSGVO Art4 Z2"). Anchored on the marker, not on whitespace, so a
+   * multi-token abbreviation stays whole ("B-VG", "TKG 2021"); the leading letter (and, for the
+   * §-branch, the §-free abbreviation body) keeps a section-first string out of this branch.
+   * These run BEFORE the section-first branches — whose un-anchored regexes would otherwise read
+   * "§22 Abs1" as "§ <section> <abbreviation>" and mis-parse the abbreviation to "Abs1" — and
+   * BEFORE the BARE_ABBREVIATION fallback, which would otherwise swallow "DSGVO Art32" as a
+   * literal abbreviation and resolve nothing.
+   */
+  const abbrevParagraph = /^([A-Za-zÄÖÜäöüß][^§]*?)\s+§+\s*(\d+\s?[a-zA-Z]?)(?:\s+\S.*)?$/.exec(s);
+  if (abbrevParagraph) {
+    const [, abbreviation, section] = abbrevParagraph;
+    if (abbreviation !== undefined && section !== undefined) {
+      return {
+        abbreviation: abbreviation.trim(),
+        section: section.replace(/\s+/g, ''),
+        sectionType: 'Paragraph',
+      };
+    }
+  }
+  const abbrevArtikel =
+    /^([A-Za-zÄÖÜäöüß].*?)\s+art(?:ikel)?\.?\s*(\d+\s?[a-zA-Z]?)(?:\s+\S.*)?$/i.exec(s);
+  if (abbrevArtikel) {
+    const [, abbreviation, section] = abbrevArtikel;
+    if (abbreviation !== undefined && section !== undefined) {
+      return {
+        abbreviation: abbreviation.trim(),
+        section: section.replace(/\s+/g, ''),
+        sectionType: 'Artikel',
+      };
+    }
+  }
 
   const paragraph = /§+\s*(\d+\s?[a-zA-Z]?)\s+(\S.*)$/.exec(s);
   if (paragraph) {
@@ -329,13 +367,13 @@ function meaningful(value: string | undefined): string | undefined {
 export const risLookupCitation = tool('ris_lookup_citation', {
   title: 'Resolve Austrian Legal Citation',
   description:
-    'Resolve a single Austrian legal citation to its canonical RIS document deterministically — no keyword search. Four routes are auto-detected from the citation shape (or forced with kind): a norm citation ("§ 6 DSG", "Art 10 B-VG", or a bare abbreviation like "ABGB") resolves through consolidated federal law, or a Bundesland with a state hint, as in force today or on in_force_as_of; a gazette citation ("BGBl. I Nr. 165/1999", pre-2004 "BGBl. Nr. 194/1961", imperial "RGBl. Nr. 189/1902", or "LGBl. Nr. 61/2026" with a state hint) routes to the right federal era tier by year or to a state Landesgesetzblatt; a case number ("Ra 2019/22/0184", "G 287/2022", "6Ob56/25k", "2025-0.934.677", "W256 …") is matched to its court — pass court to skip detection, and ambiguous formats probe up to two courts; a collection number ("VfSlg 19.632/2012", "VwSlg 18.000 A/2010") resolves through the VfGH/VwGH collection. Returns the single best-matching document in the same shape as the corresponding search tool, with alternatives_count when more than one matched. A citation that cannot be classified or resolved returns found: false with next-step guidance — it never throws for a miss; only an upstream RIS outage is an error. For keyword rather than citation lookup, use ris_search_legislation or ris_search_case_law.',
+    'Resolve a single Austrian legal citation to its canonical RIS document deterministically — no keyword search. Four routes are auto-detected from the citation shape (or forced with kind): a norm citation — section-first ("§ 6 DSG", "Art 10 B-VG"), abbreviation-first ("DSG §1", "DSGVO Art32", the shape ris_search_case_law returns in norms_cited), or a bare abbreviation like "ABGB" — resolves through consolidated federal law, or a Bundesland with a state hint, as in force today or on in_force_as_of; a gazette citation ("BGBl. I Nr. 165/1999", pre-2004 "BGBl. Nr. 194/1961", imperial "RGBl. Nr. 189/1902", or "LGBl. Nr. 61/2026" with a state hint) routes to the right federal era tier by year or to a state Landesgesetzblatt; a case number ("Ra 2019/22/0184", "G 287/2022", "6Ob56/25k", "2025-0.934.677", "W256 …") is matched to its court — pass court to skip detection, and ambiguous formats probe up to two courts; a collection number ("VfSlg 19.632/2012", "VwSlg 18.000 A/2010") resolves through the VfGH/VwGH collection. Returns the single best-matching document in the same shape as the corresponding search tool, with alternatives_count when more than one matched. A citation that cannot be classified or resolved returns found: false with next-step guidance — it never throws for a miss; only an upstream RIS outage is an error. For keyword rather than citation lookup, use ris_search_legislation or ris_search_case_law.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     citation: z
       .string()
       .describe(
-        'The legal citation to resolve, e.g. "§ 6 DSG", "Art 10 B-VG", "BGBl. I Nr. 165/1999", "Ra 2019/22/0184", or "VfSlg 19.632/2012".',
+        'The legal citation to resolve, e.g. "§ 6 DSG" or "DSG §1", "Art 10 B-VG", "BGBl. I Nr. 165/1999", "Ra 2019/22/0184", or "VfSlg 19.632/2012".',
       ),
     kind: z
       .enum(['auto', 'norm', 'gazette', 'case_number', 'collection_number'])

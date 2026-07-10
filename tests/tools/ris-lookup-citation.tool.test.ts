@@ -229,6 +229,95 @@ describe('risLookupCitation — norm route', () => {
   });
 });
 
+describe('risLookupCitation — abbreviation-first norm citations (#5)', () => {
+  // The abbreviation-first shape ("DSG §1") is what ris_search_case_law emits in `norms_cited`;
+  // parsing it lets a cited norm round-trip straight back into lookup. Each row is [citation,
+  // expected title, expected section, expected sectionType] — the parser anchors on the
+  // §/Artikel marker, so the abbreviation (before the marker) is the search title and any trailing
+  // sub-provision (Abs / Z / lit) is dropped. The fixture rows are verbatim norms_cited strings
+  // lifted from the two search fixtures (asserted real below).
+  const CASES: ReadonlyArray<[string, string, string, 'Paragraph' | 'Artikel']> = [
+    // The four shapes from the issue.
+    ['DSG §1', 'DSG', '1', 'Paragraph'],
+    ['DSG § 1', 'DSG', '1', 'Paragraph'],
+    ['DSG §24', 'DSG', '24', 'Paragraph'],
+    ['DSGVO Art32', 'DSGVO', '32', 'Artikel'],
+    // The dominant real shape — a trailing sub-provision stripped back to the core norm.
+    ['DSG §22 Abs1', 'DSG', '22', 'Paragraph'],
+    ['DSGVO Art6 Abs1 litc', 'DSGVO', '6', 'Artikel'],
+    ['DSGVO Art4 Z2', 'DSGVO', '4', 'Artikel'],
+    // Multi-token abbreviations (hyphen, embedded year) — anchored on the marker, not whitespace.
+    ['B-VG Art7', 'B-VG', '7', 'Artikel'],
+    ['TKG 2021 §5', 'TKG 2021', '5', 'Paragraph'],
+    // Verbatim norms_cited strings from the two search fixtures.
+    ['VfGG §7 Abs2', 'VfGG', '7', 'Paragraph'],
+    ['B-VG Art139 Abs1 Z2', 'B-VG', '139', 'Artikel'],
+    ['BienenseuchenG §3a', 'BienenseuchenG', '3a', 'Paragraph'],
+    ['EMRK Art8', 'EMRK', '8', 'Artikel'],
+    ['FremdenpolizeiG 2005 §26', 'FremdenpolizeiG 2005', '26', 'Paragraph'],
+  ];
+
+  it.each(
+    CASES,
+  )('parses "%s" to a norm and routes to searchLegislation with { title: "%s", section: "%s" }', async (citation, title, section, sectionType) => {
+    searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));
+    const ctx = createMockContext();
+    const input = risLookupCitation.input.parse({ citation });
+    const result = await risLookupCitation.handler(input, ctx);
+    const today = todayInAustria();
+
+    expect(searchLegislation).toHaveBeenCalledTimes(1);
+    expect(searchLegislation.mock.calls[0]?.[0]).toEqual({
+      application: 'BrKons',
+      inForceAsOf: today,
+      title,
+      sectionFrom: section,
+      sectionTo: section,
+      sectionType,
+    });
+    expect(result.found).toBe(true);
+    expect(result.kind).toBe('norm');
+  });
+
+  it('resolves an abbreviation-first citation under an explicit kind: "norm" (the case the live review reported as found:false)', async () => {
+    searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));
+    const ctx = createMockContext();
+    const input = risLookupCitation.input.parse({ citation: 'DSG §1', kind: 'norm' });
+    const result = await risLookupCitation.handler(input, ctx);
+
+    expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject({
+      title: 'DSG',
+      sectionFrom: '1',
+      sectionTo: '1',
+      sectionType: 'Paragraph',
+    });
+    expect(result.found).toBe(true);
+  });
+
+  it('parses order-independently — "DSG §1" and "§ 1 DSG" yield identical searchLegislation params (section-first regression intact)', async () => {
+    searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));
+    const ctx = createMockContext();
+
+    await risLookupCitation.handler(risLookupCitation.input.parse({ citation: 'DSG §1' }), ctx);
+    await risLookupCitation.handler(risLookupCitation.input.parse({ citation: '§ 1 DSG' }), ctx);
+
+    const abbrevFirst = searchLegislation.mock.calls[0]?.[0];
+    const sectionFirst = searchLegislation.mock.calls[1]?.[0];
+    expect(abbrevFirst).toMatchObject({ title: 'DSG', sectionFrom: '1', sectionType: 'Paragraph' });
+    expect(sectionFirst).toEqual(abbrevFirst);
+  });
+
+  it('confirms the fixture test inputs are verbatim norms_cited strings the search fixtures actually emit', () => {
+    const vfgh = JSON.stringify(fixture('search-vfgh.json'));
+    const gz = JSON.stringify(fixture('search-gz-array.json'));
+    expect(vfgh).toContain('VfGG §7 Abs2');
+    expect(vfgh).toContain('B-VG Art139 Abs1 Z2');
+    expect(vfgh).toContain('BienenseuchenG §3a');
+    expect(gz).toContain('EMRK Art8');
+    expect(gz).toContain('FremdenpolizeiG 2005 §26');
+  });
+});
+
 describe('risLookupCitation — gazette route', () => {
   it('routes a current-era federal citation to BgblAuth with the Roman-numeral part, and returns gazetteGuidance on a zero-hit resolution', async () => {
     searchGazette.mockResolvedValue(zeroHits());

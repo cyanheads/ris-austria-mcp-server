@@ -21,8 +21,8 @@ export const RIS_CITATION_FORMATS = [
   {
     kind: 'norm',
     description:
-      'A provision of a law: section sign or Artikel plus the official abbreviation, or a bare abbreviation for the whole law.',
-    examples: ['§ 6 DSG', 'Art 10 B-VG', 'ABGB'],
+      'A provision of a law: section sign or Artikel plus the official abbreviation, in either order — section-first ("§ 6 DSG") or abbreviation-first ("DSG §1", the shape ris_search_case_law returns in norms_cited) — or a bare abbreviation for the whole law.',
+    examples: ['§ 6 DSG', 'Art 10 B-VG', 'DSG §1', 'DSGVO Art32', 'ABGB'],
     resolvesVia:
       'Consolidated federal law (BrKons) via title + section-range filters, as in force on the requested date; a state hint routes to consolidated state law (LrKons).',
   },
