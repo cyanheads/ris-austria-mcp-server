@@ -1,0 +1,8 @@
+{
+  "OgdSearchResult": {
+    "Error": {
+      "Applikation": "History",
+      "Message": "soap:Client Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten"
+    }
+  }
+}

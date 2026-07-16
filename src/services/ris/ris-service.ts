@@ -6,14 +6,16 @@
  * Resilience: `withRetry` (base delay 1.5s — rate-limited-API calibration) wraps the full
  * fetch + parse pipeline; `fetchWithTimeout` maps HTTP statuses; HTML error pages and
  * non-JSON bodies classify as transient `ServiceUnavailable`, never `SerializationError`.
- * In-band RIS Client errors surface as `InvalidParams` (non-transient — not retried).
+ * RIS Client errors surface as `InvalidParams` (non-transient — not retried) whether they
+ * arrive in-band on a 200 or as the same envelope on a 500 error response, which
+ * `fetchJson` translates rather than letting the status decide.
  * Content fetches are allowlisted to the content host's `/Dokumente/` tree (SSRF guard).
  * @module services/ris/ris-service
  */
 
 import type { Context } from '@cyanheads/mcp-ts-core';
 import type { AppConfig } from '@cyanheads/mcp-ts-core/config';
-import { serviceUnavailable, validationError } from '@cyanheads/mcp-ts-core/errors';
+import { McpError, serviceUnavailable, validationError } from '@cyanheads/mcp-ts-core/errors';
 import {
   fetchWithTimeout,
   type RequestContext,
@@ -23,7 +25,12 @@ import {
 
 import { getServerConfig } from '@/config/server-config.js';
 
-import { isHtmlErrorPage, parseHistoryResponse, parseSearchResponse } from './normalizer.js';
+import {
+  errorFromResponseBody,
+  isHtmlErrorPage,
+  parseHistoryResponse,
+  parseSearchResponse,
+} from './normalizer.js';
 import { RIS_APPLICATIONS } from './reference/index.js';
 import {
   type AnnouncementsSearchParams,
@@ -241,6 +248,15 @@ export class RisService {
     const response = await fetchWithTimeout(url, SEARCH_TIMEOUT_MS, requestContext, {
       headers: { Accept: 'application/json', 'User-Agent': this.userAgent() },
       signal: ctx.signal,
+    }).catch((error: unknown) => {
+      // RIS reports a rejected parameter as HTTP 500 carrying the in-band error envelope,
+      // which fetchWithTimeout captures as data.responseBody before the status maps to a
+      // generic InternalError. Translating it tells the caller which input RIS rejected.
+      if (error instanceof McpError) {
+        const translated = errorFromResponseBody(error.data?.responseBody, { cause: error });
+        if (translated) throw translated;
+      }
+      throw error;
     });
     const text = await response.text();
     if (isHtmlErrorPage(text)) {

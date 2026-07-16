@@ -431,7 +431,7 @@ export const risGetDocument = tool('ris_get_document', {
       .array(z.string())
       .optional()
       .describe(
-        'Section names to retrieve, each copied verbatim from a prior outline response (kind: outline). Omit for the full document — which returns a §/Artikel/Anlage outline instead when the markdown overflows the byte budget. Applies to text formats; ignored for urls_only.',
+        'Section names to retrieve, each copied verbatim from a prior outline response (kind: outline). Omit for the full document — which returns a §/Artikel/Anlage outline instead when the markdown overflows the byte budget. Applies to markdown only — ignored for html, xml, and urls_only, which return in full and have no outline to select from.',
       ),
   }),
   output: z.object({
@@ -491,7 +491,7 @@ export const risGetDocument = tool('ris_get_document', {
       .string()
       .optional()
       .describe(
-        'Agent-facing notice: either the requested text format is unavailable for this application (names why and the usable URL), or the document overflowed to a section outline (names how to retrieve sections).',
+        'Present when the requested text format is unavailable for this application (names why and the usable URL), or when the document overflowed to a section outline (names how to retrieve sections).',
       ),
   },
   errors: [

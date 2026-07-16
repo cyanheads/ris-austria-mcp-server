@@ -1,6 +1,6 @@
 # ris-austria-mcp-server - Directory Structure
 
-Generated on: 2026-07-09 20:46:49
+Generated on: 2026-07-16 05:34:27
 
 ```text
 ris-austria-mcp-server/
@@ -14,6 +14,7 @@ ris-austria-mcp-server/
 │   │   ├── bug_report.yml
 │   │   ├── config.yml
 │   │   └── feature_request.yml
+│   ├── FUNDING.yml
 │   └── SECURITY.md
 ├── .vscode/
 │   ├── extensions.json
@@ -172,8 +173,12 @@ ris-austria-mcp-server/
 ├── tests/
 │   ├── fixtures/
 │   │   └── ris/
+│   │       ├── error-500-fulltext-landesrecht.json
+│   │       ├── error-500-fulltext-wildcard.json
+│   │       ├── error-500-page-overflow.json
+│   │       ├── error-500-unknown-application.json
+│   │       ├── error-500-vbl-invalid-state.json
 │   │       ├── error-client.json
-│   │       ├── error-server-500.json
 │   │       ├── history-with-deleted.json
 │   │       ├── search-avsv.json
 │   │       ├── search-begut.json

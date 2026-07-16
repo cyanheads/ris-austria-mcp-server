@@ -17,7 +17,7 @@ Austrian federal, state, district, and municipal law, court decisions, the lawma
 | `ris_search_announcements` | Search sectoral official gazettes and executive documents: social-insurance official notices, veterinary notices, court rules of procedure, trade-exam regulations, health structure plans, ministerial decrees, council-of-ministers minutes. | `collection` (enum of 7, required), `query`, `title`, `number`, `published_from/to`, `in_force_as_of`, `issuer`, `norm`, `case_number`, `type`, `department`, `plan_type`, `plan_state`, `session_number`, `legislature`, `changed_since`, `sort_by`, `sort_direction`, `page`, `page_size` | readOnly, idempotent, openWorld |
 | `ris_lookup_citation` | Deterministic resolver: one legal citation → the canonical RIS document. Handles norm cites ("§ 6 DSG", abbreviation-first "DSG §1"), gazette cites across all three federal eras + LGBl, case numbers ("2025-0.934.677"), collection numbers ("VfSlg 19.632/2012"). Returns `found: false`, never throws, on no-resolve. | `citation`, `kind` (auto \| norm \| gazette \| case_number \| collection_number), `court` (hint), `state` (hint), `in_force_as_of` | readOnly, idempotent, openWorld |
 | `ris_get_document` | Fetch one document's full text (markdown/html/xml) or its export URLs, with binding-status labeling and the authentic PDF surfaced wherever it exists. | `document_number` + `application`, or `document_url`; `format` (markdown \| html \| xml \| urls_only) | readOnly, idempotent, openWorld |
-| `ris_track_changes` | Precise change feed per application (the History controller): every document added/changed in a date window, optionally including deletions — the delta-sync and monitoring primitive `changed_since` intervals can't express. | `application` (enum, required), `changed_from`, `changed_to`, `include_deleted`, `page`, `page_size` | readOnly, idempotent, openWorld |
+| `ris_track_changes` | Precise change feed per application: every document added/changed in a date window, optionally including deletions — the delta-sync and monitoring primitive `changed_since` intervals can't express. | `application` (enum, required), `changed_from`, `changed_to`, `include_deleted`, `page`, `page_size` | readOnly, idempotent, openWorld |
 | `ris_list_reference` | Ground the opaque German codes: applications + coverage windows, courts, states, decision types/kinds, issuing bodies, ministries, collections, gazette tiers/parts, district authorities, Justiz subject areas, search syntax, citation formats. Static, offline. | `topic` (enum) | readOnly, idempotent, closedWorld |
 
 ### Resources
@@ -244,7 +244,7 @@ The federal lawmaking pipeline **before** promulgation: ministerial drafts in pu
 | `invalid_query` | ValidationError | as legislation | "Correct the parameter RIS names in the message. Ministry codes: ris_list_reference topic ministries." |
 | `upstream_error` | ServiceUnavailable (retryable) | as legislation | as legislation |
 
-**Zero hits:** "0 {stage} matched." + (`ministry` set) "ministry must match a RIS ministry designation — abbreviations are expanded server-side; the historical name at submission time counts ('BMDW', not today's successor). Table: ris_list_reference topic ministries." + (`in_review_on` set) "No drafts in review on {date} matching the filters — drop in_review_on to search all drafts including closed reviews."
+**Zero hits:** "0 {stage} matched." + (`ministry` set) "ministry must match a RIS ministry designation — abbreviations are expanded; the historical name at submission time counts ('BMDW', not today's successor). Table: ris_list_reference topic ministries." + (`in_review_on` set) "No drafts in review on {date} matching the filters — drop in_review_on to search all drafts including closed reviews."
 
 ### ris_search_announcements
 
@@ -346,7 +346,7 @@ Read + export. Two addressing modes:
 
 ### ris_track_changes
 
-The History controller: every document added or changed in an application within a date window — the precise delta feed for mirrors and monitors, and the **only surface that can report deletions**. `changed_since` (ImRisSeit) intervals are coarse and additive-only; this is exact-dated and deletion-aware.
+Every document added or changed in an application within a date window — the precise delta feed for mirrors and monitors, and the **only surface that can report deletions**. `changed_since` (ImRisSeit) intervals are coarse and additive-only; this is exact-dated and deletion-aware.
 
 | Param | Type | Maps to | Notes |
 |:---|:---|:---|:---|
@@ -357,7 +357,7 @@ The History controller: every document added or changed in an application within
 
 **Output** (per record): a compact cross-class record — `document_number`, `title`/`short_title`, `organ` (Technisch.Organ), `binding_status`, `changed` (Allgemein.Geaendert), `published`, `document_url`, `content_urls`/`authentic_pdf_url` — plus `deleted` (+ `deleted_at`) for removed documents. History responses reuse the standard metadata envelope; the tool projects the shared cross-class fields rather than each owning class's full record, keeping the change feed scannable (the per-class detail rides a follow-up `ris_get_document`). Enrichment: totals/paging + the applied window.
 
-**Errors:** `invalid_query` (Client passthrough — e.g. unknown application name), `upstream_error` — as legislation. No local conditional params to mismatch.
+**Errors:** `invalid_query` (Client passthrough — e.g. an unknown application name, or a `page` past the last available page; RIS reports both as HTTP 500 carrying its error envelope, which the service translates so the caller sees the rejected input rather than a server fault), `upstream_error` — as legislation. No local conditional params to mismatch.
 
 **Zero hits:** "0 changes in {application} between {from} and {to}. Windows are exact dates — widen the range, or use the search tools' changed_since for coarse recency filtering."
 

@@ -1,0 +1,8 @@
+{
+  "OgdSearchResult": {
+    "Error": {
+      "Applikation": "History",
+      "Message": "soap:Client. Application NotARealApp not found"
+    }
+  }
+}

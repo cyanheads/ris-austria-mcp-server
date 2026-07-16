@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertNoInBandError,
   coerceWrappedList,
+  errorFromResponseBody,
   isHtmlErrorPage,
   parseCelexReferences,
   parseHistoryResponse,
@@ -26,6 +27,11 @@ import type {
 
 function fixture(name: string): unknown {
   return JSON.parse(readFileSync(new URL(`../../fixtures/ris/${name}`, import.meta.url), 'utf8'));
+}
+
+/** Read a fixture as the raw body text, the shape an error-response body arrives in. */
+function rawFixture(name: string): string {
+  return readFileSync(new URL(`../../fixtures/ris/${name}`, import.meta.url), 'utf8');
 }
 
 describe('parseSearchResponse', () => {
@@ -157,10 +163,20 @@ describe('parseSearchResponse', () => {
     expect(caught!.message.startsWith('soap:Client')).toBe(false);
   });
 
-  it('classifies an unrecognized in-band error body as ServiceUnavailable (real 500 body)', () => {
-    expect(() => parseSearchResponse(fixture('error-server-500.json'))).toThrowError(
-      expect.objectContaining({ code: JsonRpcErrorCode.ServiceUnavailable }),
-    );
+  it('classifies a fault whose soap: prefix sits behind .NET scaffolding (real 500 body)', () => {
+    // Landesrecht wraps its faults in `Bka.Ris.…OgdException: soap:Client:…`, which hid the
+    // prefix from classification and made this deterministic input error look transient.
+    let caught: McpError | undefined;
+    try {
+      parseSearchResponse(fixture('error-500-vbl-invalid-state.json'));
+    } catch (error) {
+      caught = error as McpError;
+    }
+    expect(caught!.code).toBe(JsonRpcErrorCode.InvalidParams);
+    // The rejected value survives; only the .NET type names and stack marker are dropped.
+    expect(caught!.message).toContain("'Kaernten' is not a valid value for RemotionVblBundesland");
+    expect(caught!.message).not.toContain('Exception');
+    expect(caught!.message).not.toContain('<STACKTRACE>');
   });
 
   it('rejects unrecognized envelopes as transient', () => {
@@ -191,6 +207,91 @@ describe('assertNoInBandError', () => {
 
   it('passes error-free envelopes through', () => {
     expect(() => assertNoInBandError({})).not.toThrow();
+  });
+});
+
+describe('errorFromResponseBody', () => {
+  // RIS answers a rejected parameter with HTTP 500 carrying the same OgdSearchResult.Error
+  // envelope it uses in-band on a 200 — so the status alone would call a caller input error
+  // a server fault. Both bodies below are verbatim captures from the live API (2026-07-15).
+  it('translates an out-of-range page 500 body to InvalidParams with RIS’s own message', () => {
+    const error = errorFromResponseBody(rawFixture('error-500-page-overflow.json'));
+    expect(error?.code).toBe(JsonRpcErrorCode.InvalidParams);
+    // RIS names the cause; the transport prefix is trimmed, the explanation survives.
+    expect(error?.message).toBe('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten');
+    expect(error?.data).toMatchObject({ risApplication: 'History' });
+  });
+
+  it('translates a non-paging 500 body the same way — the envelope drives it, not the message', () => {
+    const error = errorFromResponseBody(rawFixture('error-500-unknown-application.json'));
+    expect(error?.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(error?.message).toBe('Application NotARealApp not found');
+  });
+
+  // RIS wraps its fulltext-validation faults in .NET exception scaffolding. The German
+  // sentence is the actionable part and must survive whole; the scaffolding must not.
+  const FULLTEXT_GUIDANCE =
+    'Eine \'FulltextSearchExpression\' enthält eine ungültige Abfrage: Die Eingabe "*" enthält zu wenige Zeichen vor oder nach dem Platzhalter (*). Es müssen mindestens 2 Zeichen vor oder nach dem Platzhalter sein. Bitte korrigieren Sie Ihre Eingabe.';
+
+  it('strips the SoapException scaffolding and stack marker, keeping RIS’s guidance whole', () => {
+    const error = errorFromResponseBody(rawFixture('error-500-fulltext-wildcard.json'));
+    expect(error?.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(error?.message).toBe(FULLTEXT_GUIDANCE);
+  });
+
+  it('classifies a Landesrecht fault, whose soap: prefix hides behind an outer .NET wrapper', () => {
+    // Landesrecht alone prefixes `Bka.Ris.…OgdException: ` — which pushed the soap: prefix
+    // off the front, so the fault fell through to the transient ServiceUnavailable bucket
+    // and got retried. Same rejected input as the wildcard body above, same verdict.
+    const error = errorFromResponseBody(rawFixture('error-500-fulltext-landesrecht.json'));
+    expect(error?.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(error?.code).not.toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect(error?.message).toBe(FULLTEXT_GUIDANCE);
+  });
+
+  it('leaves a fault that carries no scaffolding byte-identical', () => {
+    // The paging and schema-validation faults are already clean — RIS's prose names no .NET
+    // type, so the strip must be a no-op on them rather than eating a real word.
+    expect(errorFromResponseBody(rawFixture('error-500-page-overflow.json'))?.message).toBe(
+      'Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten',
+    );
+    const schema = errorFromResponseBody(rawFixture('error-client.json'));
+    expect(schema?.message).toBe(
+      "Schema Validation Error: The 'http://ris.bka.gv.at/ogd/V2_6:FassungVom' element is invalid - The value 'notadate' is invalid according to its datatype 'http://www.w3.org/2001/XMLSchema:date' - The string 'notadate' is not a valid Date value.",
+    );
+  });
+
+  it('classifies a Server-prefixed error body as transient ServiceUnavailable', () => {
+    const body = JSON.stringify({
+      OgdSearchResult: { Error: { Applikation: 'History', Message: 'soap:Server. backend down' } },
+    });
+    expect(errorFromResponseBody(body)?.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+  });
+
+  it('keeps the original error as the cause when one is supplied', () => {
+    const cause = new McpError(JsonRpcErrorCode.InternalError, 'Fetch failed. Status: 500');
+    const error = errorFromResponseBody(rawFixture('error-500-page-overflow.json'), { cause });
+    expect(error?.cause).toBe(cause);
+  });
+
+  it('gives up on a body truncated mid-JSON rather than fabricating an error', () => {
+    // fetchWithTimeout captures at most ERROR_BODY_LIMIT (500) bytes of an error body and
+    // appends an ellipsis — a longer envelope than RIS's known ones arrives unparseable.
+    const longBody = JSON.stringify({
+      OgdSearchResult: {
+        Error: { Applikation: 'History', Message: `soap:Client. ${'detail '.repeat(100)}` },
+      },
+    });
+    expect(longBody.length).toBeGreaterThan(500);
+    expect(errorFromResponseBody(`${longBody.slice(0, 500)}…`)).toBeUndefined();
+  });
+
+  it('gives up on bodies that carry no RIS error envelope', () => {
+    expect(errorFromResponseBody(undefined)).toBeUndefined();
+    expect(errorFromResponseBody('<!DOCTYPE html><html>Gateway Timeout</html>')).toBeUndefined();
+    expect(errorFromResponseBody('{"OgdSearchResult":{}}')).toBeUndefined();
+    // A successful envelope carries no Error node — nothing to translate.
+    expect(errorFromResponseBody(JSON.stringify(fixture('search-zero-hits.json')))).toBeUndefined();
   });
 });
 

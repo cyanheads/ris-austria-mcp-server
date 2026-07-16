@@ -111,7 +111,7 @@ function toRecord(hit: RisHit, stage: string): DraftRecord {
 export const risSearchDrafts = tool('ris_search_drafts', {
   title: 'Search Draft Legislation',
   description:
-    'Search Austria’s federal lawmaking pipeline BEFORE promulgation — the monitoring counterpart to ris_search_gazette (what will become law). stage selects the phase: review_drafts (Begutachtungsentwürfe — draft laws a ministry has put into public review, before any government bill exists) or government_bills (Regierungsvorlagen — bills the council of ministers adopted and submitted to parliament, 2004+). Filter by query (full text), title, ministry (accepts an abbreviation like "BMF" — expanded server-side to RIS’s exact designation; the historical name at submission time counts), in_review_on (review_drafts only — drafts whose review window covers the date; today = "what is in Begutachtung right now"), or decided_from/to (government_bills only — council adoption date). changed_since gives coarse recency. Documents are preparatory, not binding law. Ministry codes: ris_list_reference topic ministries.',
+    'Search Austria’s federal lawmaking pipeline BEFORE promulgation — the monitoring counterpart to ris_search_gazette (what will become law). stage selects the phase: review_drafts (Begutachtungsentwürfe — draft laws a ministry has put into public review, before any government bill exists) or government_bills (Regierungsvorlagen — bills the council of ministers adopted and submitted to parliament, 2004+). Filter by query (full text), title, ministry (accepts an abbreviation like "BMF" — expanded to RIS’s exact designation; the historical name at submission time counts), in_review_on (review_drafts only — drafts whose review window covers the date; today = "what is in Begutachtung right now"), or decided_from/to (government_bills only — council adoption date). changed_since gives coarse recency. Documents are preparatory, not binding law. Ministry codes: ris_list_reference topic ministries.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     stage: z
@@ -135,7 +135,7 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       .string()
       .optional()
       .describe(
-        'Submitting ministry (EinbringendeStelle). Accepts an abbreviation ("BMF") — expanded server-side to RIS’s exact-match designation; use the ministry’s name at the time of submission. Table: ris_list_reference topic ministries.',
+        'Submitting ministry (EinbringendeStelle). Accepts an abbreviation ("BMF") — expanded to RIS’s exact-match designation; use the ministry’s name at the time of submission. Table: ris_list_reference topic ministries.',
       ),
     in_review_on: isoDateString
       .optional()
@@ -282,7 +282,7 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       const fragments = [`0 ${stage} matched.`];
       if (ministry !== undefined) {
         fragments.push(
-          "ministry must match a RIS ministry designation — abbreviations are expanded server-side; the historical name at submission time counts ('BMDW', not today's successor). Table: ris_list_reference topic ministries.",
+          "ministry must match a RIS ministry designation — abbreviations are expanded; the historical name at submission time counts ('BMDW', not today's successor). Table: ris_list_reference topic ministries.",
         );
       }
       if (inReviewOn !== undefined) {

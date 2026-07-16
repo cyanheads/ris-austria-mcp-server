@@ -1,0 +1,8 @@
+{
+  "OgdSearchResult": {
+    "Error": {
+      "Applikation": "Landesrecht",
+      "Message": "Bka.Ris.RestApiGenericConnectorAdapter.Core.OgdException: soap:Client.Validation:System.Web.Services.Protocols.SoapException: Eine 'FulltextSearchExpression' enthält eine ungültige Abfrage: Die Eingabe \"*\" enthält zu wenige Zeichen vor oder nach dem Platzhalter (*). Es müssen mindestens 2 Zeichen vor oder nach dem Platzhalter sein. Bitte korrigieren Sie Ihre Eingabe.\n  <STACKTRACE>"
+    }
+  }
+}

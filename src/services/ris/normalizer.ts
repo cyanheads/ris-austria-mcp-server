@@ -8,11 +8,19 @@
  * message with `soap:Client.` / `soap:Server.` instead — both signals are checked. Client
  * errors become `InvalidParams` with RIS's message passed through (it names the invalid
  * element); everything else is treated as a transient upstream failure, never a
- * `SerializationError`.
+ * `SerializationError`. RIS carries the same envelope on a 500 for rejected parameters, so
+ * `errorFromResponseBody` classifies an error-response body through the same path. Some
+ * faults arrive wrapped in .NET exception scaffolding, which is stripped so RIS's own
+ * explanation is what reaches the caller.
  * @module services/ris/normalizer
  */
 
-import { invalidParams, serviceUnavailable } from '@cyanheads/mcp-ts-core/errors';
+import {
+  type ErrorFactoryOptions,
+  invalidParams,
+  type McpError,
+  serviceUnavailable,
+} from '@cyanheads/mcp-ts-core/errors';
 
 import type {
   OneOrMany,
@@ -138,29 +146,77 @@ function prune<T extends object>(obj: { [K in keyof T]: T[K] | undefined }): T {
 /* Envelope handling                                                                     */
 /* ------------------------------------------------------------------------------------ */
 
-const SOAP_PREFIX = /^soap:(Client|Server)[.:]?\s*/;
+/** The SOAP fault code opening a RIS message, with the optional subcode RIS puts on some. */
+const SOAP_PREFIX = /^soap:(Client|Server)(?:\.\w+:)?[.:]?\s*/;
 
-function classifyError(error: RawRisError): 'Client' | 'Server' | undefined {
+/**
+ * .NET scaffolding RIS leaks into some fault messages: a namespaced exception type, and the
+ * stack-trace marker closing the message. Observed live 2026-07-15 on the fulltext-validation
+ * faults every controller raises (`soap:Client.Validation:System.Web.…SoapException: …
+ * \n  <STACKTRACE>`) and on Landesrecht, which wraps the whole fault a second time
+ * (`Bka.Ris.…OgdException: soap:Client…`) — hiding the `soap:` prefix that classification
+ * keys on, which is why a Landesrecht fault only classifies once this is stripped.
+ *
+ * Matching requires a dotted namespace before `…Exception:`, so it fires only on genuine
+ * .NET type names: RIS's own prose (`Die Seitennummer ist höher…`, `Schema Validation
+ * Error: …`) carries no such token and passes through byte-identical.
+ */
+const DOTNET_EXCEPTION = /(?:\w+\.)+\w*Exception:\s*/g;
+const STACKTRACE_MARKER = /\s*<STACKTRACE>\s*$/;
+
+/** Classify a fault from its `@type` attribute, falling back to the descaffolded message. */
+function classifyError(error: RawRisError, fault: string): 'Client' | 'Server' | undefined {
   const type = error['@type'];
   if (type === 'Client' || type === 'Server') return type;
-  const match = SOAP_PREFIX.exec(error.Message ?? '');
+  const match = SOAP_PREFIX.exec(fault);
   return match ? (match[1] as 'Client' | 'Server') : undefined;
 }
 
 /**
- * Throw when the envelope carries an in-band error. Client errors pass RIS's message
- * through — it names the invalid element and its expected datatype; Server and
- * unclassifiable errors are transient (`ServiceUnavailable`).
+ * Build the error for one RIS `Error` node. Client errors pass RIS's message through — it
+ * names the invalid element and its expected datatype; Server and unclassifiable errors are
+ * transient (`ServiceUnavailable`). The single classification point for both the 200-status
+ * in-band path and the 500-status error-body path.
  */
-export function assertNoInBandError(result: RawOgdSearchResult): void {
-  const error = result.Error;
-  if (!error) return;
-  const message = (error.Message ?? 'RIS returned an unspecified error.')
-    .replace(SOAP_PREFIX, '')
-    .trim();
+function inBandError(error: RawRisError, options?: ErrorFactoryOptions): McpError {
+  const fault = (error.Message ?? 'RIS returned an unspecified error.')
+    .replace(DOTNET_EXCEPTION, '')
+    .replace(STACKTRACE_MARKER, '');
+  const message = fault.replace(SOAP_PREFIX, '').trim();
   const data = prune<{ risApplication?: string }>({ risApplication: rawText(error.Applikation) });
-  if (classifyError(error) === 'Client') throw invalidParams(message, data);
-  throw serviceUnavailable(message, data);
+  return classifyError(error, fault) === 'Client'
+    ? invalidParams(message, data, options)
+    : serviceUnavailable(message, data, options);
+}
+
+/** Throw when a 200-status envelope carries an in-band error. */
+export function assertNoInBandError(result: RawOgdSearchResult): void {
+  if (result.Error) throw inBandError(result.Error);
+}
+
+/**
+ * Build the error RIS described in a non-2xx response body. RIS reports a rejected
+ * parameter as HTTP 500 carrying the same `OgdSearchResult.Error` envelope it uses in-band
+ * on a 200 — an out-of-range page number, a malformed fulltext query — so the status alone
+ * misclassifies a caller input error as a server fault.
+ *
+ * Returns `undefined` when the body is absent, is not JSON (the framework truncates a
+ * captured error body past its byte cap, which can cut mid-JSON), or carries no error
+ * envelope. The caller keeps its original error in that case, never a fabricated one.
+ */
+export function errorFromResponseBody(
+  body: unknown,
+  options?: ErrorFactoryOptions,
+): McpError | undefined {
+  if (typeof body !== 'string') return;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    return;
+  }
+  const error = (payload as RawOgdResponse | undefined)?.OgdSearchResult?.Error;
+  return error ? inBandError(error, options) : undefined;
 }
 
 function unrecognizedEnvelope(detail: string): never {

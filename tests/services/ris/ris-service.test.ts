@@ -1,12 +1,16 @@
 /**
  * @fileoverview Offline RisService tests: the content-URL SSRF guard, per-application
- * content-URL construction from the path-segment map, and the init/accessor contract.
- * Network-bound methods are exercised at build time against the live API, not here.
+ * content-URL construction from the path-segment map, the HTTP-500 error-envelope
+ * translation (fetch stubbed — no network), and the init/accessor contract.
+ * Network-bound methods are otherwise exercised at build time against the live API.
  * @module tests/services/ris/ris-service
  */
 
+import { readFileSync } from 'node:fs';
+
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
-import { describe, expect, it } from 'vitest';
+import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   assertFetchableDocumentUrl,
@@ -15,6 +19,11 @@ import {
 } from '@/services/ris/ris-service.js';
 
 const CONTENT_BASE = 'https://www.ris.bka.gv.at';
+
+/** Read a fixture as the raw body text RIS puts on the wire. */
+function rawFixture(name: string): string {
+  return readFileSync(new URL(`../../fixtures/ris/${name}`, import.meta.url), 'utf8');
+}
 
 function expectValidationError(fn: () => unknown, messagePart?: string): void {
   let caught: McpError | undefined;
@@ -94,6 +103,76 @@ describe('RisService.buildDocumentContentUrl', () => {
     );
     expectValidationError(() => service.buildDocumentContentUrl('BrKons', 'NOR1?x=1', 'html'));
     expectValidationError(() => service.buildDocumentContentUrl('BrKons', '', 'html'));
+  });
+});
+
+describe('RisService — HTTP 500 carrying a RIS error envelope', () => {
+  const service = new RisService('ris-austria-mcp-server/test');
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** Stub the network with one non-2xx response body, and report the call count. */
+  function stubFetch(body: string, status = 500): ReturnType<typeof vi.fn> {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(new Response(body, { status, statusText: 'Internal Server Error' })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('translates an out-of-range page into InvalidParams instead of a 500-shaped InternalError', async () => {
+    const fetchMock = stubFetch(rawFixture('error-500-page-overflow.json'));
+    const err = await service
+      .trackChanges({ application: 'Dsk', changedFrom: '2026-07-01', page: 2 }, createMockContext())
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(McpError);
+    // The bug: HTTP 500 mapped straight to InternalError, discarding RIS's explanation.
+    expect((err as McpError).code).not.toBe(JsonRpcErrorCode.InternalError);
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect((err as McpError).message).toBe(
+      'Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten',
+    );
+    // InvalidParams is not a transient code — withRetry must not burn attempts on it.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('translates a non-paging rejected parameter the same way (envelope-level, not paging-only)', async () => {
+    stubFetch(rawFixture('error-500-unknown-application.json'));
+    const err = await service
+      .trackChanges({ application: 'Dsk' }, createMockContext())
+      .catch((e: unknown) => e);
+
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect((err as McpError).message).toBe('Application NotARealApp not found');
+  });
+
+  it('fails fast on a Landesrecht fault rather than retrying it as transient', async () => {
+    // Landesrecht wraps its faults in `Bka.Ris.…OgdException: `, pushing the soap:Client
+    // prefix off the front. Unclassified faults are ServiceUnavailable — a transient code —
+    // so this deterministic input error would otherwise be retried, sleeping ~10s against a
+    // rate-limited API before failing anyway.
+    const fetchMock = stubFetch(rawFixture('error-500-fulltext-landesrecht.json'));
+    const err = await service
+      .searchLegislation({ application: 'LrKons', query: '*' }, createMockContext())
+      .catch((e: unknown) => e);
+
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect((err as McpError).code).not.toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the original error when a 500 body carries no RIS envelope', async () => {
+    stubFetch('<!DOCTYPE html><html>502 Bad Gateway</html>');
+    const err = await service
+      .trackChanges({ application: 'Dsk' }, createMockContext())
+      .catch((e: unknown) => e);
+
+    // Nothing to translate — the framework's status-mapped error survives untouched.
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.InternalError);
+    expect((err as McpError).message).toContain('Status: 500');
   });
 });
 

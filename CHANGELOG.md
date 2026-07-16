@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.7](changelog/0.1.x/0.1.7.md) — 2026-07-15
+
+RIS's HTTP 500 for a rejected input parameter (e.g. an out-of-range page) now surfaces as a typed client error with RIS's own message instead of an opaque InternalError, fixed once for all six search-shaped tools; plus tool-description and error-contract-prose corrections.
+
 ## [0.1.6](changelog/0.1.x/0.1.6.md) — 2026-07-09
 
 A public hosted instance is now available at https://ris-austria.caseyjhand.com/mcp, reachable over Streamable HTTP with no install. Advertised via the server.json remotes array and documented in the README.

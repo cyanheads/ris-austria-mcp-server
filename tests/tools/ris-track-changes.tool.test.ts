@@ -16,7 +16,7 @@ import {
   serviceUnavailable,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { risTrackChanges } from '@/mcp-server/tools/definitions/ris-track-changes.tool.js';
 import { parseHistoryResponse } from '@/services/ris/normalizer.js';
@@ -31,6 +31,11 @@ function fixture(name: string): unknown {
   return JSON.parse(readFileSync(new URL(`../fixtures/ris/${name}`, import.meta.url), 'utf8'));
 }
 
+/** Read a fixture as the raw body text RIS puts on the wire. */
+function rawFixture(name: string): string {
+  return readFileSync(new URL(`../fixtures/ris/${name}`, import.meta.url), 'utf8');
+}
+
 /** Await a handler call expected to reject, and narrow the rejection to an McpError. */
 async function captureError(promise: Promise<unknown>): Promise<McpError> {
   const err = await promise.catch((e: unknown) => e);
@@ -40,6 +45,10 @@ async function captureError(promise: Promise<unknown>): Promise<McpError> {
 
 beforeEach(() => {
   trackChanges.mockReset();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('risTrackChanges — deletion records', () => {
@@ -206,6 +215,45 @@ describe('risTrackChanges — error mapping', () => {
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
     expect(err.message).toContain("'Anwendung' element is invalid.");
+  });
+
+  it('surfaces an out-of-range page as an actionable invalid_query, not an opaque InternalError', async () => {
+    // End-to-end across the seam the fix depends on: the REAL service (fetch stubbed with
+    // RIS's verbatim HTTP 500 body) must throw the code this tool's unmodified .catch()
+    // matches. Mocking the service here instead would assume the very thing under test.
+    const actual = await vi.importActual<typeof import('@/services/ris/ris-service.js')>(
+      '@/services/ris/ris-service.js',
+    );
+    const realService = new actual.RisService('ris-austria-mcp-server/test');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(new Response(rawFixture('error-500-page-overflow.json'), { status: 500 })),
+      ),
+    );
+    trackChanges.mockImplementation((params, ctx) => realService.trackChanges(params, ctx));
+
+    const ctx = createMockContext({ errors: risTrackChanges.errors });
+    const input = risTrackChanges.input.parse({
+      application: 'Dsk',
+      changed_from: '2026-07-01',
+      changed_to: '2026-07-15',
+      page: 2,
+    });
+    const err = await captureError(risTrackChanges.handler(input, ctx));
+
+    // The caller must not be told this server broke — the page number is their input.
+    expect(err.code).not.toBe(JsonRpcErrorCode.InternalError);
+    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    // RIS's own explanation reaches the caller…
+    expect(err.message).toContain('Seitennummer');
+    // …alongside this tool's recovery hint, which a contract-less throw would have lost.
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('Correct the parameter RIS names'),
+    });
+    // invalid_query declares no retryable flag — an input error is not worth retrying.
+    expect(err.data?.retryable).toBeUndefined();
   });
 
   it('maps a service ServiceUnavailable rejection to the upstream_error contract error', async () => {

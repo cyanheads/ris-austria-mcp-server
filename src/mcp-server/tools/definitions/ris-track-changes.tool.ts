@@ -144,7 +144,7 @@ function toRecord(change: RisChange, bindingStatus: RisBindingStatus): ChangeRec
 export const risTrackChanges = tool('ris_track_changes', {
   title: 'Track RIS Changes',
   description:
-    'Track every document added or changed in one RIS application within an exact date window (changed_from/changed_to) via the History controller, optionally including deletions (include_deleted) — the delta-sync and monitoring primitive for mirrors and watchers, and the only surface that reports removals. Unlike the search tools’ coarse, additive-only changed_since intervals, this is exact-dated and deletion-aware. application takes any RIS application code (e.g. BrKons, Dsk, BgblAuth); the four History name aliases are handled internally. Each changed document comes back in a compact cross-class record — document_number (for ris_get_document), title, dates, binding_status, and rendition URLs — plus its last-changed date; removed documents come back as deleted records with a deletion timestamp. One application per call; page explicitly for large windows. Application codes and coverage: ris_list_reference topic applications.',
+    'Track every document added or changed in one RIS application within an exact date window (changed_from/changed_to), optionally including deletions (include_deleted) — the delta-sync and monitoring primitive for mirrors and watchers, and the only surface that reports removals. Unlike the search tools’ coarse, additive-only changed_since intervals, this is exact-dated and deletion-aware. application takes any RIS application code (e.g. BrKons, Dsk, BgblAuth); the four applications with a different History-feed name are mapped automatically. Each changed document comes back in a compact cross-class record — document_number (for ris_get_document), title, dates, binding_status, and rendition URLs — plus its last-changed date; removed documents come back as deleted records with a deletion timestamp. One application per call; page explicitly for large windows. Application codes and coverage: ris_list_reference topic applications.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     application: z
@@ -205,9 +205,9 @@ export const risTrackChanges = tool('ris_track_changes', {
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'RIS rejected a parameter value — the in-band Client error message is passed through verbatim; it names the invalid element and its valid values (e.g. an application History does not carry).',
+      when: 'RIS rejected a parameter value — its Client error message is passed through verbatim and names the offending element (e.g. a page past the last page of the change window).',
       recovery:
-        'Correct the parameter RIS names in the message. Ground valid application codes with ris_list_reference topic applications.',
+        'Correct the parameter RIS names in the message — for a page past the end, request a lower page, starting from 1.',
     },
     {
       reason: 'upstream_error',
