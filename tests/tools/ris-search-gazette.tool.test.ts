@@ -1,11 +1,11 @@
 /**
  * @fileoverview Tests for the ris_search_gazette tool — local scope/filter guards
  * (rejected before any network call), the Vbl non-Tirol short-circuit, federal
- * era-tier routing, error-contract mapping, zero-hit notices, and record-mapping/
- * format() parity across the five gazette scopes (federal, state, district,
- * municipal, non-authentic state). The RIS service module is mocked so the suite
- * is fully offline; success-path fixtures are run through the real normalizer so
- * results stay realistic.
+ * era-tier routing, state_era series routing, error-contract mapping, zero-hit
+ * notices, and record-mapping/format() parity across the five gazette scopes
+ * (federal, state, district, municipal, legacy state). The RIS service module is
+ * mocked so the suite is fully offline; success-path fixtures are run through the
+ * real normalizer so results stay realistic.
  * @module tests/tools/ris-search-gazette.tool.test
  */
 
@@ -66,13 +66,31 @@ describe('risSearchGazette — local guards (no service call)', () => {
     expect(searchGazette).not.toHaveBeenCalled();
   });
 
-  it('rejects include_non_authentic combined with a non-state scope', async () => {
+  it('rejects state_era combined with a non-state scope', async () => {
     const ctx = createMockContext({ errors: risSearchGazette.errors });
-    const input = risSearchGazette.input.parse({ scope: 'district', include_non_authentic: true });
+    const input = risSearchGazette.input.parse({ scope: 'district', state_era: 'legacy' });
     const err = await captureError(risSearchGazette.handler(input, ctx));
     expect(err.data).toMatchObject({ reason: 'scope_filter_mismatch' });
-    expect(err.message).toContain('include_non_authentic applies only to a state scope');
+    expect(err.message).toContain('state_era applies only to a state scope');
     expect(err.message).toContain("scope: 'district'");
+    expect(searchGazette).not.toHaveBeenCalled();
+  });
+
+  // Vbl is authentic-only (documentClass: authentic_promulgation) — there is no archival
+  // ordinance-gazette application to route to, so the pair is rejected rather than arbitrated.
+  // Before state_era, the equivalent input silently resolved to Vbl and discarded the flag.
+  it('rejects series: ordinance_gazette combined with state_era: legacy', async () => {
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
+    const input = risSearchGazette.input.parse({
+      scope: 'tirol',
+      series: 'ordinance_gazette',
+      state_era: 'legacy',
+    });
+    const err = await captureError(risSearchGazette.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(err.data).toMatchObject({ reason: 'scope_filter_mismatch' });
+    expect(err.message).toContain("state_era: 'legacy' cannot be combined with");
+    expect(err.message).toContain("series: 'ordinance_gazette'");
     expect(searchGazette).not.toHaveBeenCalled();
   });
 
@@ -180,6 +198,57 @@ describe('risSearchGazette — federal era-tier routing (servedApplication)', ()
     const input = risSearchGazette.input.parse({ part: 'pre_1997' });
     await risSearchGazette.handler(input, ctx);
     expect(getEnrichment(ctx).servedApplication).toBe('BgblPdf');
+  });
+});
+
+// state_era selects a series, it does not add one: each value resolves to exactly one
+// application, and the authentic LgblAuth stays the default. The two series cover disjoint
+// eras, so a caller who wants both makes two calls.
+describe('risSearchGazette — state_era series routing (servedApplication)', () => {
+  const zeroHitsResult = parseSearchResponse(fixture('search-zero-hits.json'));
+
+  beforeEach(() => {
+    searchGazette.mockResolvedValue(zeroHitsResult);
+  });
+
+  it('routes an omitted state_era to the authentic LgblAuth', async () => {
+    const ctx = createMockContext();
+    const input = risSearchGazette.input.parse({ scope: 'salzburg' });
+    await risSearchGazette.handler(input, ctx);
+    expect(getEnrichment(ctx).servedApplication).toBe('LgblAuth');
+  });
+
+  it('routes state_era: current to the authentic LgblAuth', async () => {
+    const ctx = createMockContext();
+    const input = risSearchGazette.input.parse({ scope: 'salzburg', state_era: 'current' });
+    await risSearchGazette.handler(input, ctx);
+    expect(getEnrichment(ctx).servedApplication).toBe('LgblAuth');
+  });
+
+  it('routes state_era: legacy to Lgbl for a state the historical series carries', async () => {
+    const ctx = createMockContext();
+    const input = risSearchGazette.input.parse({ scope: 'salzburg', state_era: 'legacy' });
+    await risSearchGazette.handler(input, ctx);
+    expect(getEnrichment(ctx).servedApplication).toBe('Lgbl');
+  });
+
+  it('routes state_era: legacy to LgblNO for Niederösterreich', async () => {
+    const ctx = createMockContext();
+    const input = risSearchGazette.input.parse({ scope: 'niederoesterreich', state_era: 'legacy' });
+    await risSearchGazette.handler(input, ctx);
+    expect(getEnrichment(ctx).servedApplication).toBe('LgblNO');
+  });
+
+  // Only legacy conflicts with the ordinance gazette — current must still resolve to Vbl.
+  it('routes series: ordinance_gazette with state_era: current to Vbl', async () => {
+    const ctx = createMockContext();
+    const input = risSearchGazette.input.parse({
+      scope: 'tirol',
+      series: 'ordinance_gazette',
+      state_era: 'current',
+    });
+    await risSearchGazette.handler(input, ctx);
+    expect(getEnrichment(ctx).servedApplication).toBe('Vbl');
   });
 });
 
@@ -381,7 +450,7 @@ describe('risSearchGazette — record mapping, binding labels, and format() pari
     const ctx = createMockContext();
     const input = risSearchGazette.input.parse({
       scope: 'niederoesterreich',
-      include_non_authentic: true,
+      state_era: 'legacy',
     });
     const result = await risSearchGazette.handler(input, ctx);
     expect(result.results[0]!.binding).toBe('consolidated_informational');
@@ -391,7 +460,7 @@ describe('risSearchGazette — record mapping, binding labels, and format() pari
   it('labels a Lgbl (non-authentic, non-NÖ) result as historical_record', async () => {
     searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-lgblauth.json')));
     const ctx = createMockContext();
-    const input = risSearchGazette.input.parse({ scope: 'salzburg', include_non_authentic: true });
+    const input = risSearchGazette.input.parse({ scope: 'salzburg', state_era: 'legacy' });
     const result = await risSearchGazette.handler(input, ctx);
     expect(result.results[0]!.binding).toBe('historical_record');
     expect(getEnrichment(ctx).servedApplication).toBe('Lgbl');

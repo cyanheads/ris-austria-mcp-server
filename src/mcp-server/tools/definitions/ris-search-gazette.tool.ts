@@ -3,9 +3,11 @@
  * government. `scope` selects the jurisdiction; the three federal era tiers (BgblAuth 2004+,
  * BgblPdf 1945–2003, BgblAlt 1848–1940) are auto-routed by the year in the number or date
  * range, and the resolved application is echoed in enrichment. State scopes pick a `series`
- * (law vs ordinance gazette) and an `include_non_authentic` toggle; conditional filters are
- * guarded locally before any upstream call. Ordinance gazettes (Vbl) currently cover Tirol
- * only — a non-Tirol request short-circuits to a zero-hit notice rather than a server error.
+ * (law vs ordinance gazette) and a `state_era` (the authentic LgblAuth vs the state's earlier
+ * Lgbl/LgblNO series) — orthogonal axes, with `legacy` under `ordinance_gazette` rejected
+ * locally since Vbl has no legacy counterpart. Conditional filters are guarded locally before
+ * any upstream call. Ordinance gazettes (Vbl) currently cover Tirol only — a non-Tirol request
+ * short-circuits to a zero-hit notice rather than a server error.
  * @module mcp-server/tools/definitions/ris-search-gazette
  */
 
@@ -264,7 +266,7 @@ export function toRecord(hit: RisHit, application: GazetteApplication): GazetteR
 export const risSearchGazette = tool('ris_search_gazette', {
   title: 'Search Austrian Gazettes',
   description:
-    'Browse Austria’s promulgation record — the authentic, legally binding gazettes — at every level of government. scope picks the jurisdiction: federal (default; the Bundesgesetzblatt across three era tiers auto-routed by year — BgblAuth 2004+ authentic, BgblPdf 1945–2003, BgblAlt 1848–1940 metadata-only ÖNB scans), one Bundesland (its Landesgesetzblatt), district (Bezirke promulgations), or municipal (Gemeinde promulgations). For a state scope, series selects law gazettes (law_gazette, the default → LGBl) vs ordinance gazettes (ordinance_gazette → Verordnungsblätter, currently Tirol only), and include_non_authentic adds the historical non-authentic state gazette (Niederösterreich’s systematic LgblNO, or the older Lgbl elsewhere). Filter by query (full text), title, number ("171/2026" — a pre-2004 number auto-routes to the right era tier), part (federal I/II/III or pre_1997), type (laws/regulations/announcements/other), published_from/to, issuer (federal or ordinance gazettes only), district_authority (district only), or municipality (municipal only). Every result carries a binding label (authentic vs historical_record vs consolidated_informational) and the amtssigniert authentic PDF wherever it exists — the binding artifact, never a paraphrase. For one known gazette number, ris_lookup_citation resolves it directly. Coverage windows, era tiers, and part semantics: ris_list_reference topic applications or gazette_parts.',
+    'Browse Austria’s promulgation record — the authentic, legally binding gazettes — at every level of government. scope picks the jurisdiction: federal (default; the Bundesgesetzblatt across three era tiers auto-routed by year — BgblAuth 2004+ authentic, BgblPdf 1945–2003, BgblAlt 1848–1940 metadata-only ÖNB scans), one Bundesland (its Landesgesetzblatt), district (Bezirke promulgations), or municipal (Gemeinde promulgations). For a state scope, series selects law gazettes (law_gazette, the default → LGBl) vs ordinance gazettes (ordinance_gazette → Verordnungsblätter, currently Tirol only), and state_era picks which era of that series to search: current (the default → the authentic LGBl) or legacy (the state’s earlier non-authentic series — Niederösterreich’s systematic LgblNO, or the older Lgbl elsewhere; Wien carries neither, and ordinance gazettes have no legacy series). Filter by query (full text), title, number ("171/2026" — a pre-2004 number auto-routes to the right era tier), part (federal I/II/III or pre_1997), type (laws/regulations/announcements/other), published_from/to, issuer (federal or ordinance gazettes only), district_authority (district only), or municipality (municipal only). Every result carries a binding label (authentic vs historical_record vs consolidated_informational) and the amtssigniert authentic PDF wherever it exists — the binding artifact, never a paraphrase. For one known gazette number, ris_lookup_citation resolves it directly. Coverage windows, era tiers, and part semantics: ris_list_reference topic applications or gazette_parts.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     scope: z
@@ -279,11 +281,11 @@ export const risSearchGazette = tool('ris_search_gazette', {
       .describe(
         'State scopes only. law_gazette (default when omitted) searches the authentic Landesgesetzblatt; ordinance_gazette searches the Verordnungsblätter (Vbl — currently Tirol only, 2022+).',
       ),
-    include_non_authentic: z
-      .boolean()
+    state_era: z
+      .enum(['current', 'legacy'])
       .optional()
       .describe(
-        'State scopes only. Adds the historical non-authentic state gazette — Niederösterreich’s systematic LgblNO, or the older Lgbl for the other Bundesländer (Wien is not carried).',
+        'State scopes only. current (default when omitted) searches the authentic Landesgesetzblatt; legacy searches the state’s earlier non-authentic series — Niederösterreich’s systematic LgblNO collection, or the historical Lgbl for the other Bundesländer (Wien carries neither).',
       ),
     query: z
       .string()
@@ -382,9 +384,9 @@ export const risSearchGazette = tool('ris_search_gazette', {
     {
       reason: 'scope_filter_mismatch',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'A filter was combined with a scope that does not support it (part off federal; series/include_non_authentic off a state scope; district_authority off district; municipality off municipal; issuer outside federal/ordinance gazettes) — rejected locally before any upstream call; the message names the offending pair.',
+      when: 'A filter was combined with a scope that does not support it (part off federal; series/state_era off a state scope; district_authority off district; municipality off municipal; issuer outside federal/ordinance gazettes), or series: ordinance_gazette was combined with state_era: legacy (ordinance gazettes have no legacy counterpart) — rejected locally before any upstream call; the message names the offending pair.',
       recovery:
-        'Drop the named filter or adjust scope: part applies only to scope: federal; series and include_non_authentic only to a state scope; district_authority only to scope: district; municipality only to scope: municipal; issuer only to federal or ordinance gazettes. Semantics: ris_list_reference topic gazette_parts or applications.',
+        'Drop the named filter or adjust scope: part applies only to scope: federal; series and state_era only to a state scope; district_authority only to scope: district; municipality only to scope: municipal; issuer only to federal or ordinance gazettes. state_era: legacy has no ordinance-gazette counterpart — drop one of that pair. Semantics: ris_list_reference topic gazette_parts or applications.',
     },
     {
       reason: 'invalid_query',
@@ -414,7 +416,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
     const districtAuthority = meaningful(input.district_authority);
     const municipality = meaningful(input.municipality);
     const { series } = input;
-    const includeNonAuthentic = input.include_non_authentic === true;
+    const stateEra = input.state_era;
     const isState = isStateScope(scope);
 
     const fail = (message: string) =>
@@ -426,10 +428,8 @@ export const risSearchGazette = tool('ris_search_gazette', {
     if (series !== undefined && !isState) {
       throw fail(`series applies only to a state scope (a Bundesland) — got scope: '${scope}'.`);
     }
-    if (includeNonAuthentic && !isState) {
-      throw fail(
-        `include_non_authentic applies only to a state scope (a Bundesland) — got scope: '${scope}'.`,
-      );
+    if (stateEra !== undefined && !isState) {
+      throw fail(`state_era applies only to a state scope (a Bundesland) — got scope: '${scope}'.`);
     }
     if (districtAuthority !== undefined && scope !== 'district') {
       throw fail(`district_authority applies only to scope: district — got scope: '${scope}'.`);
@@ -445,6 +445,11 @@ export const risSearchGazette = tool('ris_search_gazette', {
         `issuer applies only to federal or ordinance gazettes — got scope: '${scope}'${isState ? ' with law_gazette' : ''}.`,
       );
     }
+    if (series === 'ordinance_gazette' && stateEra === 'legacy') {
+      throw fail(
+        "state_era: 'legacy' cannot be combined with series: 'ordinance_gazette' — the Verordnungsblätter have no legacy series; RIS carries the authentic Vbl only.",
+      );
+    }
 
     let application: GazetteApplication;
     let era: GazetteEra | undefined;
@@ -458,7 +463,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
       application = 'GrA';
     } else if (series === 'ordinance_gazette') {
       application = 'Vbl';
-    } else if (includeNonAuthentic) {
+    } else if (stateEra === 'legacy') {
       application = scope === 'niederoesterreich' ? 'LgblNO' : 'Lgbl';
     } else {
       application = 'LgblAuth';

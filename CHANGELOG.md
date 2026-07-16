@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.2.0](changelog/0.2.x/0.2.0.md) — 2026-07-16 · ⚠️ Breaking
+
+ris_search_gazette's include_non_authentic boolean is removed and replaced by an explicit state_era: 'current' | 'legacy' selector; un-migrated callers silently get authentic results instead of an error.
+
 ## [0.1.7](changelog/0.1.x/0.1.7.md) — 2026-07-15
 
 RIS's HTTP 500 for a rejected input parameter (e.g. an out-of-range page) now surfaces as a typed client error with RIS's own message instead of an opaque InternalError, fixed once for all six search-shaped tools; plus tool-description and error-contract-prose corrections.
