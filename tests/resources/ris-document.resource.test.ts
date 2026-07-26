@@ -8,6 +8,8 @@
  * @module tests/resources/ris-document.resource.test
  */
 
+import { readFileSync } from 'node:fs';
+
 import {
   JsonRpcErrorCode,
   McpError,
@@ -75,6 +77,28 @@ describe('risDocumentResource — resolves via the shared renderDocument helper'
     expect(result).toContain('World');
     expect(result).not.toContain('<b>');
     expect(fetchDocumentContent).toHaveBeenCalledWith(expect.stringContaining('.html'), ctx);
+  });
+
+  // The resource renders through the same renderDocument helper, so the markdown-boundary
+  // strip of RIS's screen-reader twins has to reach this surface too — it is markdown-only,
+  // and a duplicated citation here would corrupt injected context the same way.
+  it('drops the screen-reader expansions and keeps the visible citation', async () => {
+    const html = readFileSync(
+      new URL('../fixtures/ris/document-brkons-sr-only.html', import.meta.url),
+      'utf8',
+    );
+    fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
+    const ctx = createMockContext({ uri: new URL('ris://document/BrKons/NOR40262691') });
+    const params = risDocumentResource.params!.parse({
+      application: 'BrKons',
+      documentNumber: 'NOR40262691',
+    });
+    const result = await risDocumentResource.handler(params, ctx);
+
+    expect(result).toContain('BGBl. I Nr. 165/1999 zuletzt geändert durch BGBl. I Nr. 70/2024');
+    expect(result).not.toContain('Bundesgesetzblatt Teil eins');
+    expect(result).toContain('§ 0');
+    expect(result).not.toContain('Paragraph 0');
   });
 
   it('falls back to the unavailable-format notice text for an authentic_pdf_only application', async () => {

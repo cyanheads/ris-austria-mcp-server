@@ -5,9 +5,12 @@
  * `document_number` + `application`, or a `document_url` from a result's content_urls.
  * Format availability varies by application (full text · authentic-PDF-only · PDF-only ·
  * metadata-only) — a text-format request against a non-text application degrades to a
- * `format_unavailable` notice on a success result, never an error. Oversized markdown
- * overflows to a retrievable §/Artikel/Anlage section outline (never a silent truncation);
- * a follow-up call with `sections:[…]` returns just the chosen sections. The shared
+ * `format_unavailable` notice on a success result, never an error. Markdown conversion drops
+ * the `.sr-only` screen-reader twin RIS ships beside every abbreviated citation, keeping the
+ * visible form; `html` and `xml` pass through untouched. Oversized markdown overflows to a
+ * retrievable §/Artikel/Anlage section outline (never a silent truncation); a follow-up call
+ * with `sections:[…]` returns just the chosen sections, and a selector matching nothing gets
+ * the outline back with a notice rather than the whole document. The shared
  * {@link renderDocument} helper backs both this tool and the `ris://document/…` resource.
  * @module mcp-server/tools/definitions/ris-get-document
  */
@@ -21,7 +24,7 @@ import {
   outlineOnOverflow,
   type SectionMeta,
 } from '@cyanheads/mcp-ts-core/utils';
-import { NodeHtmlMarkdown } from 'node-html-markdown';
+import { NodeHtmlMarkdown, type TranslatorConfigFactory } from 'node-html-markdown';
 
 import { getServerConfig } from '@/config/server-config.js';
 import type { RisApplication, RisBindingStatus } from '@/services/ris/reference/index.js';
@@ -78,6 +81,42 @@ const APPLICATION_BY_SEGMENT = new Map<string, RisApplication>(
  */
 const RENDITION_EXTENSIONS = new Set<string>([...RIS_CONTENT_FORMATS, 'pdfsig']);
 
+/**
+ * Drop RIS's screen-reader twin, pass every other span through untouched. RIS renditions
+ * carry each abbreviated legal reference twice — the visible citation in
+ * `<span aria-hidden="true">` and its spelled-out expansion in `<span class="sr-only">` —
+ * which a plain translation concatenates with no separator (`§ 0Paragraph 0`) and which
+ * inflates every byte figure derived from the rendered text. The visible form is the twin
+ * that survives: it is the canonical citation a caller copies back into `norm`, `title`, or
+ * `ris_lookup_citation`.
+ */
+const dropScreenReaderTwin: TranslatorConfigFactory = ({ node }) =>
+  node.classList.contains('sr-only') ? { ignore: true } : {};
+
+/**
+ * HTML→markdown converter for the `markdown` format. Markdown only — `html` and `xml` return
+ * the authentic rendition byte-for-byte and never route through here.
+ *
+ * node-html-markdown keeps a separate translator collection per nesting context, and a
+ * constructor-supplied custom translator only reaches the top-level one. RIS renders its
+ * Inhaltsverzeichnis and Anmerkungen as tables, whose cells carry screen-reader twins of
+ * their own, so the strip has to be registered on every collection to reach them.
+ */
+const MARKDOWN_CONVERTER = ((): NodeHtmlMarkdown => {
+  const converter = new NodeHtmlMarkdown();
+  for (const collection of [
+    converter.translators,
+    converter.aTagTranslators,
+    converter.codeBlockTranslators,
+    converter.tableTranslators,
+    converter.tableRowTranslators,
+    converter.tableCellTranslators,
+  ]) {
+    collection.set('span', dropScreenReaderTwin);
+  }
+  return converter;
+})();
+
 /** Map an empty string from a form-based client to `undefined`. */
 function meaningful(value: string | undefined): string | undefined {
   return value !== undefined && value !== '' ? value : undefined;
@@ -119,6 +158,20 @@ type ParsedDocumentUrl =
   | { readonly error: string };
 
 /**
+ * Percent-decode one path segment, or `undefined` when it carries a malformed escape
+ * (`%ZZ`, a truncated `%A`). `decodeURIComponent` throws `URIError` on those, and a native
+ * throw here would escape {@link parseDocumentUrl}'s errors-as-values contract and reach the
+ * caller as a bare validation error instead of the tool's declared `unsupported_url`.
+ */
+function decodePathSegment(segment: string): string | undefined {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return;
+  }
+}
+
+/**
  * Parse a caller-supplied `document_url` into `(application, documentNumber)` — errors as
  * values (no throw). Enforces the same host + `/Dokumente/` allowlist as the service's
  * fetch guard, then reverse-maps the content-path segment to its application.
@@ -146,14 +199,20 @@ export function parseDocumentUrl(url: string, contentBaseUrl: string): ParsedDoc
   if (!app) {
     return { error: `path segment "${segment}" is not a recognized RIS application` };
   }
-  const documentNumber = decodeURIComponent(rawDocumentNumber);
+  const documentNumber = decodePathSegment(rawDocumentNumber);
+  if (documentNumber === undefined) {
+    return { error: `"${rawDocumentNumber}" is not a decodable path segment (malformed % escape)` };
+  }
   // A folder URL (…/{segment}/{documentNumber}[/]) carries no trailing filename and resolves
   // fine. A trailing filename is a main-document rendition only when it is exactly
   // {documentNumber}.{ext} for a known rendition extension; a content attachment
   // (Materialien_/Anlagen_… memoranda and annexes) or any deeper nesting names non-main
   // content the fetch would silently swap for the main document — reject it here instead.
   if (filename !== undefined) {
-    const decodedFilename = decodeURIComponent(filename);
+    const decodedFilename = decodePathSegment(filename);
+    if (decodedFilename === undefined) {
+      return { error: `"${filename}" is not a decodable filename (malformed % escape)` };
+    }
     const dot = decodedFilename.lastIndexOf('.');
     const stem = dot === -1 ? decodedFilename : decodedFilename.slice(0, dot);
     const extension = dot === -1 ? '' : decodedFilename.slice(dot + 1).toLowerCase();
@@ -283,16 +342,40 @@ export function segmentDocument(text: string): DocumentSection[] {
   return sections;
 }
 
+/** Outcome of resolving a `sections:[…]` selector against a rendered document. */
+export interface SectionSelection {
+  /** The document's whole section roster, largest first — what the caller can re-pick from. */
+  readonly available: SectionMeta[];
+  /** Concatenated text of the matched sections, in document order; `''` when none matched. */
+  readonly text: string;
+  /** Requested names that matched no section, in the order requested. */
+  readonly unmatched: string[];
+}
+
 /**
- * Return the concatenated text of the named sections, or `undefined` when none match — the
- * selective-retrieval counterpart to the outline. The handler re-fetches the document (the
- * upstream query is deterministic, so it reproduces the same text) and slices it to the
- * requested sections; a no-match falls through to a fresh outline so the agent can re-pick.
+ * Resolve a `sections:[…]` selector against rendered document text — the selective-retrieval
+ * counterpart to the outline. The handler re-fetches the document (the upstream query is
+ * deterministic, so it reproduces the same text) and slices it to the requested sections.
+ * Reports the unmatched names and the full roster alongside the matched text so the handler
+ * can disclose a mismatch instead of silently returning something the caller didn't ask for.
  */
-export function selectDocumentSections(text: string, want: readonly string[]): string | undefined {
+export function selectDocumentSections(text: string, want: readonly string[]): SectionSelection {
+  const sections = segmentDocument(text);
+  const names = new Set(sections.map((section) => section.name));
   const wanted = new Set(want);
-  const matched = segmentDocument(text).filter((section) => wanted.has(section.name));
-  return matched.length > 0 ? matched.map((section) => section.text).join('\n\n') : undefined;
+  const matched = sections.filter((section) => wanted.has(section.name));
+  return {
+    available: sections
+      .map(({ name, bytes }) => ({ name, bytes }))
+      .sort((a, b) => b.bytes - a.bytes),
+    text: matched.map((section) => section.text).join('\n\n'),
+    unmatched: [...new Set(want)].filter((name) => !names.has(name)),
+  };
+}
+
+/** Quote a caller-supplied section-name list for a notice. */
+function quoteNames(names: readonly string[]): string {
+  return names.map((name) => `"${name}"`).join(', ');
 }
 
 /**
@@ -324,13 +407,15 @@ export function exampleSectionNames(sections: readonly SectionMeta[]): string {
 }
 
 /**
- * Render an overflow outline — the section roster the agent picks from — to markdown.
- * Shared by the tool's `format()` (as a content block) and the resource (as its body), so
- * both client surfaces list identical sections.
+ * Render an outline — the section roster the agent picks from — to markdown. Shared by the
+ * tool's `format()` (as a content block) and the resource (as its body), so both client
+ * surfaces list identical sections. Deliberately says nothing about *why* the outline was
+ * returned: the tool emits one both on a byte overflow and on an unmatched `sections`
+ * selector, and the accompanying notice is what separates the two.
  */
 export function renderOutlineSections(sections: readonly SectionMeta[]): string {
   return [
-    `**${sections.length} sections** (document too large to inline — retrieve by name):`,
+    `**${sections.length} sections** (retrieve by name):`,
     ...sections.map((section) => `- \`${section.name}\` — ${section.bytes} bytes`),
   ].join('\n');
 }
@@ -376,7 +461,8 @@ export async function renderDocument(
   const fetchFormat: RisContentFormat = format === 'xml' ? 'xml' : 'html';
   const url = service.buildDocumentContentUrl(app.code, documentNumber, fetchFormat);
   const fetched = await service.fetchDocumentContent(url, ctx);
-  const rendered = format === 'markdown' ? NodeHtmlMarkdown.translate(fetched.text) : fetched.text;
+  const rendered =
+    format === 'markdown' ? MARKDOWN_CONVERTER.translate(fetched.text) : fetched.text;
   const encoded = new TextEncoder().encode(rendered);
   ctx.log.info('Document rendered', {
     application: app.code,
@@ -400,7 +486,7 @@ const ContentUrlsSchema = z
 export const risGetDocument = tool('ris_get_document', {
   title: 'Get RIS Document',
   description:
-    'Fetch one RIS document’s full text or its rendition URLs, with explicit binding status and the amtssigniert authentic PDF surfaced wherever it exists. Address the document exactly one of two ways: document_number plus application (both copied verbatim from a ris_search_* or ris_lookup_citation result), or a document_url from a result’s content_urls. format: markdown (default — the HTML rendition converted to markdown), html (raw HTML rendition), xml (the RIS Nutzdaten XML), or urls_only (no fetch — every rendition URL, including the Authentisch PDF). Format availability varies by application and the tool degrades explicitly, never silently: consolidated law, gazettes, case law, drafts, and most sectoral collections carry full text; district and municipal promulgations and court rules (Bvb, GrA, KmGer) publish only the signed authentic PDF; party-transparency decisions and council minutes (Upts, Mrp) are PDF-only; the 1848–1940 imperial gazettes (BgblAlt) are metadata-only — for these a text-format request returns a format_unavailable notice with the usable URL, not an error. Every result carries binding_status; only authentic (amtssigniert) publications are legally binding. This tool returns content, not fresh metadata — the metadata rides the search/lookup step that produced the document number. When the markdown text overflows the byte budget the tool returns a §/Artikel/Anlage section outline (kind: outline) instead of truncating; re-call with sections:[…] naming outline entries to retrieve just those. Raw html/xml renditions, which carry no such headings, return in full.',
+    'Fetch one RIS document’s full text or its rendition URLs, with explicit binding status and the amtssigniert authentic PDF surfaced wherever it exists. Address the document exactly one of two ways: document_number plus application (both copied verbatim from a ris_search_* or ris_lookup_citation result), or a document_url from a result’s content_urls. format: markdown (default — the HTML rendition converted to markdown), html (raw HTML rendition), xml (the RIS Nutzdaten XML), or urls_only (no fetch — every rendition URL, including the Authentisch PDF). Format availability varies by application and the tool degrades explicitly, never silently: consolidated law, gazettes, case law, drafts, and most sectoral collections carry full text; district and municipal promulgations and court rules (Bvb, GrA, KmGer) publish only the signed authentic PDF; party-transparency decisions and council minutes (Upts, Mrp) are PDF-only; the 1848–1940 imperial gazettes (BgblAlt) are metadata-only — for these a text-format request returns a format_unavailable notice with the usable URL, not an error. Every result carries binding_status; only authentic (amtssigniert) publications are legally binding. This tool returns content, not fresh metadata — the metadata rides the search/lookup step that produced the document number. When the markdown text overflows the byte budget the tool returns a §/Artikel/Anlage section outline (kind: outline) instead of truncating; re-call with sections:[…] naming outline entries to retrieve just those, and a name matching no section returns the outline again with a notice rather than the whole document. Markdown drops the screen-reader expansions RIS ships alongside each abbreviated citation, keeping the visible citation form; raw html/xml renditions are returned exactly as published and, carrying no markdown headings, always return in full.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     document_number: z
@@ -431,7 +517,7 @@ export const risGetDocument = tool('ris_get_document', {
       .array(z.string())
       .optional()
       .describe(
-        'Section names to retrieve, each copied verbatim from a prior outline response (kind: outline). Omit for the full document — which returns a §/Artikel/Anlage outline instead when the markdown overflows the byte budget. Applies to markdown only — ignored for html, xml, and urls_only, which return in full and have no outline to select from.',
+        'Section names to retrieve, each copied verbatim from a prior outline response (kind: outline). Omit for the full document — which returns a §/Artikel/Anlage outline instead when the markdown overflows the byte budget. A name that matches no section is never silently ignored: a total miss returns the outline (kind: outline) with a notice, a partial miss returns the matched sections with a notice naming the rest. Applies to markdown only — html, xml, and urls_only carry no headings to select from and return in full.',
       ),
   }),
   output: z.object({
@@ -454,12 +540,12 @@ export const risGetDocument = tool('ris_get_document', {
       .boolean()
       .optional()
       .describe(
-        'Present and true when the full text isn’t inline because the document overflowed to a section outline (kind: outline) — retrieve sections via the sections input, or fetch content_urls for the whole artifact.',
+        'Present and true when the full text isn’t inline because a section outline was returned instead (kind: outline) — either the document overflowed the byte budget, or a sections:[…] selector matched nothing. The notice names which. Retrieve sections via the sections input, or fetch content_urls for the whole artifact.',
       ),
     kind: z
       .enum(['full', 'outline'])
       .describe(
-        'full — the complete response (document text, selected sections, or rendition URLs). outline — the text overflowed the byte budget, so sections lists the retrievable §/Artikel/Anlage units; re-call with sections:[…] to fetch specific ones.',
+        'full — the complete response (document text, selected sections, or rendition URLs). outline — sections lists the retrievable §/Artikel/Anlage units instead of the text, either because it overflowed the byte budget or because a sections:[…] selector matched nothing; re-call with sections:[…] naming entries from it.',
       ),
     sections: z
       .array(
@@ -469,7 +555,7 @@ export const risGetDocument = tool('ris_get_document', {
       )
       .optional()
       .describe(
-        'Present when kind = outline: the document’s §/Artikel/Anlage sections, largest first, each with its UTF-8 byte size. Copy names into the sections input to retrieve them.',
+        'Present when kind = outline: the document’s §/Artikel/Anlage sections, largest first, each with its UTF-8 byte size. Copy names into the sections input verbatim to retrieve them.',
       ),
     binding_status: z
       .enum(BINDING_STATUSES)
@@ -491,7 +577,7 @@ export const risGetDocument = tool('ris_get_document', {
       .string()
       .optional()
       .describe(
-        'Present when the requested text format is unavailable for this application (names why and the usable URL), or when the document overflowed to a section outline (names how to retrieve sections).',
+        'Present when the requested text format is unavailable for this application (names why and the usable URL), when the document overflowed to a section outline (names how to retrieve sections), or when a sections:[…] entry matched no section (names the unmatched entries).',
       ),
   },
   errors: [
@@ -622,18 +708,42 @@ export const risGetDocument = tool('ris_get_document', {
     const { byteSize } = rendition;
     const requestedSections = input.sections?.filter((name) => name.trim() !== '') ?? [];
 
-    // Selective retrieval — the re-call after an outline. A no-match falls through to a fresh
-    // outline so the agent can re-pick valid section names.
+    // Selective retrieval — the re-call after an outline. Every outcome is disclosed: a
+    // partial match names the entries that were dropped, and a total miss returns the section
+    // roster (driven by the no-match, not by the byte budget) so the caller can tell "your
+    // names were wrong" from "that section really is that large".
     if (requestedSections.length > 0) {
-      const selected = selectDocumentSections(rendition.text, requestedSections);
-      if (selected !== undefined) {
+      const selection = selectDocumentSections(rendition.text, requestedSections);
+      if (selection.text !== '') {
+        if (selection.unmatched.length > 0) {
+          ctx.enrich.notice(
+            `Returned only the matched sections — ${quoteNames(selection.unmatched)} named no section of this document and ${selection.unmatched.length === 1 ? 'was' : 'were'} skipped. Re-call ris_get_document without sections:[…] for the outline of all ${selection.available.length} §/Artikel/Anlage sections.`,
+          );
+        }
         return {
           ...base,
           kind: 'full' as const,
-          text: selected,
-          byte_size: new TextEncoder().encode(selected).length,
+          text: selection.text,
+          byte_size: new TextEncoder().encode(selection.text).length,
         };
       }
+      if (selection.available.length > 0) {
+        ctx.enrich.notice(
+          `sections:[…] matched nothing — ${quoteNames(selection.unmatched)} named no section of this document, so the outline below is a selector mismatch, not a size overflow. Copy a name verbatim from sections and re-call ris_get_document with the same addressing — e.g. ${exampleSectionNames(selection.available)}.`,
+        );
+        return {
+          ...base,
+          kind: 'outline' as const,
+          sections: selection.available,
+          truncated: true,
+          ...(byteSize !== undefined && { byte_size: byteSize }),
+        };
+      }
+      // Nothing to select from and nothing to list — an html/xml rendition or markdown with
+      // no §/Artikel/Anlage headings. Say so, then return the document whole below.
+      ctx.enrich.notice(
+        `sections:[…] was ignored — this rendition carries no §/Artikel/Anlage headings to select from, so ${quoteNames(selection.unmatched)} could not be resolved. The whole document follows.`,
+      );
     }
 
     // Disclosure — whole text under budget (or unsegmentable), else a section outline.

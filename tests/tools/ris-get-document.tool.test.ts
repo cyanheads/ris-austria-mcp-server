@@ -1,13 +1,17 @@
 /**
  * @fileoverview Tests for the ris_get_document tool — local addressing/URL-allowlist guards
  * (rejected before any network call), format handling (markdown/html/xml/urls_only) across
- * full, authentic_pdf_only, pdf_only, and metadata-only applications, overflow-to-outline and
- * selective section retrieval, error-contract mapping, and format() parity. The RIS service module is mocked so the
- * suite is fully offline: `buildDocumentContentUrl` delegates to a real `RisService`
- * instance (pure URL construction — no network), `fetchDocumentContent` is a `vi.fn()`
- * resolving canned content.
+ * full, authentic_pdf_only, pdf_only, and metadata-only applications, screen-reader-twin
+ * stripping at the markdown boundary, overflow-to-outline and selective section retrieval
+ * (including unmatched-selector disclosure), error-contract mapping, and format() parity. The
+ * RIS service module is mocked so the suite is fully offline: `buildDocumentContentUrl`
+ * delegates to a real `RisService` instance (pure URL construction — no network),
+ * `fetchDocumentContent` is a `vi.fn()` resolving canned content — for the rendering cases,
+ * real RIS markup captured under `tests/fixtures/ris/`.
  * @module tests/tools/ris-get-document.tool.test
  */
+
+import { readFileSync } from 'node:fs';
 
 import {
   JsonRpcErrorCode,
@@ -22,6 +26,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   parseDocumentUrl,
   risGetDocument,
+  selectDocumentSections,
 } from '@/mcp-server/tools/definitions/ris-get-document.tool.js';
 import type { RisContentFormat } from '@/services/ris/ris-service.js';
 
@@ -60,6 +65,41 @@ async function captureError(promise: Promise<unknown>): Promise<McpError> {
 function oversizedArticlesHtml(): string {
   const body = (n: number) => `<p>${`xSECTIONx${n}x `.repeat(4000)}</p>`;
   return Array.from({ length: 15 }, (_, i) => `<h2>Artikel ${i + 1}</h2>${body(i + 1)}`).join('\n');
+}
+
+/** Read a captured RIS rendition fixture as its raw body text. */
+function fixture(name: string): string {
+  return readFileSync(new URL(`../fixtures/ris/${name}`, import.meta.url), 'utf8');
+}
+
+/**
+ * A real BrKons rendition excerpt carrying four `aria-hidden` / `sr-only` twin shapes.
+ * Under the outline budget, no §/Artikel/Anlage headings.
+ */
+const SR_ONLY_HTML = fixture('document-brkons-sr-only.html');
+
+/**
+ * A real RegV rendition excerpt — three `Artikel N` sections, far under the outline budget.
+ * The arm where an unmatched `sections` selector used to return the whole document silently.
+ */
+const ARTIKEL_SECTIONS_HTML = fixture('document-regv-artikel-sections.html');
+
+/** Resolve the tool against canned rendition text. */
+async function callTool(
+  html: string,
+  input: Record<string, unknown>,
+): Promise<{
+  ctx: ReturnType<typeof createMockContext>;
+  result: Awaited<ReturnType<typeof risGetDocument.handler>>;
+}> {
+  fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
+  const ctx = createMockContext();
+  const parsed = risGetDocument.input.parse({
+    document_number: 'NOR40262691',
+    application: 'BrKons',
+    ...input,
+  });
+  return { ctx, result: await risGetDocument.handler(parsed, ctx) };
 }
 
 beforeEach(() => {
@@ -151,6 +191,37 @@ describe('risGetDocument — addressing guards (no fetch)', () => {
     });
     const err = await captureError(risGetDocument.handler(input, ctx));
     expect(err.data).toMatchObject({ reason: 'unsupported_url' });
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+
+  // Both decode sites in parseDocumentUrl are caller-reachable, and `decodeURIComponent`
+  // throws a native URIError on a malformed escape. Escaping the errors-as-values boundary
+  // would strand the caller with a contract-less "URI malformed" and no recovery hint.
+  it('rejects malformed percent-encoding in the document-number position as unsupported_url', async () => {
+    const ctx = createMockContext({ errors: risGetDocument.errors });
+    const input = risGetDocument.input.parse({
+      document_url: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/%ZZ/%ZZ.html',
+    });
+    const err = await captureError(risGetDocument.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(err.data).toMatchObject({ reason: 'unsupported_url' });
+    expect(err.message).toContain('malformed % escape');
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('content_urls'),
+    });
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed percent-encoding in the filename position as unsupported_url', async () => {
+    const ctx = createMockContext({ errors: risGetDocument.errors });
+    const input = risGetDocument.input.parse({
+      // The document-number segment decodes cleanly — only the trailing filename is malformed.
+      document_url: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/%E0%A4%A.html',
+    });
+    const err = await captureError(risGetDocument.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(err.data).toMatchObject({ reason: 'unsupported_url' });
+    expect(err.message).toContain('malformed % escape');
     expect(fetchDocumentContent).not.toHaveBeenCalled();
   });
 });
@@ -248,6 +319,64 @@ describe('risGetDocument — format handling', () => {
     expect(result.application).toBe('BrKons');
     expect(result.document_number).toBe('NOR40262691');
     expect(fetchDocumentContent).toHaveBeenCalledWith(expect.stringContaining('.html'), ctx);
+  });
+});
+
+describe('risGetDocument — screen-reader twins (markdown only)', () => {
+  // RIS ships each abbreviated citation twice: the visible form in <span aria-hidden="true">
+  // and a spelled-out expansion in <span class="sr-only">. Translated as-is they concatenate
+  // with no separator, corrupting the legal text and inflating every derived byte figure.
+  it('keeps the visible citation and drops its screen-reader expansion', async () => {
+    const { result } = await callTool(SR_ONLY_HTML, {});
+    const text = result.text as string;
+
+    expect(text).toContain('BGBl. I Nr. 165/1999 zuletzt geändert durch BGBl. I Nr. 70/2024');
+    expect(text).not.toContain('Bundesgesetzblatt Teil eins');
+    // The heading twins used to concatenate into "§/Artikel/AnlageParagraph/Artikel/Anlage".
+    expect(text).toContain('# §/Artikel/Anlage\n');
+    expect(text).not.toContain('Paragraph/Artikel/Anlage');
+    expect(text).toContain('§ 0');
+    expect(text).not.toContain('Paragraph 0');
+    // A visible twin wrapping a nested element survives whole.
+    expect(text).toContain('(Anm.: §§ 2 und 3 aufgehoben durch BGBl. I Nr. 14/2019)');
+    expect(text).not.toContain('Anmerkung,');
+  });
+
+  // node-html-markdown swaps to a separate translator collection inside a table cell, so a
+  // strip registered only on the top-level collection leaves RIS's Inhaltsverzeichnis and
+  // Anmerkungen tables — which carry twins of their own — duplicated.
+  it('drops the twins inside table cells too', async () => {
+    const { result } = await callTool(SR_ONLY_HTML, {});
+    const text = result.text as string;
+
+    expect(text).toContain('Inhaltsverzeichnis');
+    expect(text).toContain('§ 1');
+    expect(text).not.toContain('Paragraph eins');
+    expect(text).toContain('Artikel 1');
+    expect(text).not.toContain('Artikel 1, (Verfassungsbestimmung)');
+  });
+
+  it('reports byte_size as the real size of the returned text', async () => {
+    const { result } = await callTool(SR_ONLY_HTML, {});
+    expect(result.byte_size).toBe(new TextEncoder().encode(result.text as string).length);
+  });
+
+  // The authentic renditions are what a caller cites from — stripping anything there would
+  // corrupt them. The strip lives at the markdown conversion boundary and nowhere else.
+  it('passes the html rendition through byte-for-byte, sr-only spans intact', async () => {
+    const { result } = await callTool(SR_ONLY_HTML, { format: 'html' });
+    expect(result.text).toBe(SR_ONLY_HTML);
+    expect(result.text).toContain('class="sr-only"');
+    expect(result.text).toContain('Bundesgesetzblatt Teil eins');
+  });
+
+  it('passes the xml rendition through byte-for-byte, sr-only spans intact', async () => {
+    const xml =
+      '<Dokument><Text><span aria-hidden="true">§ 0</span><span class="sr-only">Paragraph 0</span></Text></Dokument>';
+    const { result } = await callTool(xml, { format: 'xml' });
+    expect(result.text).toBe(xml);
+    expect(result.text).toContain('class="sr-only"');
+    expect(result.text).toContain('Paragraph 0');
   });
 });
 
@@ -407,6 +536,97 @@ describe('risGetDocument — overflow (outline + selective retrieval)', () => {
   });
 });
 
+describe('risGetDocument — sections selector disclosure (under budget)', () => {
+  // The overflow arm always disclosed a mismatch by re-emitting an outline. Under the byte
+  // budget the same no-match used to fall through and return the whole document with
+  // kind: full and no signal — the caller could not tell "your names were wrong" from
+  // "that section really is that large".
+  it('returns just the named section when the selector matches', async () => {
+    const { ctx, result } = await callTool(ARTIKEL_SECTIONS_HTML, { sections: ['Artikel 2'] });
+
+    expect(result.kind).toBe('full');
+    expect(result.text).toContain('Änderung des Kinderbetreuungsgeldgesetzes');
+    expect(result.text).not.toContain('Änderung des Familienlastenausgleichsgesetzes');
+    expect(result.byte_size).toBe(new TextEncoder().encode(result.text as string).length);
+    expect(result.sections).toBeUndefined();
+    expect(getEnrichment(ctx).notice).toBeUndefined();
+  });
+
+  it('returns the section roster with a notice when the selector matches nothing', async () => {
+    const { ctx, result } = await callTool(ARTIKEL_SECTIONS_HTML, { sections: ['Artikel 9999'] });
+
+    expect(result.kind).toBe('outline');
+    expect(result.truncated).toBe(true);
+    expect(result.text).toBeUndefined();
+    expect(result.sections?.map((section) => section.name)).toEqual([
+      'Artikel 1',
+      'Artikel 2',
+      'Artikel 3',
+    ]);
+    const bytes = result.sections?.map((section) => section.bytes) ?? [];
+    expect(bytes).toEqual([...bytes].sort((a, b) => b - a));
+
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('"Artikel 9999"');
+    expect(notice).toContain('matched nothing');
+    // The disclosure a caller needs: this outline is a selector miss, not an oversized document.
+    expect(notice).toContain('not a size overflow');
+  });
+
+  it('names the dropped entries when only some of the selector matches', async () => {
+    const { ctx, result } = await callTool(ARTIKEL_SECTIONS_HTML, {
+      sections: ['Artikel 2', 'Artikel 9999'],
+    });
+
+    expect(result.kind).toBe('full');
+    expect(result.text).toContain('Änderung des Kinderbetreuungsgeldgesetzes');
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('"Artikel 9999"');
+    expect(notice).not.toContain('"Artikel 2"');
+  });
+
+  it('says the selector was ignored on a rendition with no addressable sections', async () => {
+    const { ctx, result } = await callTool(SR_ONLY_HTML, {
+      format: 'html',
+      sections: ['Artikel 2'],
+    });
+
+    expect(result.kind).toBe('full');
+    expect(result.text).toBe(SR_ONLY_HTML);
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('no §/Artikel/Anlage headings');
+    expect(notice).toContain('"Artikel 2"');
+  });
+});
+
+describe('selectDocumentSections', () => {
+  const markdown = ['## Artikel 1\n\nxONEx', `## Artikel 2\n\n${'xTWOx '.repeat(40)}`].join('\n\n');
+
+  it('reports matched text, unmatched names, and the largest-first roster', () => {
+    const selection = selectDocumentSections(markdown, ['Artikel 2', 'Artikel 7']);
+    expect(selection.text).toContain('xTWOx');
+    expect(selection.text).not.toContain('xONEx');
+    expect(selection.unmatched).toEqual(['Artikel 7']);
+    // Largest first — Artikel 2 carries the bigger body.
+    expect(selection.available.map((section) => section.name)).toEqual(['Artikel 2', 'Artikel 1']);
+  });
+
+  it('reports an empty text and every requested name when nothing matches', () => {
+    const selection = selectDocumentSections(markdown, ['Artikel 7', 'Artikel 7', 'Anlage 1']);
+    expect(selection.text).toBe('');
+    // Deduplicated, in the order requested.
+    expect(selection.unmatched).toEqual(['Artikel 7', 'Anlage 1']);
+    expect(selection.available).toHaveLength(2);
+  });
+
+  it('reports an empty roster for text with no structural headings', () => {
+    const selection = selectDocumentSections('<p>kein Titel</p>', ['Artikel 1']);
+    expect(selection.available).toEqual([]);
+    expect(selection.text).toBe('');
+    expect(selection.unmatched).toEqual(['Artikel 1']);
+  });
+});
+
 describe('risGetDocument — error mapping', () => {
   // The handler's `.catch()` re-maps errors surfaced while resolving/fetching the document
   // onto this tool's declared contract: NotFound becomes document_not_found and
@@ -514,6 +734,17 @@ describe('parseDocumentUrl (errors-as-values)', () => {
         CONTENT_BASE,
       );
       expect(parsed).toEqual({ application: 'BrKons', documentNumber: 'NOR40262691' });
+    }
+  });
+
+  it('returns a value, not a thrown URIError, for a malformed escape in either position', () => {
+    for (const url of [
+      'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/%ZZ/%ZZ.html',
+      'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/%E0%A4%A.html',
+    ]) {
+      const parsed = parseDocumentUrl(url, CONTENT_BASE);
+      expect(parsed).toHaveProperty('error');
+      if ('error' in parsed) expect(parsed.error).toContain('malformed % escape');
     }
   });
 
