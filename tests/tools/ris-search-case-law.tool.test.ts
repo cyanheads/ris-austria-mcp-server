@@ -344,6 +344,67 @@ describe('risSearchCaseLaw — record mapping and format() parity', () => {
     }
   });
 
+  it('identifies a normenliste hit by the law it indexes, on both surfaces (#19)', async () => {
+    // The whole payload of a norm-index record used to fall outside the schema, so a search
+    // returned bare NL… numbers with empty case_numbers and empty norms_cited — nothing that
+    // says which law was matched without a ris_get_document call per hit.
+    searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-normenliste-dsg.json')));
+    const ctx = createMockContext();
+    const input = risSearchCaseLaw.input.parse({
+      court: 'normenliste',
+      query: 'DSG',
+      page_size: 10,
+    });
+    const result = await risSearchCaseLaw.handler(input, ctx);
+    const record = result.results[0]!;
+    expect(record.document_number).toBe('NL00001301');
+    expect(record.norm_index).toEqual({
+      abbreviation: 'DSG 2000',
+      reference: 'BGBl I 165/1999 BGBl. I Nr. 165/1999',
+      title: expect.stringContaining('Bundesgesetz über den Schutz personenbezogener Daten'),
+      type: 'BG',
+    });
+    expect(record.indexes).toEqual(['10/10 Datenschutz']);
+    expect(record.note).toContain('nunmehr DSG');
+
+    const text = (risSearchCaseLaw.format!(result)[0] as { type: 'text'; text: string }).text;
+    expect(text).toContain('**Norm:** DSG 2000');
+    expect(text).toContain('**Norm type:** BG');
+    expect(text).toContain('**Promulgated:** BGBl I 165/1999');
+    expect(text).toContain('**Law:** Bundesgesetz über den Schutz personenbezogener Daten');
+    expect(text).toContain('**Index:** 10/10 Datenschutz');
+    expect(text).toContain('**Note:** Umbenennungsnorm');
+    // The second law of the page is identified too — its VwGH short form, not the long one.
+    expect(text).toContain('**Norm:** DSG 1978');
+  });
+
+  it('leaves norm_index absent for a deciding court', async () => {
+    // Its presence is the marker separating a norm-index record from a decision — the
+    // sixteen deciding courts must never carry it.
+    searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-vfgh.json')));
+    const ctx = createMockContext();
+    const input = risSearchCaseLaw.input.parse({ court: 'vfgh' });
+    const result = await risSearchCaseLaw.handler(input, ctx);
+    for (const record of result.results) expect(record.norm_index).toBeUndefined();
+  });
+
+  it('surfaces indexes and state on a state administrative court, on both surfaces (#22)', async () => {
+    searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-lvwg-tirol.json')));
+    const ctx = createMockContext();
+    const input = risSearchCaseLaw.input.parse({ court: 'lvwg', state: 'tirol' });
+    const result = await risSearchCaseLaw.handler(input, ctx);
+    const text = (risSearchCaseLaw.format!(result)[0] as { type: 'text'; text: string }).text;
+    expect(text).toContain('**State:** Tirol');
+    for (const record of result.results) {
+      expect(record.state).toBe('Tirol');
+      expect(record.indexes.length).toBeGreaterThan(0);
+      for (const index of record.indexes) expect(text).toContain(index);
+    }
+    // The three-entry record proves the array shape survives to the rendered line.
+    expect(result.results[1]!.indexes).toHaveLength(3);
+    expect(text).toContain('**Index:** 10/01 Bundes-Verfassungsgesetz (B-VG); 10/10 Datenschutz;');
+  });
+
   it('surfaces the guiding principle (Leitsatz) from a VfGH Rechtssatz and renders it', async () => {
     searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-vfgh.json')));
     const ctx = createMockContext();

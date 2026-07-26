@@ -306,6 +306,40 @@ describe('risSearchLegislation — record mapping and format() parity', () => {
     for (const celex of record.celex_references) expect(text).toContain(celex);
   });
 
+  it('surfaces English-translation provenance on both surfaces (#22)', async () => {
+    // An Erv record carries no in_force_from, no promulgation, and no eli, so without this
+    // the returned document could not say which German version it renders or how stale it is.
+    searchLegislation.mockResolvedValue(
+      parseSearchResponse(fixture('search-erv-translations.json')),
+    );
+    const ctx = createMockContext();
+    const input = risSearchLegislation.input.parse({ language: 'english', query: 'penal' });
+    const result = await risSearchLegislation.handler(input, ctx);
+    const record = result.results[0]!;
+    expect(record.application).toBe('Erv');
+    expect(record.translation).toEqual({
+      author: 'Federal Chancellery',
+      source:
+        'Original version: Federal Law Gazette No. 52/1991\nas amended by: Federal Law Gazette I No. 50/2025\ndate of the version: 1 November 2025',
+    });
+
+    const text = (risSearchLegislation.format!(result)[0] as { type: 'text'; text: string }).text;
+    expect(text).toContain('**Translation of:** Original version: Federal Law Gazette No. 52/1991');
+    expect(text).toContain('date of the version: 1 November 2025');
+    expect(text).toContain('**Translated by:** Federal Chancellery');
+    // The second record's author names the amending body too — rendered whole, markup gone.
+    expect(text).toContain('amendment: Federal Chancellery');
+    expect(text).not.toContain('<br');
+  });
+
+  it('leaves translation absent for the German corpus', async () => {
+    searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-multi.json')));
+    const ctx = createMockContext();
+    const input = risSearchLegislation.input.parse({ query: 'Bundesstraßengesetz' });
+    const result = await risSearchLegislation.handler(input, ctx);
+    for (const record of result.results) expect(record.translation).toBeUndefined();
+  });
+
   it('renders every populated identity field for a multi-hit result', async () => {
     searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-multi.json')));
     const ctx = createMockContext();

@@ -116,6 +116,68 @@ describe('parseSearchResponse', () => {
     expect(metadata.caseNumbers[0]).toBe('E33/2026 ua');
   });
 
+  it('maps every Normenliste identifying field, preferring the VwGH short form (#19)', () => {
+    const result = parseSearchResponse(fixture('search-normenliste-dsg.json'));
+    const first = result.hits[0]!.metadata as RisJudikaturMetadata;
+    expect(first.controller).toBe('Judikatur');
+    expect(first.title).toContain('Bundesgesetz über den Schutz personenbezogener Daten');
+    expect(first.abbreviation).toBe('DSG 2000');
+    expect(first.normType).toBe('BG');
+    expect(first.reference).toBe('BGBl I 165/1999 BGBl. I Nr. 165/1999');
+    expect(first.indexes).toEqual(['10/10 Datenschutz']);
+    expect(first.note).toContain('Umbenennung ab 2018-05-25, nunmehr DSG');
+    // A norm-index record identifies a law, so it carries none of the decision fields.
+    expect(first.caseNumbers).toEqual([]);
+    expect(first.normsCited).toEqual([]);
+
+    // AbkuerzungDesVerwaltungsgerichtshofes is on every record and is the citable form;
+    // Abkuerzung is sparse and here repeats the full name.
+    const second = result.hits[1]!.metadata as RisJudikaturMetadata;
+    expect(second.abbreviation).toBe('DSG 1978');
+    expect(second.abbreviation).not.toBe('Datenschutzgesetz - DSG');
+    expect(second.note).toBeUndefined();
+    // CRLF-delimited upstream — no carriage returns survive into the normalized text.
+    expect(second.reference).toBe('BGBl 565/1978\nBGBl. Nr. 565/1978');
+    expect(second.title).not.toContain('\r');
+  });
+
+  // The normalizer already mapped these two; #22's loss was at the record mapper, so the
+  // regression test lives in the ris_search_case_law suite. This pins the fixture shapes.
+  it('maps Lvwg Indizes and Bundesland, in both upstream list shapes', () => {
+    const result = parseSearchResponse(fixture('search-lvwg-tirol.json'));
+    const single = result.hits[0]!.metadata as RisJudikaturMetadata;
+    expect(single.state).toBe('Tirol');
+    expect(single.indexes).toEqual(['10/10 Grundrechte, Datenschutz, Auskunftspflicht']);
+    const multi = result.hits[1]!.metadata as RisJudikaturMetadata;
+    expect(multi.state).toBe('Tirol');
+    expect(multi.indexes).toEqual([
+      '10/01 Bundes-Verfassungsgesetz (B-VG)',
+      '10/10 Datenschutz',
+      '10/10 Grundrechte, Datenschutz, Auskunftspflicht',
+    ]);
+  });
+
+  it('maps Erv translation provenance, stripping the <br/> RIS separates it with (#22)', () => {
+    const result = parseSearchResponse(fixture('search-erv-translations.json'));
+    const first = result.hits[0]!.metadata as RisBundesrechtMetadata;
+    expect(first.source).toBe(
+      'Original version: Federal Law Gazette No. 52/1991\nas amended by: Federal Law Gazette I No. 50/2025\ndate of the version: 1 November 2025',
+    );
+    expect(first.author).toBe('Federal Chancellery');
+    // An Erv record states its version only here — it has no consolidated-law fields.
+    expect(first.inForceFrom).toBeUndefined();
+    expect(first.promulgation).toBeUndefined();
+    expect(first.eli).toBeUndefined();
+
+    // Author is <br/>-separated prose too when an amendment was translated by another body.
+    const second = result.hits[1]!.metadata as RisBundesrechtMetadata;
+    expect(second.author).toBe(
+      'Federal Ministry for Labour, Social Affairs and Consumer\namendment: Federal Chancellery',
+    );
+    expect(second.author).not.toContain('<br');
+    expect(second.source).not.toContain('<br');
+  });
+
   it('parses CELEX markers from Titel and Aenderung, multi-value brackets included', () => {
     const result = parseSearchResponse(fixture('search-brkons-celex.json'));
     const metadata = result.hits[0]!.metadata as RisBundesrechtMetadata;
@@ -331,6 +393,15 @@ describe('text helpers', () => {
     expect(stripHtmlRemnants('x &amp; y &lt;z&gt;')).toBe('x & y <z>');
     expect(stripHtmlRemnants('trailing<br/><br/><br/>')).toBe('trailing');
     expect(stripHtmlRemnants('<i>styled</i> text')).toBe('styled text');
+  });
+
+  it('stripHtmlRemnants normalizes the CRLF line endings RIS emits in text fields', () => {
+    // Normenliste titles and Fundstellen are CRLF-delimited upstream; a literal \r reaches
+    // the caller as escape noise around every line break.
+    expect(stripHtmlRemnants('line one\r\nline two\rline three')).toBe(
+      'line one\nline two\nline three',
+    );
+    expect(stripHtmlRemnants('one break<br/>\r\nnot two')).toBe('one break\nnot two');
   });
 
   it('parseCelexReferences splits multi-value brackets and deduplicates', () => {

@@ -1,0 +1,128 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "6"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "NL00001301",
+                "Applikation": "Normenliste",
+                "Organ": "Verwaltungsgerichtshof",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2022-02-01",
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Normenliste&Dokumentnummer=NL00001301"
+              },
+              "Judikatur": {
+                "Normenliste": {
+                  "Titel": "Bundesgesetz über den Schutz personenbezogener Daten\r\n (Datenschutzgesetz 2000 - DSG 2000)\r\n (NR: GP XX RV 1613 AB 2028 S. 179. BR: 5992 AB 6034 S. 657.)\r\n (CELEX-Nr.: 395L0046)\r\n StF: BGBl. I Nr. 165/1999",
+                  "AbkuerzungDesVerwaltungsgerichtshofes": "DSG 2000",
+                  "Abkuerzung": "DSG 2000",
+                  "Typ": "BG",
+                  "Fundstelle": "BGBl I 165/1999 BGBl. I Nr. 165/1999",
+                  "Indizes": {
+                    "item": "10/10 Datenschutz"
+                  },
+                  "Anmerkung": "Umbenennungsnorm: Datenschutz-AnpassungsG 2018 BGBl I 120/2017; \r\nUmbenennung ab 2018-05-25, nunmehr DSG; "
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Normenliste/NL00001301/NL00001301.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Normenliste/NL00001301/NL00001301.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Normenliste/NL00001301/NL00001301.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Normenliste/NL00001301/NL00001301.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "NL00001300",
+                "Applikation": "Normenliste",
+                "Organ": "Verwaltungsgerichtshof",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2009-09-05",
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Normenliste&Dokumentnummer=NL00001300"
+              },
+              "Judikatur": {
+                "Normenliste": {
+                  "Titel": "Bundesgesetz vom 18. Oktober 1978 über den Schutz personenbezogener\r\nDaten (Datenschutzgesetz - DSG)\r\nStF: BGBl. Nr. 565/1978",
+                  "AbkuerzungDesVerwaltungsgerichtshofes": "DSG 1978",
+                  "Abkuerzung": "Datenschutzgesetz - DSG",
+                  "Typ": "BG",
+                  "Fundstelle": "BGBl 565/1978\r\nBGBl. Nr. 565/1978",
+                  "Indizes": {
+                    "item": "10/10 Datenschutz"
+                  }
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Normenliste/NL00001300/NL00001300.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Normenliste/NL00001300/NL00001300.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Normenliste/NL00001300/NL00001300.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Normenliste/NL00001300/NL00001300.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

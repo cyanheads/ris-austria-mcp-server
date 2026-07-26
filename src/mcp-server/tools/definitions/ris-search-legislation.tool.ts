@@ -59,6 +59,28 @@ const ContentUrlsSchema = z
   })
   .describe('Rendition URLs of the main document. Municipal and translation hits may be sparse.');
 
+/**
+ * Provenance of an English translation. Grouped rather than flattened: both fields belong
+ * to the Erv arm alone, and `source`/`author` at the top level of a legislation record would
+ * read as the record's own gazette source and author rather than the translation's.
+ */
+const TranslationSchema = z
+  .object({
+    source: z
+      .string()
+      .optional()
+      .describe(
+        'Which German version this translation renders, as RIS states it — the originating gazette, the last amendment applied, and the date of the version, one per line.',
+      ),
+    author: z
+      .string()
+      .optional()
+      .describe('Body that produced the translation, e.g. "Federal Chancellery".'),
+  })
+  .describe(
+    'Provenance of an unofficial English translation. Present only on Erv records (language: english), which carry no in_force_from, promulgation, or eli of their own — this is the only statement of which German version the text corresponds to, and how old it is.',
+  );
+
 export const LegislationRecordSchema = z
   .object({
     document_number: z
@@ -123,6 +145,7 @@ export const LegislationRecordSchema = z
       .string()
       .optional()
       .describe('Municipality the norm belongs to (municipal law only).'),
+    translation: TranslationSchema.optional(),
     content_urls: ContentUrlsSchema,
   })
   .describe('One consolidated-law document — one § / Artikel / Anlage — or one translation.');
@@ -140,6 +163,19 @@ function pickContentUrls(hit: RisHit): LegislationRecord['content_urls'] {
   };
 }
 
+/**
+ * Translation provenance of an Erv hit, or `undefined` for the German corpus. Erv records
+ * arrive under the Bundesrecht controller; no other application populates either field.
+ */
+function pickTranslation(md: RisHit['metadata']): LegislationRecord['translation'] {
+  if (md.controller !== 'Bundesrecht') return;
+  const translation = {
+    ...(md.source !== undefined && { source: md.source }),
+    ...(md.author !== undefined && { author: md.author }),
+  };
+  return Object.keys(translation).length > 0 ? translation : undefined;
+}
+
 /** Map a normalized RIS hit to the tool's record shape. */
 export function toRecord(
   hit: RisHit,
@@ -153,6 +189,7 @@ export function toRecord(
     indexes: [],
   };
   const md = hit.metadata;
+  const translation = pickTranslation(md);
   if (md.controller === 'Bundesrecht' || md.controller === 'Landesrecht') {
     return {
       ...base,
@@ -170,6 +207,7 @@ export function toRecord(
       ...(md.sectionLabel !== undefined && { section_label: md.sectionLabel }),
       ...(md.shortTitle !== undefined && { short_title: md.shortTitle }),
       ...(md.title !== undefined && { title: md.title }),
+      ...(translation !== undefined && { translation }),
       ...(md.normType !== undefined && { type: md.normType }),
     };
   }
@@ -555,6 +593,14 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       }
       if (r.promulgation !== undefined) lines.push(`**Promulgated:** ${r.promulgation}`);
       if (r.municipality !== undefined) lines.push(`**Municipality:** ${r.municipality}`);
+      if (r.translation !== undefined) {
+        if (r.translation.source !== undefined) {
+          lines.push(`**Translation of:** ${r.translation.source}`);
+        }
+        if (r.translation.author !== undefined) {
+          lines.push(`**Translated by:** ${r.translation.author}`);
+        }
+      }
       if (r.indexes.length > 0) lines.push(`**Index:** ${r.indexes.join('; ')}`);
       if (r.eli !== undefined) lines.push(`**ELI:** ${r.eli}`);
       if (r.celex_references.length > 0) {

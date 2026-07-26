@@ -27,7 +27,7 @@ import type {
   RisStateCode,
 } from '@/services/ris/request-builder.js';
 import { getRisService } from '@/services/ris/ris-service.js';
-import type { RisHit } from '@/services/ris/types.js';
+import type { RisHit, RisJudikaturMetadata } from '@/services/ris/types.js';
 
 import { failSearchError, isoDateString } from './_shared.js';
 
@@ -60,6 +60,42 @@ const ContentUrlsSchema = z
     rtf: z.string().optional().describe('RTF rendition URL.'),
   })
   .describe('Rendition URLs of the main document.');
+
+/**
+ * The identity of a law, for the one court code that indexes laws rather than deciding
+ * cases. Grouped rather than flattened onto the record: these four fields exist only under
+ * `court: normenliste`, they would need a `norm_` prefix each to avoid reading as decision
+ * attributes (`type` beside `decision_type`, a `title` no decision has), and the object's
+ * presence is a single check that tells a caller which kind of record it holds.
+ */
+const NormIndexSchema = z
+  .object({
+    title: z
+      .string()
+      .optional()
+      .describe(
+        'Full title of the law as the index records it (Titel) — often several lines, carrying the parliamentary references and originating gazette.',
+      ),
+    abbreviation: z
+      .string()
+      .optional()
+      .describe(
+        'Citable short form the VwGH uses for the law, e.g. "DSG 2000", "HlG 1989", "KFGNov 21te".',
+      ),
+    type: z
+      .string()
+      .optional()
+      .describe('Norm type code (BG, V, K, …) — glossary: ris_list_reference topic law_types.'),
+    reference: z
+      .string()
+      .optional()
+      .describe(
+        'Promulgation reference of the law (Fundstelle), e.g. "BGBl I 165/1999" — resolve it with ris_search_gazette or ris_lookup_citation.',
+      ),
+  })
+  .describe(
+    'The law this record indexes. Present only for court normenliste (the VwGH norm index); absent for the sixteen deciding courts, whose records describe a decision instead.',
+  );
 
 export const CaseLawRecordSchema = z
   .object({
@@ -108,6 +144,24 @@ export const CaseLawRecordSchema = z
         'Norms the decision cites — copy an entry verbatim into the norm filter to find sibling case law.',
       ),
     keywords: z.string().optional().describe('Keywords (Schlagworte), where present.'),
+    indexes: z
+      .array(z.string().describe('One Systematik index entry, e.g. "10/10 Datenschutz".'))
+      .describe(
+        'Systematik classification entries (Indizes) — the same taxonomy ris_search_legislation filters on, so an entry copied here finds the consolidated law around the decision. Carried by vfgh, vwgh, lvwg, uvs, umse, and normenliste; empty for the rest.',
+      ),
+    state: z
+      .string()
+      .optional()
+      .describe(
+        'Bundesland whose administrative court decided (lvwg and uvs records) — the German name, e.g. "Tirol".',
+      ),
+    note: z
+      .string()
+      .optional()
+      .describe(
+        'Annotation (Anmerkung) — a renaming or lifecycle note on a normenliste law, an editorial note on a justiz or dsk decision.',
+      ),
+    norm_index: NormIndexSchema.optional(),
     collection_number: z
       .string()
       .optional()
@@ -127,7 +181,9 @@ export const CaseLawRecordSchema = z
       .describe('Challenge / legal-force note (Anfechtung), where present.'),
     content_urls: ContentUrlsSchema,
   })
-  .describe('One decision document (headnote or full text) from the selected court.');
+  .describe(
+    'One document from the selected court — a decision (headnote or full text), or, under court normenliste, one law of the VwGH norm index (see norm_index).',
+  );
 
 export type CaseLawRecord = z.infer<typeof CaseLawRecordSchema>;
 
@@ -142,6 +198,20 @@ function pickContentUrls(hit: RisHit): CaseLawRecord['content_urls'] {
   };
 }
 
+/**
+ * The law a Judikatur hit indexes, or `undefined` when the hit is a decision. Only the
+ * Normenliste node carries these four; every other court leaves all of them absent.
+ */
+function pickNormIndex(md: RisJudikaturMetadata): CaseLawRecord['norm_index'] {
+  const normIndex = {
+    ...(md.title !== undefined && { title: md.title }),
+    ...(md.abbreviation !== undefined && { abbreviation: md.abbreviation }),
+    ...(md.normType !== undefined && { type: md.normType }),
+    ...(md.reference !== undefined && { reference: md.reference }),
+  };
+  return Object.keys(normIndex).length > 0 ? normIndex : undefined;
+}
+
 /** Map a normalized RIS hit (Judikatur, or Sonstige for upts) to the tool's record shape. */
 export function toRecord(hit: RisHit, fallbackApplication: string): CaseLawRecord {
   const base: CaseLawRecord = {
@@ -149,11 +219,13 @@ export function toRecord(hit: RisHit, fallbackApplication: string): CaseLawRecor
     content_urls: pickContentUrls(hit),
     court: hit.application ?? fallbackApplication,
     document_number: hit.documentNumber,
+    indexes: [],
     norms_cited: [],
     ...(hit.organ !== undefined && { organ: hit.organ }),
   };
   const md = hit.metadata;
   if (md.controller === 'Judikatur') {
+    const normIndex = pickNormIndex(md);
     return {
       ...base,
       case_numbers: [...md.caseNumbers],
@@ -164,9 +236,13 @@ export function toRecord(hit: RisHit, fallbackApplication: string): CaseLawRecor
       ...(md.decisionUrl !== undefined && { decision_url: md.decisionUrl }),
       ...(md.ecli !== undefined && { ecli: md.ecli }),
       ...(md.headnotesUrl !== undefined && { headnotes_url: md.headnotesUrl }),
+      indexes: [...md.indexes],
       ...(md.keywords !== undefined && { keywords: md.keywords }),
       ...(md.legalForceNote !== undefined && { legal_force_note: md.legalForceNote }),
+      ...(md.note !== undefined && { note: md.note }),
+      ...(normIndex !== undefined && { norm_index: normIndex }),
       norms_cited: [...md.normsCited],
+      ...(md.state !== undefined && { state: md.state }),
       ...(md.summary !== undefined && { summary: md.summary }),
       ...(md.guidingPrinciple !== undefined && { guiding_principle: md.guidingPrinciple }),
     };
@@ -321,7 +397,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
     results: z
       .array(CaseLawRecordSchema)
       .describe(
-        'Matching decision documents for the requested page. Totals and paging in enrichment.',
+        'Matching documents for the requested page — decisions, or indexed laws under court normenliste. Totals and paging in enrichment.',
       ),
   }),
   enrichment: {
@@ -577,10 +653,23 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       lines.push(`**Document:** ${r.document_number} (${r.court})`);
       const facts: string[] = [];
       if (r.organ !== undefined) facts.push(`**Organ:** ${r.organ}`);
+      if (r.state !== undefined) facts.push(`**State:** ${r.state}`);
       if (r.decision_date !== undefined) facts.push(`**Decided:** ${r.decision_date}`);
       if (r.decision_type !== undefined) facts.push(`**Type:** ${r.decision_type}`);
       if (r.decision_kind !== undefined) facts.push(`**Kind:** ${r.decision_kind}`);
       if (facts.length > 0) lines.push(facts.join(' | '));
+      if (r.norm_index !== undefined) {
+        const norm: string[] = [];
+        if (r.norm_index.abbreviation !== undefined) {
+          norm.push(`**Norm:** ${r.norm_index.abbreviation}`);
+        }
+        if (r.norm_index.type !== undefined) norm.push(`**Norm type:** ${r.norm_index.type}`);
+        if (r.norm_index.reference !== undefined) {
+          norm.push(`**Promulgated:** ${r.norm_index.reference}`);
+        }
+        if (norm.length > 0) lines.push(norm.join(' | '));
+        if (r.norm_index.title !== undefined) lines.push(`**Law:** ${r.norm_index.title}`);
+      }
       const identifiers: string[] = [];
       if (r.collection_number !== undefined) {
         identifiers.push(`**Collection:** ${r.collection_number}`);
@@ -593,7 +682,9 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
         lines.push(`**Guiding principle:** ${r.guiding_principle}`);
       }
       if (r.norms_cited.length > 0) lines.push(`**Norms:** ${r.norms_cited.join('; ')}`);
+      if (r.indexes.length > 0) lines.push(`**Index:** ${r.indexes.join('; ')}`);
       if (r.keywords !== undefined) lines.push(`**Keywords:** ${r.keywords}`);
+      if (r.note !== undefined) lines.push(`**Note:** ${r.note}`);
       if (r.legal_force_note !== undefined) {
         lines.push(`**Legal force:** ${r.legal_force_note}`);
       }

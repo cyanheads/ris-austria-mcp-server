@@ -1,0 +1,119 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "138"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "ERV_1991_52",
+                "Applikation": "Erv",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "Einbringer": "Federal Chancellery",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2025-11-10",
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Erv&Dokumentnummer=ERV_1991_52"
+              },
+              "Bundesrecht": {
+                "Titel": "Administrative Penal Act 1991 – VStG",
+                "Erv": {
+                  "Source": "Original version: Federal Law Gazette No. 52/1991<br/>as amended by: Federal Law Gazette I No. 50/2025<br/>date of the version: 1 November 2025",
+                  "Author": "Federal Chancellery"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Main document",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Erv/ERV_1991_52/ERV_1991_52.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Erv/ERV_1991_52/ERV_1991_52.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Erv/ERV_1991_52/ERV_1991_52.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Erv/ERV_1991_52/ERV_1991_52.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "ERV_1962_235",
+                "Applikation": "Erv",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "Einbringer": "Federal Ministry for Labour, Social Affairs and Consumer<br/>amendment: Federal Chancellery",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2020-01-30",
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Erv&Dokumentnummer=ERV_1962_235"
+              },
+              "Bundesrecht": {
+                "Titel": "Act Governing Domestic Help and Domestic Employees",
+                "Erv": {
+                  "Source": "Original version: Federal Law Gazette No. 235/1962<br/>as amended by: Federal Law Gazette I No. 100/2018<br/>date of the version: 1 January 2020",
+                  "Author": "Federal Ministry for Labour, Social Affairs and Consumer<br/>amendment: Federal Chancellery"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Main document",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Erv/ERV_1962_235/ERV_1962_235.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Erv/ERV_1962_235/ERV_1962_235.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Erv/ERV_1962_235/ERV_1962_235.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Erv/ERV_1962_235/ERV_1962_235.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

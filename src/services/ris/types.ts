@@ -238,6 +238,8 @@ export type RawJudikaturAppKey =
 /** Per-court node fields the normalizer consumes (union across courts, all sparse). */
 export interface RawJudikaturAppNode {
   readonly Abkuerzung?: string;
+  /** Normenliste's citable short form — present on every record, unlike `Abkuerzung`. */
+  readonly AbkuerzungDesVerwaltungsgerichtshofes?: string;
   readonly Anfechtung?: string;
   readonly Anmerkung?: string;
   readonly Bundesland?: string;
@@ -478,7 +480,11 @@ export interface RisLandesrechtMetadata extends RisConsolidatedFields {
 
 /** Normalized `Metadaten.Judikatur` (all 16 Judikatur applications). */
 export interface RisJudikaturMetadata {
-  /** Abbreviation (Normenliste). */
+  /**
+   * Abbreviation (Normenliste) — the VwGH's citable short form (`AbkuerzungDesVerwaltungs-
+   * gerichtshofes`, e.g. "HlG 1989") in preference to `Abkuerzung`, which is often the full
+   * name and is carried by a minority of records.
+   */
   readonly abbreviation?: string;
   /** Geschäftszahlen — upstream object-or-array coerced. */
   readonly caseNumbers: readonly string[];

@@ -89,9 +89,12 @@ const HTML_ENTITIES: readonly [RegExp, string][] = [
   [/&nbsp;/g, ' '],
 ];
 
-/** Strip `<br/>` markers and residual HTML remnants from RIS text fields. */
+/** Strip `<br/>` markers, CRLF line endings, and residual HTML remnants from RIS text. */
 export function stripHtmlRemnants(text: string): string {
-  let out = text.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '');
+  let out = text
+    .replace(/\r\n?/g, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '');
   for (const [pattern, replacement] of HTML_ENTITIES) out = out.replace(pattern, replacement);
   return out
     .replace(/[ \t]+\n/g, '\n')
@@ -350,7 +353,9 @@ function mapBundesrecht(raw: RawBundesrechtMeta): RisBundesrechtMetadata {
     ...mapConsolidated(BrKons),
     abbreviation: rawText(Begut?.Abkuerzung) ?? rawText(RegV?.Abkuerzung),
     alexUrl: rawText(BgblAlt?.AlexUrl),
-    author: rawText(Erv?.Author),
+    // Both Erv fields are `<br/>`-separated prose upstream — an author reads
+    // "Ministry X<br/>amendment: Chancellery", a source three labelled version lines.
+    author: cleanText(Erv?.Author),
     celexReferences: [
       ...new Set([
         ...parseCelexReferences(raw.Titel, BrKons?.Aenderung),
@@ -382,7 +387,7 @@ function mapBundesrecht(raw: RawBundesrechtMeta): RisBundesrechtMetadata {
     reviewDeadline: rawText(Begut?.EndeBegutachtungsfrist),
     reviewStart: rawText(Begut?.BeginnBegutachtungsfrist),
     shortTitle: cleanText(raw.Kurztitel),
-    source: rawText(Erv?.Source),
+    source: cleanText(Erv?.Source),
     startPage: rawText(BgblAlt?.Anfangsseite),
     title: cleanText(raw.Titel),
     year: rawText(BgblPdf?.Jahrgang),
@@ -447,7 +452,9 @@ function mapJudikatur(raw: RawJudikaturMeta): RisJudikaturMetadata {
       (value) => value !== undefined && typeof value === 'object',
     ) ?? {};
   return prune<RisJudikaturMetadata>({
-    abbreviation: rawText(node.Abkuerzung),
+    // The VwGH short form is on every Normenliste record and is the form its citations use;
+    // `Abkuerzung` is sparse and frequently repeats the full title instead.
+    abbreviation: rawText(node.AbkuerzungDesVerwaltungsgerichtshofes) ?? rawText(node.Abkuerzung),
     caseNumbers: coerceWrappedList(raw.Geschaeftszahl),
     collectionNumber: rawText(node.Sammlungsnummer),
     controller: 'Judikatur',
@@ -467,7 +474,7 @@ function mapJudikatur(raw: RawJudikaturMeta): RisJudikaturMetadata {
     normType: rawText(node.Typ),
     normsCited: coerceWrappedList(raw.Normen),
     note: cleanText(node.Anmerkung),
-    reference: rawText(node.Fundstelle),
+    reference: cleanText(node.Fundstelle),
     state: rawText(node.Bundesland),
     summary: cleanText(node.Kurzinformation),
     textUrl: rawText(raw.EntscheidungstextUrl),

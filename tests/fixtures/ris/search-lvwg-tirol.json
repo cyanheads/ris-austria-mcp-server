@@ -1,0 +1,160 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "147"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "LVWGT_TI_20260714_LVwG_2026_14_0237_17_00",
+                "Applikation": "Lvwg",
+                "Organ": "Landesverwaltungsgericht Tirol",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-07-21",
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Lvwg&Dokumentnummer=LVWGT_TI_20260714_LVwG_2026_14_0237_17_00"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Text",
+                "Geschaeftszahl": {
+                  "item": "LVwG-2026/14/0237-17"
+                },
+                "Normen": {
+                  "item": [
+                    "IFG §6 Abs1 Z2 ",
+                    "IFG §6 Abs1 Z3",
+                    "IFG §6 Abs4",
+                    "IFG §14 Abs7"
+                  ]
+                },
+                "Entscheidungsdatum": "2026-07-14",
+                "Schlagworte": "Auskunftspflicht",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:LVWGTI:2026:LVwG.2026.14.0237.17",
+                "Lvwg": {
+                  "Entscheidungsart": "Erkenntnis",
+                  "Gericht": "Landesverwaltungsgericht Tirol",
+                  "Indizes": {
+                    "item": "10/10 Grundrechte, Datenschutz, Auskunftspflicht"
+                  },
+                  "Bundesland": "Tirol"
+                },
+                "GesamteEntscheidungUrl": "https://www.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Lvwg&Dokumentnummer=LVWGT_TI_20260714_LVwG_2026_14_0237_17_00",
+                "RechtssaetzeUrl": "https://www.ris.bka.gv.at/JudikaturRechtssaetze.wxe?Abfrage=Lvwg&Dokumentnummer=LVWGT_TI_20260714_LVwG_2026_14_0237_17_00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Lvwg/LVWGT_TI_20260714_LVwG_2026_14_0237_17_00/LVWGT_TI_20260714_LVwG_2026_14_0237_17_00.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Lvwg/LVWGT_TI_20260714_LVwG_2026_14_0237_17_00/LVWGT_TI_20260714_LVwG_2026_14_0237_17_00.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Lvwg/LVWGT_TI_20260714_LVwG_2026_14_0237_17_00/LVWGT_TI_20260714_LVwG_2026_14_0237_17_00.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Lvwg/LVWGT_TI_20260714_LVwG_2026_14_0237_17_00/LVWGT_TI_20260714_LVwG_2026_14_0237_17_00.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "LVWGT_TI_20260709_LVwG_2026_21_1337_11_00",
+                "Applikation": "Lvwg",
+                "Organ": "Landesverwaltungsgericht Tirol",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-07-17",
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Lvwg&Dokumentnummer=LVWGT_TI_20260709_LVwG_2026_21_1337_11_00"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Text",
+                "Geschaeftszahl": {
+                  "item": "LVwG-2026/21/1337-11"
+                },
+                "Normen": {
+                  "item": [
+                    "B-VG Art22a",
+                    "DSG Art1",
+                    "IFG §6 Abs1 Z7 lita"
+                  ]
+                },
+                "Entscheidungsdatum": "2026-07-09",
+                "Schlagworte": "Überwiegende Geheimhaltungsinteressen",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:LVWGTI:2026:LVwG.2026.21.1337.11",
+                "Lvwg": {
+                  "Entscheidungsart": "Erkenntnis",
+                  "Gericht": "Landesverwaltungsgericht Tirol",
+                  "Indizes": {
+                    "item": [
+                      "10/01 Bundes-Verfassungsgesetz (B-VG)",
+                      "10/10 Datenschutz",
+                      "10/10 Grundrechte, Datenschutz, Auskunftspflicht"
+                    ]
+                  },
+                  "Bundesland": "Tirol"
+                },
+                "GesamteEntscheidungUrl": "https://www.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Lvwg&Dokumentnummer=LVWGT_TI_20260709_LVwG_2026_21_1337_11_00",
+                "RechtssaetzeUrl": "https://www.ris.bka.gv.at/JudikaturRechtssaetze.wxe?Abfrage=Lvwg&Dokumentnummer=LVWGT_TI_20260709_LVwG_2026_21_1337_11_00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Lvwg/LVWGT_TI_20260709_LVwG_2026_21_1337_11_00/LVWGT_TI_20260709_LVwG_2026_21_1337_11_00.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Lvwg/LVWGT_TI_20260709_LVwG_2026_21_1337_11_00/LVWGT_TI_20260709_LVwG_2026_21_1337_11_00.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Lvwg/LVWGT_TI_20260709_LVwG_2026_21_1337_11_00/LVWGT_TI_20260709_LVwG_2026_21_1337_11_00.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Lvwg/LVWGT_TI_20260709_LVwG_2026_21_1337_11_00/LVWGT_TI_20260709_LVwG_2026_21_1337_11_00.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
