@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.2.2](changelog/0.2.x/0.2.2.md) — 2026-07-26
+
+ris_get_document: malformed document_url escapes, duplicated screen-reader citations, and unmatched section selectors now surface their real outcome instead of falling back silently.
+
 ## [0.2.1](changelog/0.2.x/0.2.1.md) — 2026-07-26
 
 Schema-valid rejections, generic upstream 5xx, and slow content renders now carry the declared error contract instead of a bare undocumented code.

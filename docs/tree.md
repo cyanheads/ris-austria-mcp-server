@@ -1,6 +1,6 @@
 # ris-austria-mcp-server - Directory Structure
 
-Generated on: 2026-07-16 09:08:06
+Generated on: 2026-07-26 15:54:12
 
 ```text
 ris-austria-mcp-server/
@@ -174,6 +174,8 @@ ris-austria-mcp-server/
 ├── tests/
 │   ├── fixtures/
 │   │   └── ris/
+│   │       ├── document-brkons-sr-only.html
+│   │       ├── document-regv-artikel-sections.html
 │   │       ├── error-500-fulltext-landesrecht.json
 │   │       ├── error-500-fulltext-wildcard.json
 │   │       ├── error-500-page-overflow.json
