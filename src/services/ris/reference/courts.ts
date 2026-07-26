@@ -2,7 +2,11 @@
  * @fileoverview The 17 case-law court/tribunal codes served by `ris_search_case_law`:
  * English descriptions, active-vs-historical status with successor mapping, and a real
  * Geschäftszahl format example per court. Examples come from the design's live-confirmed
- * set and from live search results harvested 2026-07-05.
+ * set and from live search results harvested 2026-07-05; the vwgh and justiz examples were
+ * re-harvested 2026-07-26 after the originals stopped resolving. An example is quoted back to
+ * callers as a working starting point, so replacing one means re-confirming it against the live
+ * corpus and updating every prose copy — the tool description, the citation-formats table, and
+ * the case-law zero-hit notice, all covered by the reference-drift suite.
  * @module services/ris/reference/courts
  */
 
@@ -49,7 +53,7 @@ export const RIS_COURTS = [
     status: 'active',
     window: 'Decisions 1990 and later; older decisions selected',
     successor: null,
-    gzExample: 'Ra 2019/22/0184',
+    gzExample: 'Ro 2026/03/0016',
     note: 'Official collection numbers use the VwSlg form (e.g. "VwSlg 18.000 A/2010").',
   },
   {
@@ -60,7 +64,7 @@ export const RIS_COURTS = [
     status: 'active',
     window: 'Selected decisions only, not the full record',
     successor: null,
-    gzExample: '6Ob56/25k',
+    gzExample: '14Os49/26a',
     note: 'The court_name, legal_area, and subject_area filters apply only here.',
   },
   {

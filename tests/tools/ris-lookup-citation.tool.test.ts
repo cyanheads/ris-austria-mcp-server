@@ -26,8 +26,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { risLookupCitation } from '@/mcp-server/tools/definitions/ris-lookup-citation.tool.js';
 import { toRecord as toCaseLawRecord } from '@/mcp-server/tools/definitions/ris-search-case-law.tool.js';
 import { toRecord as toGazetteRecord } from '@/mcp-server/tools/definitions/ris-search-gazette.tool.js';
-import { toRecord as toLegislationRecord } from '@/mcp-server/tools/definitions/ris-search-legislation.tool.js';
+import {
+  risSearchLegislation,
+  toRecord as toLegislationRecord,
+} from '@/mcp-server/tools/definitions/ris-search-legislation.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
+import { RIS_COURTS } from '@/services/ris/reference/index.js';
 
 const { searchCaseLaw, searchGazette, searchLegislation } = vi.hoisted(() => ({
   searchCaseLaw: vi.fn(),
@@ -101,7 +105,7 @@ describe('risLookupCitation — unclassifiable citations', () => {
       found: false,
       kind: 'unknown',
       guidance:
-        "Could not classify '42/2020'. Expected forms — norm: '§ 6 DSG' / 'Art 10 B-VG'; gazette: 'BGBl. I Nr. 165/1999' (also pre-2004 and RGBl/StGBl forms, and LGBl with a state hint); case number: 'Ra 2019/22/0184'; collection: 'VfSlg 19.632/2012'. Formats: ris_list_reference topic citation_formats. Or set kind explicitly; for keyword search use ris_search_legislation / ris_search_case_law.",
+        "Could not classify '42/2020'. Expected forms — norm: '§ 6 DSG' / 'Art 10 B-VG'; gazette: 'BGBl. I Nr. 165/1999' (also pre-2004 and RGBl/StGBl forms, and LGBl with a state hint); case number: 'Ro 2026/03/0016'; collection: 'VfSlg 19.632/2012'. Formats: ris_list_reference topic citation_formats. Or set kind explicitly; for keyword search use ris_search_legislation / ris_search_case_law.",
     });
     expect(searchLegislation).not.toHaveBeenCalled();
     expect(searchCaseLaw).not.toHaveBeenCalled();
@@ -145,7 +149,7 @@ describe('risLookupCitation — norm route', () => {
     expectRecordRendered(text, expectedRecord);
   });
 
-  it('classifies "Art 10 B-VG" as an Artikel citation and returns found:false with normGuidance on a zero-hit resolution', async () => {
+  it('classifies "Art 10 B-VG" as an Artikel citation and returns found:false with normGuidance on a zero-hit resolution (#17)', async () => {
     searchLegislation.mockResolvedValue(zeroHits());
     const ctx = createMockContext();
     const input = risLookupCitation.input.parse({ citation: 'Art 10 B-VG' });
@@ -160,11 +164,50 @@ describe('risLookupCitation — norm route', () => {
       sectionTo: '10',
       sectionType: 'Artikel',
     });
+    // The guidance must label the section with the marker that was parsed and carry
+    // section_type into the retry recipe — a recipe without it defaults to Paragraph and
+    // searches § 10 instead of Artikel 10, returning zero even when the Artikel exists.
     expect(result).toEqual({
       found: false,
       kind: 'norm',
-      guidance: `No document for B-VG § 10 in force on ${today}. If the provision existed at another time, retry ris_search_legislation with title: 'B-VG', section_from/to: '10', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: 'B-VG*'. State law resolves only with an explicit state hint.`,
+      guidance: `No document for B-VG Art 10 in force on ${today}. If the provision existed at another time, retry ris_search_legislation with title: 'B-VG', section_from/to: '10', section_type: 'Artikel', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: 'B-VG*'. State law resolves only with an explicit state hint.`,
     });
+  });
+
+  it('carries the Artikel retry recipe back into ris_search_legislation verbatim — the recipe reproduces the filter the lookup used (#17)', async () => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    const ctx = createMockContext();
+    const result = await risLookupCitation.handler(
+      risLookupCitation.input.parse({ citation: 'Art 10 B-VG', in_force_as_of: '1910-01-01' }),
+      ctx,
+    );
+    const lookupFilter = searchLegislation.mock.calls[0]?.[0] as {
+      sectionFrom: string;
+      sectionTo: string;
+      sectionType: string;
+      title: string;
+    };
+
+    // Parse the recipe out of the guidance prose, then feed it through the search tool's own
+    // input schema — what an agent following the guidance verbatim would send.
+    const recipe = /retry ris_search_legislation with (.+?)\. If the abbreviation/.exec(
+      result.guidance ?? '',
+    )?.[1];
+    expect(recipe).toBeDefined();
+    const field = (name: string): string | undefined =>
+      new RegExp(`${name}: '([^']+)'`).exec(recipe ?? '')?.[1];
+
+    const retryInput = risSearchLegislation.input.parse({
+      title: field('title'),
+      section_from: field('section_from/to'),
+      section_to: field('section_from/to'),
+      section_type: field('section_type'),
+      include_all_versions: true,
+    });
+    expect(retryInput.section_type).toBe('Artikel');
+    expect(retryInput.title).toBe(lookupFilter.title);
+    expect(retryInput.section_from).toBe(lookupFilter.sectionFrom);
+    expect(retryInput.section_type).toBe(lookupFilter.sectionType);
   });
 
   it('classifies a bare abbreviation "ABGB" with no section — the zero-hit guidance omits the section clause', async () => {
@@ -215,7 +258,7 @@ describe('risLookupCitation — norm route', () => {
     expect(result).toEqual({
       found: false,
       kind: 'norm',
-      guidance: `No document for DSG § 6 in force on ${today}. If the provision existed at another time, retry ris_search_legislation with title: 'DSG', section_from/to: '6', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: 'DSG*'. State law resolves only with an explicit state hint.`,
+      guidance: `No document for DSG § 6 in force on ${today}. If the provision existed at another time, retry ris_search_legislation with title: 'DSG', section_from/to: '6', section_type: 'Paragraph', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: 'DSG*'. State law resolves only with an explicit state hint.`,
     });
   });
 
@@ -254,6 +297,76 @@ describe('risLookupCitation — norm route', () => {
       expect(result.found).toBe(false);
     },
   );
+});
+
+describe('risLookupCitation — in_force_as_of validation (#14)', () => {
+  it('rejects an impossible calendar date at the input schema, so it never becomes a citation miss', () => {
+    // The reported failure: "2026-99-99" matched the old shape-only pattern, went upstream, and
+    // RIS's rejection was converted to found:false — telling the caller the provision does not
+    // exist on that date rather than that the date is not a date.
+    const parsed = risLookupCitation.input.safeParse({
+      citation: '§ 1 DSG',
+      in_force_as_of: '2026-99-99',
+    });
+    expect(parsed.success).toBe(false);
+    expect(searchLegislation).not.toHaveBeenCalled();
+  });
+
+  it('still resolves the same citation with a real date — the control the report compares against', async () => {
+    searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));
+    const ctx = createMockContext();
+    const input = risLookupCitation.input.parse({
+      citation: '§ 1 DSG',
+      in_force_as_of: '2026-07-26',
+    });
+    const result = await risLookupCitation.handler(input, ctx);
+
+    expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject({ inForceAsOf: '2026-07-26' });
+    expect(result.found).toBe(true);
+  });
+
+  it('accepts a leap day', () => {
+    expect(
+      risLookupCitation.input.safeParse({ citation: '§ 1 DSG', in_force_as_of: '2024-02-29' })
+        .success,
+    ).toBe(true);
+  });
+
+  it('keeps found:false for a valid-but-unresolvable citation — the meaning the tool description promises', async () => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    const ctx = createMockContext();
+    const input = risLookupCitation.input.parse({
+      citation: '§ 9999 NichtExistierendesGesetz',
+      in_force_as_of: '2026-07-26',
+    });
+    const result = await risLookupCitation.handler(input, ctx);
+
+    expect(result.found).toBe(false);
+    expect(result.kind).toBe('norm');
+    expect(result.guidance).toContain('No document for NichtExistierendesGesetz § 9999');
+  });
+
+  it('rejects court: normenliste at the input schema — a norm index carries no case numbers', () => {
+    // The other route by which an input error reached found:false. normenliste indexes norms,
+    // so the request builder rejects a Geschäftszahl filter there with a ValidationError, which
+    // runSearch maps to null — surfacing "No decision for '…' in Normenliste. Pass court
+    // explicitly if known" for a court hint the caller had already passed explicitly.
+    const parsed = risLookupCitation.input.safeParse({
+      citation: 'Ro 2026/03/0016',
+      court: 'normenliste',
+    });
+    expect(parsed.success).toBe(false);
+    expect(searchCaseLaw).not.toHaveBeenCalled();
+  });
+
+  it('still accepts every other court as a hint', () => {
+    for (const { code } of RIS_COURTS.filter((court) => court.code !== 'normenliste')) {
+      expect(
+        risLookupCitation.input.safeParse({ citation: 'Ro 2026/03/0016', court: code }).success,
+        `court: ${code} should be accepted`,
+      ).toBe(true);
+    }
+  });
 });
 
 describe('risLookupCitation — abbreviation-first norm citations (#5)', () => {
@@ -494,33 +607,33 @@ describe('risLookupCitation — case_number route', () => {
   it('matches a VwGH-shaped Geschäftszahl ("Ra …") and routes to court vwgh', async () => {
     searchCaseLaw.mockResolvedValue(zeroHits());
     const ctx = createMockContext();
-    const input = risLookupCitation.input.parse({ citation: 'Ra 2019/22/0184' });
+    const input = risLookupCitation.input.parse({ citation: 'Ro 2026/03/0016' });
     const result = await risLookupCitation.handler(input, ctx);
 
     expect(searchCaseLaw.mock.calls[0]?.[0]).toEqual({
-      caseNumber: 'Ra 2019/22/0184',
+      caseNumber: 'Ro 2026/03/0016',
       court: 'vwgh',
     });
     expect(result).toEqual({
       found: false,
       kind: 'case_number',
       guidance:
-        "No decision for 'Ra 2019/22/0184' in Vwgh. Pass court explicitly if known — Geschäftszahl format examples per court: ris_list_reference topic courts. Note Justiz carries selected decisions only. Keyword fallback: ris_search_case_law with query.",
+        "No decision for 'Ro 2026/03/0016' in Vwgh. Pass court explicitly if known — Geschäftszahl format examples per court: ris_list_reference topic courts. Note Justiz carries selected decisions only. Keyword fallback: ris_search_case_law with query.",
     });
   });
 
-  it('matches a Justiz-shaped Geschäftszahl ("6Ob56/25k") and routes to court justiz', async () => {
+  it('matches a Justiz-shaped Geschäftszahl ("14Os49/26a") and routes to court justiz', async () => {
     searchCaseLaw.mockResolvedValue(zeroHits());
     const ctx = createMockContext();
-    const input = risLookupCitation.input.parse({ citation: '6Ob56/25k' });
+    const input = risLookupCitation.input.parse({ citation: '14Os49/26a' });
     const result = await risLookupCitation.handler(input, ctx);
 
-    expect(searchCaseLaw.mock.calls[0]?.[0]).toEqual({ caseNumber: '6Ob56/25k', court: 'justiz' });
+    expect(searchCaseLaw.mock.calls[0]?.[0]).toEqual({ caseNumber: '14Os49/26a', court: 'justiz' });
     expect(result).toEqual({
       found: false,
       kind: 'case_number',
       guidance:
-        "No decision for '6Ob56/25k' in Justiz. Pass court explicitly if known — Geschäftszahl format examples per court: ris_list_reference topic courts. Note Justiz carries selected decisions only. Keyword fallback: ris_search_case_law with query.",
+        "No decision for '14Os49/26a' in Justiz. Pass court explicitly if known — Geschäftszahl format examples per court: ris_list_reference topic courts. Note Justiz carries selected decisions only. Keyword fallback: ris_search_case_law with query.",
     });
   });
 
@@ -642,16 +755,16 @@ describe('risLookupCitation — collection_number route', () => {
 describe('risLookupCitation — kind override', () => {
   it('honors an explicit kind: forcing norm on a case-number-shaped citation takes the norm branch instead of auto-classifying it as case_number', async () => {
     const ctx = createMockContext();
-    const input = risLookupCitation.input.parse({ citation: 'Ra 2019/22/0184', kind: 'norm' });
+    const input = risLookupCitation.input.parse({ citation: 'Ro 2026/03/0016', kind: 'norm' });
     const result = await risLookupCitation.handler(input, ctx);
     const today = todayInAustria();
 
     expect(result).toEqual({
       found: false,
       kind: 'norm',
-      guidance: `No document for Ra 2019/22/0184 in force on ${today}. If the provision existed at another time, retry ris_search_legislation with title: 'Ra 2019/22/0184', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: 'Ra 2019/22/0184*'. State law resolves only with an explicit state hint.`,
+      guidance: `No document for Ro 2026/03/0016 in force on ${today}. If the provision existed at another time, retry ris_search_legislation with title: 'Ro 2026/03/0016', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: 'Ro 2026/03/0016*'. State law resolves only with an explicit state hint.`,
     });
-    // Auto-classification would have routed "Ra 2019/22/0184" to case_number (court vwgh) —
+    // Auto-classification would have routed "Ro 2026/03/0016" to case_number (court vwgh) —
     // the forced kind: 'norm' must bypass that entirely, calling neither search method.
     expect(searchCaseLaw).not.toHaveBeenCalled();
     expect(searchLegislation).not.toHaveBeenCalled();

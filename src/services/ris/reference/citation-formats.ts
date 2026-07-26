@@ -44,7 +44,7 @@ export const RIS_CITATION_FORMATS = [
     kind: 'case_number',
     description:
       'A Geschäftszahl — the format identifies the court (per-court examples: reference topic courts).',
-    examples: ['2025-0.934.677', 'Ra 2019/22/0184', 'G 287/2022', '6Ob56/25k', 'W122 2312999-1'],
+    examples: ['2025-0.934.677', 'Ro 2026/03/0016', 'G 287/2022', '14Os49/26a', 'W122 2312999-1'],
     resolvesVia:
       'Pattern-matched to the owning court application, then an exact Geschaeftszahl search; a court hint short-circuits, ambiguous formats probe up to two candidate applications.',
   },

@@ -601,7 +601,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       ];
       if (caseNumber !== undefined) {
         fragments.push(
-          "Geschäftszahl formats differ per court ('Ra 2019/22/0184' = VwGH, 'G 287/2022' = VfGH, '6Ob56/25k' = OGH/justiz) — ris_lookup_citation auto-detects the court from the format; examples per court: ris_list_reference topic courts.",
+          "Geschäftszahl formats differ per court ('Ro 2026/03/0016' = VwGH, 'G 287/2022' = VfGH, '14Os49/26a' = OGH/justiz) — ris_lookup_citation auto-detects the court from the format; examples per court: ris_list_reference topic courts.",
         );
       }
       if (norm !== undefined) {

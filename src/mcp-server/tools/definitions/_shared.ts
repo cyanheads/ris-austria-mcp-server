@@ -8,10 +8,42 @@ import type { TypedFail, TypedRecoveryFor } from '@cyanheads/mcp-ts-core';
 import { z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 
-/** An ISO calendar date (YYYY-MM-DD), validated client-side before any upstream call. */
+/** Months with 30 days — the only non-February lengths a day of 31 can overshoot. */
+const THIRTY_DAY_MONTHS = new Set([4, 6, 9, 11]);
+
+/**
+ * True when a shape-valid `YYYY-MM-DD` names a day the month actually has. {@link isoDateString}'s
+ * pattern already bounds month to 01–12 and day to 01–31, so only over-long months remain: the
+ * four 30-day months, and February's 28/29-day split by leap year.
+ */
+function isRealCalendarDate(value: string): boolean {
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  if (month === 2) {
+    const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    return day <= (leapYear ? 29 : 28);
+  }
+  return day <= (THIRTY_DAY_MONTHS.has(month) ? 30 : 31);
+}
+
+/**
+ * An ISO calendar date (YYYY-MM-DD), validated client-side before any upstream call — an
+ * impossible date is an input error at every tool that takes one, never a silent upstream
+ * rejection reinterpreted downstream.
+ *
+ * The pattern bounds month and day because it is what reaches the advertised JSON Schema
+ * (`pattern`), so a schema-validating client rejects `2026-99-99` without a round trip; the
+ * refinement then catches the shape-valid impossibilities a pattern cannot express (31 April,
+ * 29 February outside a leap year) and does not serialize.
+ */
 export const isoDateString = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/u, 'Expected an ISO date in YYYY-MM-DD form.');
+  .regex(
+    /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/u,
+    'Expected an ISO calendar date in YYYY-MM-DD form.',
+  )
+  .refine(isRealCalendarDate, 'No such calendar date — check the day against the month and year.');
 
 /**
  * The three reasons every search-family tool declares for a failure raised below the

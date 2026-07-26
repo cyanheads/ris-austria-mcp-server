@@ -37,7 +37,16 @@ import { toRecord as toCaseLawRecord } from './ris-search-case-law.tool.js';
 import { toRecord as toGazetteRecord } from './ris-search-gazette.tool.js';
 import { toRecord as toLegislationRecord } from './ris-search-legislation.tool.js';
 
-const COURT_CODES = RIS_COURTS.map((c) => c.code) as [RisCourtCode, ...RisCourtCode[]];
+/**
+ * Courts a Geschäftszahl can be looked up in. `normenliste` indexes norms rather than
+ * decisions, so the request builder rejects a case-number filter there — and that local
+ * rejection is one `runSearch` maps to a not-resolved `null`, which would report an
+ * impossible court hint as a citation miss. Rejecting it at the input schema instead keeps
+ * `found: false` meaning only "valid citation, no document".
+ */
+const CASE_NUMBER_COURT_CODES = RIS_COURTS.filter((c) => c.code !== 'normenliste').map(
+  (c) => c.code,
+) as [RisCourtCode, ...RisCourtCode[]];
 const STATE_CODES = RIS_STATES.map((s) => s.code) as [RisStateCode, ...RisStateCode[]];
 const COURT_APPLICATION = new Map<string, string>(RIS_COURTS.map((c) => [c.code, c.application]));
 
@@ -65,6 +74,11 @@ interface NormParse {
   readonly abbreviation: string;
   readonly section?: string;
   readonly sectionType?: 'Artikel' | 'Paragraph';
+}
+
+/** The marker RIS cites a section with — "Art" for an Artikel, "§" otherwise. */
+function sectionMarker(sectionType: NormParse['sectionType']): string {
+  return sectionType === 'Artikel' ? 'Art' : '§';
 }
 
 /**
@@ -260,17 +274,25 @@ function classify(input: string, courtHint: RisCourtCode | undefined): CitationK
 /* ------------------------------------------------------------------------------------ */
 
 function unknownGuidance(input: string): string {
-  return `Could not classify '${input}'. Expected forms — norm: '§ 6 DSG' / 'Art 10 B-VG'; gazette: 'BGBl. I Nr. 165/1999' (also pre-2004 and RGBl/StGBl forms, and LGBl with a state hint); case number: 'Ra 2019/22/0184'; collection: 'VfSlg 19.632/2012'. Formats: ris_list_reference topic citation_formats. Or set kind explicitly; for keyword search use ris_search_legislation / ris_search_case_law.`;
+  return `Could not classify '${input}'. Expected forms — norm: '§ 6 DSG' / 'Art 10 B-VG'; gazette: 'BGBl. I Nr. 165/1999' (also pre-2004 and RGBl/StGBl forms, and LGBl with a state hint); case number: 'Ro 2026/03/0016'; collection: 'VfSlg 19.632/2012'. Formats: ris_list_reference topic citation_formats. Or set kind explicitly; for keyword search use ris_search_legislation / ris_search_case_law.`;
 }
 
-function normGuidance(abbreviation: string, section: string | undefined, date: string): string {
+/**
+ * Guidance for an unresolved norm citation. Takes the whole parse so the section type reaches
+ * both the label and the retry recipe: `section_type` defaults to Paragraph once a section range
+ * is set, so an Artikel recipe that omits it searches § N and returns zero even when the Artikel
+ * exists. It is emitted for both types — the recipe is meant to be run verbatim, so it states the
+ * filter rather than leaning on the default.
+ */
+function normGuidance(parsed: NormParse, date: string): string {
+  const { abbreviation, section, sectionType } = parsed;
   const head =
     section !== undefined
-      ? `No document for ${abbreviation} § ${section} in force on ${date}.`
+      ? `No document for ${abbreviation} ${sectionMarker(sectionType)} ${section} in force on ${date}.`
       : `No document for ${abbreviation} in force on ${date}.`;
   const retry =
     section !== undefined
-      ? `retry ris_search_legislation with title: '${abbreviation}', section_from/to: '${section}', include_all_versions: true.`
+      ? `retry ris_search_legislation with title: '${abbreviation}', section_from/to: '${section}', section_type: '${sectionType ?? 'Paragraph'}', include_all_versions: true.`
       : `retry ris_search_legislation with title: '${abbreviation}', include_all_versions: true.`;
   return `${head} If the provision existed at another time, ${retry} If the abbreviation is uncertain, search ris_search_legislation title: '${abbreviation}*'. State law resolves only with an explicit state hint.`;
 }
@@ -368,13 +390,13 @@ function meaningful(value: string | undefined): string | undefined {
 export const risLookupCitation = tool('ris_lookup_citation', {
   title: 'Resolve Austrian Legal Citation',
   description:
-    'Resolve a single Austrian legal citation to its canonical RIS document deterministically — no keyword search. Four routes are auto-detected from the citation shape (or forced with kind): a norm citation — section-first ("§ 6 DSG", "Art 10 B-VG"), abbreviation-first ("DSG §1", "DSGVO Art32", the shape ris_search_case_law returns in norms_cited), or a bare abbreviation like "ABGB" — resolves through consolidated federal law, or a Bundesland with a state hint, as in force today or on in_force_as_of; a gazette citation ("BGBl. I Nr. 165/1999", pre-2004 "BGBl. Nr. 194/1961", imperial "RGBl. Nr. 189/1902", or "LGBl. Nr. 61/2026" with a state hint) routes to the right federal era tier by year or to a state Landesgesetzblatt; a case number ("Ra 2019/22/0184", "G 287/2022", "6Ob56/25k", "2025-0.934.677", "W256 …") is matched to its court — pass court to skip detection, and ambiguous formats probe up to two courts; a collection number ("VfSlg 19.632/2012", "VwSlg 18.000 A/2010") resolves through the VfGH/VwGH collection. Returns the single best-matching document in the same shape as the corresponding search tool, with alternatives_count when more than one matched. A citation that cannot be classified or resolved returns found: false with next-step guidance — it never throws for a miss; only an upstream RIS outage is an error. For keyword rather than citation lookup, use ris_search_legislation or ris_search_case_law.',
+    'Resolve a single Austrian legal citation to its canonical RIS document deterministically — no keyword search. Four routes are auto-detected from the citation shape (or forced with kind): a norm citation — section-first ("§ 6 DSG", "Art 10 B-VG"), abbreviation-first ("DSG §1", "DSGVO Art32", the shape ris_search_case_law returns in norms_cited), or a bare abbreviation like "ABGB" — resolves through consolidated federal law, or a Bundesland with a state hint, as in force today or on in_force_as_of; a gazette citation ("BGBl. I Nr. 165/1999", pre-2004 "BGBl. Nr. 194/1961", imperial "RGBl. Nr. 189/1902", or "LGBl. Nr. 61/2026" with a state hint) routes to the right federal era tier by year or to a state Landesgesetzblatt; a case number ("Ro 2026/03/0016", "G 287/2022", "14Os49/26a", "2025-0.934.677", "W256 …") is matched to its court — pass court to skip detection, and ambiguous formats probe up to two courts; a collection number ("VfSlg 19.632/2012", "VwSlg 18.000 A/2010") resolves through the VfGH/VwGH collection. Returns the single best-matching document in the same shape as the corresponding search tool, with alternatives_count when more than one matched. A citation that cannot be classified or resolved returns found: false with next-step guidance — it never throws for a miss; only an upstream RIS outage is an error. For keyword rather than citation lookup, use ris_search_legislation or ris_search_case_law.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     citation: z
       .string()
       .describe(
-        'The legal citation to resolve, e.g. "§ 6 DSG" or "DSG §1", "Art 10 B-VG", "BGBl. I Nr. 165/1999", "Ra 2019/22/0184", or "VfSlg 19.632/2012".',
+        'The legal citation to resolve, e.g. "§ 6 DSG" or "DSG §1", "Art 10 B-VG", "BGBl. I Nr. 165/1999", "Ro 2026/03/0016", or "VfSlg 19.632/2012".',
       ),
     kind: z
       .enum(['auto', 'norm', 'gazette', 'case_number', 'collection_number'])
@@ -383,10 +405,10 @@ export const risLookupCitation = tool('ris_lookup_citation', {
         'Force a route, or auto (default) to classify by shape. Set explicitly when the citation shape is ambiguous.',
       ),
     court: z
-      .enum(COURT_CODES)
+      .enum(CASE_NUMBER_COURT_CODES)
       .optional()
       .describe(
-        'Court hint for a case number — short-circuits court detection to this court. Codes: ris_list_reference topic courts.',
+        'Court hint for a case number — short-circuits court detection to this court. Codes: ris_list_reference topic courts, minus normenliste (a norm index, which carries no case numbers).',
       ),
     state: z
       .enum(STATE_CODES)
@@ -500,7 +522,11 @@ export const risLookupCitation = tool('ris_lookup_citation', {
     if (route === 'norm') {
       const parsed = parseNorm(citation);
       if (!parsed) {
-        return { found: false, kind: 'norm', guidance: normGuidance(citation, undefined, asOf) };
+        return {
+          found: false,
+          kind: 'norm',
+          guidance: normGuidance({ abbreviation: citation }, asOf),
+        };
       }
       const application: LegislationApplication = stateHint !== undefined ? 'LrKons' : 'BrKons';
       const params: LegislationSearchParams = {
@@ -517,16 +543,12 @@ export const risLookupCitation = tool('ris_lookup_citation', {
       const result = await runSearch(() => getRisService().searchLegislation(params, ctx));
       const hit = result?.hits[0];
       if (!result || hit === undefined) {
-        return {
-          found: false,
-          kind: 'norm',
-          guidance: normGuidance(parsed.abbreviation, parsed.section, asOf),
-        };
+        return { found: false, kind: 'norm', guidance: normGuidance(parsed, asOf) };
       }
       const alternatives = result.total > 1 ? result.total - 1 : undefined;
       const sectionPhrase =
         parsed.section !== undefined
-          ? `, ${parsed.sectionType === 'Artikel' ? 'Art' : '§'} ${parsed.section}`
+          ? `, ${sectionMarker(parsed.sectionType)} ${parsed.section}`
           : '';
       ctx.log.info('Citation resolved', { kind: route, application, total: result.total });
       return {
