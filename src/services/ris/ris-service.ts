@@ -4,7 +4,9 @@
  * call the per-class search methods and never touch HTTP or the JSON-XML envelope.
  *
  * Resilience: `withRetry` (base delay 1.5s — rate-limited-API calibration) wraps the full
- * fetch + parse pipeline; `fetchWithTimeout` maps HTTP statuses; HTML error pages and
+ * fetch + parse pipeline, under a wall-clock budget shared by every attempt so a slow
+ * upstream cannot multiply the deadline by the attempt count; a search deadline itself is
+ * not retried. `fetchWithTimeout` maps HTTP statuses; HTML error pages and
  * non-JSON bodies classify as transient `ServiceUnavailable`, never `SerializationError`.
  * RIS Client errors surface as `InvalidParams` (non-transient — not retried) whether they
  * arrive in-band on a 200 or as the same envelope on a 500 error response, which
@@ -57,7 +59,27 @@ import {
 } from './request-builder.js';
 import type { RisChangeSet, RisDocumentContent, RisSearchResult } from './types.js';
 
-const SEARCH_TIMEOUT_MS = 15_000;
+/**
+ * Search deadlines, sized against the MCP request budget rather than a single upstream call.
+ *
+ * Search latency tracks how much of the corpus RIS has to scan, not a fixed cost (measured
+ * 2026-07-26 against the live Judikatur controller): a filtered search answers in 0.6–3s,
+ * but an unfiltered Bvwg page costs 3.4–3.9s at page_size 10, 6.0–10.5s at 20, 14.6–18.3s at
+ * 50, and 27–43s at 100. The previous 15s deadline therefore could not serve the larger page
+ * sizes the search tools advertise at all, and four attempts at 15s plus ~13s of jittered
+ * backoff spent ~73s reaching a verdict the MCP SDK's 60s default request timeout had
+ * already taken from the caller.
+ *
+ * `SEARCH_TIMEOUT_MS` covers that band up to its long tail. The tail past it is out of reach
+ * at any deadline that still leaves room to deliver the response, so the `upstream_timeout`
+ * recovery hints name the lever that shortens the scan (a smaller page_size).
+ * `SEARCH_BUDGET_MS` caps the whole retry sequence — each attempt gets whatever is left when
+ * it starts — so a slow *failing* upstream cannot multiply the deadline by the attempt
+ * count. Worst case is the budget plus one backoff sleep that began just inside it (≤7.5s at
+ * the default three retries) ≈ 55s, still inside the client's 60s.
+ */
+const SEARCH_TIMEOUT_MS = 40_000;
+const SEARCH_BUDGET_MS = 48_000;
 const RETRY_BASE_DELAY_MS = 1_500;
 
 /**
@@ -98,6 +120,28 @@ function reclassifyUpstreamServerError(error: unknown): unknown {
   return serviceUnavailable(
     `RIS returned HTTP ${status} with no error envelope — the upstream is degraded.`,
     { status },
+    { cause: error },
+  );
+}
+
+/**
+ * Opt a search deadline out of retry. RIS answers a search by scanning as much of the corpus
+ * as the filters leave — a request it could not finish inside the deadline is expensive, not
+ * unlucky, so an identical second request re-runs the same scan and only spends budget the
+ * caller's request deadline does not have. Keyed on the `FetchTimeout` source rather than the
+ * `Timeout` code, so an upstream 504 (a fault RIS's front door reports quickly, and which a
+ * retry can genuinely clear) stays retryable.
+ *
+ * `withRetry`'s default predicate honors `data.retryable === false`; the flag never reaches
+ * the wire, where `ctx.fail('upstream_timeout')` builds the caller's error from the tool's
+ * own contract entry — which still advertises the deadline as retryable by the caller.
+ */
+function failFastOnDeadline(error: unknown): unknown {
+  if (!(error instanceof McpError) || error.data?.errorSource !== 'FetchTimeout') return error;
+  return new McpError(
+    error.code,
+    error.message,
+    { ...error.data, retryable: false },
     { cause: error },
   );
 }
@@ -195,16 +239,11 @@ export class RisService {
 
   /** Exact-dated change feed per application; deletions included on request. */
   async trackChanges(params: TrackChangesParams, ctx: Context): Promise<RisChangeSet> {
-    const request = buildTrackChangesRequest(params);
-    const requestContext = this.requestContext('RisService.trackChanges', ctx);
-    return await withRetry(
-      async () => parseHistoryResponse(await this.fetchJson(request, requestContext, ctx)),
-      {
-        baseDelayMs: RETRY_BASE_DELAY_MS,
-        context: requestContext,
-        operation: 'RisService.trackChanges',
-        signal: ctx.signal,
-      },
+    return await this.request(
+      buildTrackChangesRequest(params),
+      'RisService.trackChanges',
+      parseHistoryResponse,
+      ctx,
     );
   }
 
@@ -280,10 +319,32 @@ export class RisService {
 
   /** Run one search request with retry wrapping the full fetch + parse pipeline. */
   private async search(request: RisRequest, ctx: Context): Promise<RisSearchResult> {
-    const operation = `RisService.search:${request.controller}`;
+    return await this.request(
+      request,
+      `RisService.search:${request.controller}`,
+      parseSearchResponse,
+      ctx,
+    );
+  }
+
+  /**
+   * Run one API request with retry wrapping the full fetch + parse pipeline, bounded by a
+   * single wall-clock budget across every attempt: each one gets whatever is left of
+   * {@link SEARCH_BUDGET_MS}, capped at {@link SEARCH_TIMEOUT_MS}.
+   */
+  private async request<T>(
+    request: RisRequest,
+    operation: string,
+    parse: (payload: unknown) => T,
+    ctx: Context,
+  ): Promise<T> {
     const requestContext = this.requestContext(operation, ctx);
+    const budgetEndsAt = Date.now() + SEARCH_BUDGET_MS;
     return await withRetry(
-      async () => parseSearchResponse(await this.fetchJson(request, requestContext, ctx)),
+      async () => {
+        const deadline = Math.min(SEARCH_TIMEOUT_MS, budgetEndsAt - Date.now());
+        return parse(await this.fetchJson(request, requestContext, ctx, deadline));
+      },
       {
         baseDelayMs: RETRY_BASE_DELAY_MS,
         context: requestContext,
@@ -298,10 +359,11 @@ export class RisService {
     request: RisRequest,
     requestContext: RequestContext,
     ctx: Context,
+    timeoutMs: number,
   ): Promise<unknown> {
     const query = new URLSearchParams(request.params).toString();
     const url = `${this.config.apiBaseUrl}/${request.controller}${query === '' ? '' : `?${query}`}`;
-    const response = await fetchWithTimeout(url, SEARCH_TIMEOUT_MS, requestContext, {
+    const response = await fetchWithTimeout(url, timeoutMs, requestContext, {
       headers: { Accept: 'application/json', 'User-Agent': this.userAgent() },
       signal: ctx.signal,
     }).catch((error: unknown) => {
@@ -314,7 +376,7 @@ export class RisService {
         const translated = errorFromResponseBody(error.data?.body, { cause: error });
         if (translated) throw translated;
       }
-      throw reclassifyUpstreamServerError(error);
+      throw failFastOnDeadline(reclassifyUpstreamServerError(error));
     });
     const text = await response.text();
     if (isHtmlErrorPage(text)) {

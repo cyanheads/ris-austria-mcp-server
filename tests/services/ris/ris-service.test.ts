@@ -182,6 +182,101 @@ describe('RisService — HTTP 500 carrying a RIS error envelope', () => {
   });
 });
 
+describe('RisService — search retry budget', () => {
+  const service = new RisService('ris-austria-mcp-server/test');
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('retries a fast upstream fault across the full attempt budget', async () => {
+    // A 5xx that fails fast costs only the backoff, so the search path keeps every attempt
+    // for the case retrying can actually clear.
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 503 })));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+
+    const pending = service
+      .searchLegislation({ application: 'BrKons', query: 'Datenschutz' }, createMockContext())
+      .catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(60_000);
+    const err = await pending;
+
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not retry its own deadline — a slow search is expensive, not unlucky', async () => {
+    // RIS answers a search by scanning as much of the corpus as the filters leave (measured:
+    // an unfiltered Bvwg page costs 3.4s at page_size 10 and 31s at 100), so a second
+    // identical request re-runs the same scan and only spends budget the caller's 60s
+    // request deadline does not have. Four attempts at the deadline spent ~73s (#23).
+    const fetchMock = vi.fn(
+      (_url: unknown, init: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => {
+            reject(init.signal?.reason as Error);
+          });
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+
+    const pending = service
+      .searchCaseLaw({ court: 'bvwg', decisionType: 'all', pageSize: 100 }, createMockContext())
+      .catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(60_000);
+    const err = await pending;
+
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.Timeout);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // The flag is internal to the retry decision — the tools' declared upstream_timeout
+    // contract is what the caller sees, and it still advertises the deadline as retryable.
+    expect((err as McpError).data?.retryable).toBe(false);
+  });
+
+  it('caps every attempt with one wall-clock budget so a slow fault cannot multiply it', async () => {
+    // The compounding case #23 names: a 5xx that is itself slow. Each attempt gets only what
+    // is left of the budget, so the sequence cannot spend the deadline once per attempt.
+    const startedAt: number[] = [];
+    const fetchMock = vi.fn(async (_url: unknown, init: { signal?: AbortSignal }) => {
+      startedAt.push(Date.now());
+      return await new Promise<Response>((resolve, reject) => {
+        // Burn 30s, then fail transiently — a retryable fault that is itself slow.
+        const timer = setTimeout(() => {
+          resolve(new Response('{}', { status: 503 }));
+        }, 30_000);
+        init.signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(init.signal?.reason as Error);
+        });
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+
+    const t0 = Date.now();
+    let settledAt = 0;
+    const pending = service
+      .searchLegislation({ application: 'BrKons', query: 'Datenschutz' }, createMockContext())
+      .catch((e: unknown) => {
+        settledAt = Date.now();
+        return e;
+      });
+    await vi.advanceTimersByTimeAsync(240_000);
+    const err = await pending;
+
+    // Attempt 1 burns 30s and fails; attempt 2 starts after the backoff with under 18s of
+    // budget left and is cut off by it — no third attempt, and the whole call lands inside
+    // the MCP SDK's 60s request timeout rather than the ~73s four full deadlines would cost.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.Timeout);
+    expect(startedAt[1]! - t0).toBeLessThan(35_000);
+    expect(settledAt - t0).toBeLessThan(55_000);
+  });
+});
+
 describe('RisService.fetchDocumentContent — upstream classification and retry budget', () => {
   const service = new RisService('ris-austria-mcp-server/test');
   const URL_UNDER_TEST = `${CONTENT_BASE}/Dokumente/Bundesnormen/NOR11013238/NOR11013238.html`;
