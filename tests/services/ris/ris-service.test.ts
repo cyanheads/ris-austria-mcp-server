@@ -164,15 +164,78 @@ describe('RisService — HTTP 500 carrying a RIS error envelope', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the original error when a 500 body carries no RIS envelope', async () => {
+  it('reclassifies a 500 carrying no RIS envelope as ServiceUnavailable', async () => {
     stubFetch('<!DOCTYPE html><html>502 Bad Gateway</html>');
+    // Aborted signal so withRetry surfaces the first attempt's error without sleeping
+    // through the backoff — ServiceUnavailable is transient, unlike the InternalError
+    // this used to be.
     const err = await service
-      .trackChanges({ application: 'Dsk' }, createMockContext())
+      .trackChanges({ application: 'Dsk' }, createMockContext({ signal: AbortSignal.abort() }))
       .catch((e: unknown) => e);
 
-    // Nothing to translate — the framework's status-mapped error survives untouched.
+    // Nothing to translate, but a generic upstream 5xx is still an upstream failure — the
+    // callers declare it as retryable upstream_error, which they can only map from a
+    // ServiceUnavailable. InternalError reached the wire bare (#15).
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect((err as McpError).code).not.toBe(JsonRpcErrorCode.InternalError);
+    expect((err as McpError).message).toContain('HTTP 500');
+  });
+});
+
+describe('RisService.fetchDocumentContent — upstream classification and retry budget', () => {
+  const service = new RisService('ris-austria-mcp-server/test');
+  const URL_UNDER_TEST = `${CONTENT_BASE}/Dokumente/Bundesnormen/NOR11013238/NOR11013238.html`;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** Stub the network with one canned non-2xx response, and report the call count. */
+  function stubStatus(status: number, body = '<html>error</html>'): ReturnType<typeof vi.fn> {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response(body, { status })));
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('reclassifies a generic 500 as ServiceUnavailable and spends exactly two attempts', async () => {
+    const fetchMock = stubStatus(500);
+    const err = await service
+      .fetchDocumentContent(URL_UNDER_TEST, createMockContext())
+      .catch((e: unknown) => e);
+
+    // #15 — the content path had no envelope-translation catch at all, so an unclassified
+    // 5xx reached ris_get_document as a bare InternalError with no reason or recovery.
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect((err as McpError).message).toContain('HTTP 500');
+    // #21 — the raised per-attempt deadline is only affordable at two attempts; four would
+    // spend ~93s and blow past the MCP SDK's 60s default request timeout.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves a 404 as NotFound and does not retry it', async () => {
+    const fetchMock = stubStatus(404);
+    const err = await service
+      .fetchDocumentContent(URL_UNDER_TEST, createMockContext())
+      .catch((e: unknown) => e);
+
+    // The reclassification is gated on status ≥ 500 — a mistyped document number must stay
+    // NotFound so ris_get_document can report document_not_found.
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.NotFound);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a caller abort as InternalError — it carries no status to reclassify', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.reject(new DOMException('The operation was aborted.', 'AbortError')),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const err = await service
+      .fetchDocumentContent(URL_UNDER_TEST, createMockContext())
+      .catch((e: unknown) => e);
+
     expect((err as McpError).code).toBe(JsonRpcErrorCode.InternalError);
-    expect((err as McpError).message).toContain('Status: 500');
+    expect((err as McpError).data?.errorSource).toBe('FetchAborted');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

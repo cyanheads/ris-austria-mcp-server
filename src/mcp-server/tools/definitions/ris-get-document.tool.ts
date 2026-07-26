@@ -524,6 +524,14 @@ export const risGetDocument = tool('ris_get_document', {
       recovery:
         'The RIS content host is temporarily unavailable — retry the fetch after a short delay.',
     },
+    {
+      reason: 'upstream_timeout',
+      code: JsonRpcErrorCode.Timeout,
+      when: 'The content host did not return the rendition within the fetch deadline — typically a cold render, which it performs on first request before caching the result.',
+      retryable: true,
+      recovery:
+        'Retry the identical call once or twice — the host renders a document on first request and caches it, so a later fetch often returns instantly. If it keeps timing out, check document_number against a fresh search result (a wrong number renders a slow 404 that looks identical), then re-call with format: urls_only and fetch content_urls yourself, without this deadline.',
+    },
   ],
 
   async handler(input, ctx) {
@@ -581,6 +589,14 @@ export const risGetDocument = tool('ris_get_document', {
         }
         if (err.code === JsonRpcErrorCode.ServiceUnavailable) {
           throw ctx.fail('upstream_error', err.message, { ...ctx.recoveryFor('upstream_error') });
+        }
+        // Its own reason, not a widened upstream_error guard: `ctx.fail` resolves the code
+        // from the contract entry, so folding a deadline into upstream_error would report
+        // -32000 for it — and the two want different recovery (degraded host vs. cold render).
+        if (err.code === JsonRpcErrorCode.Timeout) {
+          throw ctx.fail('upstream_timeout', err.message, {
+            ...ctx.recoveryFor('upstream_timeout'),
+          });
         }
       }
       throw err;

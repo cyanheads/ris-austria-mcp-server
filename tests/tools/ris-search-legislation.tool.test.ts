@@ -14,6 +14,7 @@ import {
   JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
+  timeout,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -200,6 +201,35 @@ describe('risSearchLegislation — error mapping', () => {
     const err = await captureError(risSearchLegislation.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(err.data).toMatchObject({ reason: 'upstream_error', retryable: true });
+  });
+
+  it('maps a fetch deadline to upstream_timeout, keeping -32004 on the wire', async () => {
+    // fetchWithTimeout classifies its own deadline as Timeout, not ServiceUnavailable. A
+    // widened upstream_error guard would report -32000 for it, since ctx.fail resolves the
+    // code from the contract entry — so the deadline needs its own declared reason.
+    searchLegislation.mockRejectedValue(timeout('fetch GET https://data.bka.gv.at timed out.', {}));
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
+    const input = risSearchLegislation.input.parse({ query: 'Datenschutz' });
+    const err = await captureError(risSearchLegislation.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.Timeout);
+    expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('retry the same search'),
+    });
+  });
+
+  it('leaves an unmapped service code untouched rather than folding it into a neighbour', async () => {
+    // The shared mapper resolves only the four codes the contract covers. Anything else —
+    // a 429, a 403 — must reach the framework classifier with its own code intact rather
+    // than being collapsed into invalid_query or upstream_error.
+    searchLegislation.mockRejectedValue(
+      new McpError(JsonRpcErrorCode.RateLimited, 'RIS is throttling this client.', {}),
+    );
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
+    const input = risSearchLegislation.input.parse({ query: 'Datenschutz' });
+    const err = await captureError(risSearchLegislation.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.RateLimited);
+    expect(err.data?.reason).toBeUndefined();
   });
 });
 

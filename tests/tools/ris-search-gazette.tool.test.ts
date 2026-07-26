@@ -16,12 +16,14 @@ import {
   JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
+  timeout,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { risSearchGazette } from '@/mcp-server/tools/definitions/ris-search-gazette.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
+import { buildGazetteRequest, type GazetteSearchParams } from '@/services/ris/request-builder.js';
 
 const { searchGazette } = vi.hoisted(() => ({ searchGazette: vi.fn() }));
 
@@ -348,6 +350,49 @@ describe('risSearchGazette — error mapping', () => {
     const err = await captureError(risSearchGazette.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(err.data).toMatchObject({ reason: 'upstream_error', retryable: true });
+  });
+
+  it('maps a fetch deadline to upstream_timeout, keeping -32004 on the wire', async () => {
+    searchGazette.mockRejectedValue(timeout('fetch GET https://data.bka.gv.at timed out.', {}));
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
+    const input = risSearchGazette.input.parse({ query: 'Datenschutz' });
+    const err = await captureError(risSearchGazette.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.Timeout);
+    expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
+  });
+
+  // Both rejections below pass the input schema and are then refused by the request builder.
+  // The real builder runs on the params the handler produced, so the assertions pin the
+  // actual rejection rather than an invented one. Each reached the wire as a bare -32007
+  // with no reason and no recovery (#12).
+  it('maps a builder rejection of a schema-valid sort_by to invalid_query', async () => {
+    searchGazette.mockImplementation(async (params: GazetteSearchParams) => {
+      buildGazetteRequest(params);
+      throw new Error('unreachable — the builder was expected to reject these params');
+    });
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
+    const input = risSearchGazette.input.parse({ scope: 'federal', sort_by: 'number' });
+    const err = await captureError(risSearchGazette.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.message).toContain('no confirmed RIS mapping for application BgblAuth');
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('Correct the parameter named in the message'),
+    });
+  });
+
+  it('maps a builder rejection of a state absent from the legacy series to invalid_query', async () => {
+    searchGazette.mockImplementation(async (params: GazetteSearchParams) => {
+      buildGazetteRequest(params);
+      throw new Error('unreachable — the builder was expected to reject these params');
+    });
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
+    const input = risSearchGazette.input.parse({ scope: 'wien', state_era: 'legacy' });
+    const err = await captureError(risSearchGazette.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.message).toContain('The historical Lgbl gazette has no Wien');
+    expect(err.data?.recovery).toBeDefined();
   });
 });
 

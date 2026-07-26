@@ -12,7 +12,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 
 import type { RisApplication, RisBindingStatus } from '@/services/ris/reference/index.js';
 import { RIS_APPLICATIONS } from '@/services/ris/reference/index.js';
@@ -20,7 +20,7 @@ import type { TrackChangesParams } from '@/services/ris/request-builder.js';
 import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisChange } from '@/services/ris/types.js';
 
-import { isoDateString } from './_shared.js';
+import { failSearchError, isoDateString } from './_shared.js';
 
 const APPLICATION_CODES = RIS_APPLICATIONS.map((app) => app.code) as [string, ...string[]];
 
@@ -205,9 +205,9 @@ export const risTrackChanges = tool('ris_track_changes', {
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'RIS rejected a parameter value — its Client error message is passed through verbatim and names the offending element (e.g. a page past the last page of the change window).',
+      when: 'RIS rejected a parameter value in-band — its Client error message is passed through verbatim and names the offending element (e.g. a page past the last page of the change window).',
       recovery:
-        'Correct the parameter RIS names in the message — for a page past the end, request a lower page, starting from 1.',
+        'Correct the parameter named in the message — for a page past the end, request a lower page, starting from 1.',
     },
     {
       reason: 'upstream_error',
@@ -216,6 +216,14 @@ export const risTrackChanges = tool('ris_track_changes', {
       retryable: true,
       recovery:
         'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the window.',
+    },
+    {
+      reason: 'upstream_timeout',
+      code: JsonRpcErrorCode.Timeout,
+      when: 'RIS did not answer the change feed within the request deadline.',
+      retryable: true,
+      recovery:
+        'RIS did not answer in time — retry the same call shortly, or make it cheaper upstream: reduce page_size or narrow the change window.',
     },
   ],
 
@@ -234,18 +242,12 @@ export const risTrackChanges = tool('ris_track_changes', {
       ...(input.page_size !== undefined && { pageSize: input.page_size }),
     };
 
-    // Map in-band RIS errors onto this tool's declared contract so reason +
-    // recovery reach the wire (service-level throws carry neither).
+    // Map request-builder and service failures onto this tool's declared contract so reason
+    // + recovery reach the wire (neither carries them on its own).
     const result = await getRisService()
       .trackChanges(params, ctx)
       .catch((err: unknown) => {
-        if (err instanceof McpError && err.code === JsonRpcErrorCode.InvalidParams) {
-          throw ctx.fail('invalid_query', err.message, { ...ctx.recoveryFor('invalid_query') });
-        }
-        if (err instanceof McpError && err.code === JsonRpcErrorCode.ServiceUnavailable) {
-          throw ctx.fail('upstream_error', err.message, { ...ctx.recoveryFor('upstream_error') });
-        }
-        throw err;
+        throw failSearchError(err, ctx);
       });
     ctx.log.info('Change feed read', {
       application: input.application,

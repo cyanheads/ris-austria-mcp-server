@@ -13,6 +13,7 @@ import {
   McpError,
   notFound,
   serviceUnavailable,
+  timeout,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -145,7 +146,9 @@ describe('risDocumentResource — error mapping', () => {
   });
 
   it('maps a fetchDocumentContent ServiceUnavailable rejection to the upstream_error contract error', async () => {
-    fetchDocumentContent.mockRejectedValue(serviceUnavailable('RIS content host timed out.', {}));
+    fetchDocumentContent.mockRejectedValue(
+      serviceUnavailable('RIS returned HTTP 500 with no error envelope.', { status: 500 }),
+    );
     const ctx = createMockContext({
       errors: risDocumentResource.errors,
       uri: new URL('ris://document/BrKons/NOR40262691'),
@@ -157,5 +160,28 @@ describe('risDocumentResource — error mapping', () => {
     const err = await captureError(risDocumentResource.handler(params, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(err.data).toMatchObject({ reason: 'upstream_error', retryable: true });
+  });
+
+  it('maps a content-fetch deadline to upstream_timeout with the cold-render recovery', async () => {
+    // Since 0.10.17 a fetch deadline is Timeout, not ServiceUnavailable — undeclared here, it
+    // reached the wire as a bare -32004. It gets its own reason rather than a widened
+    // upstream_error guard, since ctx.fail resolves the code from the contract entry.
+    fetchDocumentContent.mockRejectedValue(
+      timeout('fetch GET https://www.ris.bka.gv.at/Dokumente timed out.', {}),
+    );
+    const ctx = createMockContext({
+      errors: risDocumentResource.errors,
+      uri: new URL('ris://document/BrKons/NOR40262691'),
+    });
+    const params = risDocumentResource.params!.parse({
+      application: 'BrKons',
+      documentNumber: 'NOR40262691',
+    });
+    const err = await captureError(risDocumentResource.handler(params, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.Timeout);
+    expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('renders a document on first request'),
+    });
   });
 });

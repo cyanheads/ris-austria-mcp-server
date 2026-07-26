@@ -8,14 +8,22 @@
  * non-JSON bodies classify as transient `ServiceUnavailable`, never `SerializationError`.
  * RIS Client errors surface as `InvalidParams` (non-transient — not retried) whether they
  * arrive in-band on a 200 or as the same envelope on a 500 error response, which
- * `fetchJson` translates rather than letting the status decide.
+ * `fetchJson` translates rather than letting the status decide. An upstream 5xx carrying no
+ * such envelope is reclassified to `ServiceUnavailable` on both the search and content paths
+ * — 500/501 map to `InternalError`, a code no caller contract covers and `withRetry` never
+ * retries.
  * Content fetches are allowlisted to the content host's `/Dokumente/` tree (SSRF guard).
  * @module services/ris/ris-service
  */
 
 import type { Context } from '@cyanheads/mcp-ts-core';
 import type { AppConfig } from '@cyanheads/mcp-ts-core/config';
-import { McpError, serviceUnavailable, validationError } from '@cyanheads/mcp-ts-core/errors';
+import {
+  JsonRpcErrorCode,
+  McpError,
+  serviceUnavailable,
+  validationError,
+} from '@cyanheads/mcp-ts-core/errors';
 import {
   fetchWithTimeout,
   type RequestContext,
@@ -50,8 +58,49 @@ import {
 import type { RisChangeSet, RisDocumentContent, RisSearchResult } from './types.js';
 
 const SEARCH_TIMEOUT_MS = 15_000;
-const CONTENT_TIMEOUT_MS = 20_000;
 const RETRY_BASE_DELAY_MS = 1_500;
+
+/**
+ * Content-fetch deadline and attempt budget, sized against the MCP request budget rather
+ * than the content host's cold-render tail.
+ *
+ * The host renders a document on first request and caches it (measured 2026-07-26: warm
+ * ≈0.6s, cold 7.8–91s across twelve renditions; the CDN itself returns 503 somewhere in the
+ * 44–91s band, so the slowest renders are unreachable at any client deadline). Waiting out
+ * the tail is therefore not an option: two attempts at 25s plus the jittered backoff caps a
+ * call at ~52s, inside the MCP SDK's 60s default request timeout. The previous 20s × 4
+ * attempts spent ~93s — past that deadline, so the caller saw a transport hang rather than
+ * this service's contract.
+ *
+ * Retrying is still worth an attempt rather than a wasted one — a render that finishes
+ * between the two attempts is served from cache on the second — but an aborted attempt does
+ * not reliably leave the rendition cached, so a repeated call can time out again. The
+ * `upstream_timeout` recovery hints say exactly that, and point at `format: urls_only` for a
+ * document this deadline cannot reach.
+ */
+const CONTENT_TIMEOUT_MS = 25_000;
+const CONTENT_MAX_RETRIES = 1;
+
+/**
+ * Reclassify an unclassified upstream 5xx as transient. `fetchWithTimeout` maps 500/501 to
+ * `InternalError` — a code no tool or resource contract declares and `withRetry` does not
+ * treat as transient — so a degraded RIS reached the wire as a bare -32603 with no reason,
+ * no retryable flag, and no recovery. Reads the canonical `status` field (0.10.15+), which
+ * also keeps an abort-sourced `InternalError` (no status) out of the reclassification.
+ *
+ * Runs only after the RIS error-envelope translation has had its chance: a 500 carrying an
+ * `OgdSearchResult.Error` is a rejected parameter, not a server fault.
+ */
+function reclassifyUpstreamServerError(error: unknown): unknown {
+  if (!(error instanceof McpError) || error.code !== JsonRpcErrorCode.InternalError) return error;
+  const status = error.data?.status;
+  if (typeof status !== 'number' || status < 500) return error;
+  return serviceUnavailable(
+    `RIS returned HTTP ${status} with no error envelope — the upstream is degraded.`,
+    { status },
+    { cause: error },
+  );
+}
 
 /** Rendition formats a content URL can be constructed for. */
 export const RIS_CONTENT_FORMATS = ['html', 'pdf', 'rtf', 'xml'] as const;
@@ -200,8 +249,14 @@ export class RisService {
     return await withRetry(
       async () => {
         const response = await fetchWithTimeout(target, CONTENT_TIMEOUT_MS, requestContext, {
+          // A mistyped document number is the most common caller error and renders as a
+          // plain 404 — an expected outcome mapped to `document_not_found`, not an
+          // operational fault worth an error-level line.
+          expectedStatuses: [404],
           headers: { 'User-Agent': this.userAgent() },
           signal: ctx.signal,
+        }).catch((error: unknown) => {
+          throw reclassifyUpstreamServerError(error);
         });
         const text = await response.text();
         const contentType = response.headers.get('content-type');
@@ -216,6 +271,7 @@ export class RisService {
       {
         baseDelayMs: RETRY_BASE_DELAY_MS,
         context: requestContext,
+        maxRetries: CONTENT_MAX_RETRIES,
         operation: 'RisService.fetchDocumentContent',
         signal: ctx.signal,
       },
@@ -250,13 +306,15 @@ export class RisService {
       signal: ctx.signal,
     }).catch((error: unknown) => {
       // RIS reports a rejected parameter as HTTP 500 carrying the in-band error envelope,
-      // which fetchWithTimeout captures as data.responseBody before the status maps to a
-      // generic InternalError. Translating it tells the caller which input RIS rejected.
+      // which fetchWithTimeout captures as data.body before the status maps to a generic
+      // InternalError. Translating it tells the caller which input RIS rejected. A 500
+      // without one is a genuine server fault — reclassify so it lands on the callers'
+      // declared upstream_error rather than an undeclared InternalError.
       if (error instanceof McpError) {
-        const translated = errorFromResponseBody(error.data?.responseBody, { cause: error });
+        const translated = errorFromResponseBody(error.data?.body, { cause: error });
         if (translated) throw translated;
       }
-      throw error;
+      throw reclassifyUpstreamServerError(error);
     });
     const text = await response.text();
     if (isHtmlErrorPage(text)) {

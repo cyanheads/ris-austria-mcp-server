@@ -10,7 +10,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 
 import { RIS_CHANGED_SINCE_INTERVALS, RIS_STATES } from '@/services/ris/reference/index.js';
 import type {
@@ -22,7 +22,7 @@ import type {
 import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisHit } from '@/services/ris/types.js';
 
-import { isoDateString } from './_shared.js';
+import { failSearchError, isoDateString } from './_shared.js';
 
 const STATE_CODES = RIS_STATES.map((s) => s.code) as [RisStateCode, ...RisStateCode[]];
 const SCOPE_VALUES = ['federal', ...STATE_CODES] as ['federal', ...RisStateCode[]];
@@ -336,9 +336,9 @@ export const risSearchLegislation = tool('ris_search_legislation', {
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'RIS rejected a parameter value — the in-band Client error message is passed through verbatim; it names the invalid element and its valid values.',
+      when: 'RIS rejected a parameter value in-band — the Client error message is passed through verbatim; it names the invalid element and its valid values. Unsupported filter combinations are caught earlier as scope_filter_mismatch.',
       recovery:
-        'Correct the parameter RIS names in the message. Ground valid codes with ris_list_reference (topic: states, section_types, changed_since_intervals, or search_syntax).',
+        'Correct the parameter named in the message. Ground valid codes with ris_list_reference (topic: states, section_types, changed_since_intervals, or search_syntax).',
     },
     {
       reason: 'upstream_error',
@@ -347,6 +347,14 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       retryable: true,
       recovery:
         'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the query.',
+    },
+    {
+      reason: 'upstream_timeout',
+      code: JsonRpcErrorCode.Timeout,
+      when: 'RIS did not answer the search within the request deadline.',
+      retryable: true,
+      recovery:
+        'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size, or narrow the date range.',
     },
   ],
 
@@ -462,18 +470,12 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       ...(input.page_size !== undefined && { pageSize: input.page_size }),
     };
 
-    // Map in-band RIS errors onto this tool's declared contract so reason +
-    // recovery reach the wire (service-level throws carry neither).
+    // Map request-builder and service failures onto this tool's declared contract so reason
+    // + recovery reach the wire (neither carries them on its own).
     const result = await getRisService()
       .searchLegislation(params, ctx)
       .catch((err: unknown) => {
-        if (err instanceof McpError && err.code === JsonRpcErrorCode.InvalidParams) {
-          throw ctx.fail('invalid_query', err.message, { ...ctx.recoveryFor('invalid_query') });
-        }
-        if (err instanceof McpError && err.code === JsonRpcErrorCode.ServiceUnavailable) {
-          throw ctx.fail('upstream_error', err.message, { ...ctx.recoveryFor('upstream_error') });
-        }
-        throw err;
+        throw failSearchError(err, ctx);
       });
     ctx.log.info('Legislation search completed', {
       application,

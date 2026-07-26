@@ -15,12 +15,14 @@ import {
   JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
+  timeout,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { risSearchDrafts } from '@/mcp-server/tools/definitions/ris-search-drafts.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
+import { buildDraftsRequest, type DraftsSearchParams } from '@/services/ris/request-builder.js';
 
 const { searchDrafts } = vi.hoisted(() => ({ searchDrafts: vi.fn() }));
 
@@ -149,6 +151,34 @@ describe('risSearchDrafts — error mapping', () => {
     const err = await captureError(risSearchDrafts.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(err.data).toMatchObject({ reason: 'upstream_error', retryable: true });
+  });
+
+  it('maps a fetch deadline to upstream_timeout, keeping -32004 on the wire', async () => {
+    searchDrafts.mockRejectedValue(timeout('fetch GET https://data.bka.gv.at timed out.', {}));
+    const ctx = createMockContext({ errors: risSearchDrafts.errors });
+    const input = risSearchDrafts.input.parse({ stage: 'review_drafts' });
+    const err = await captureError(risSearchDrafts.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.Timeout);
+    expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
+  });
+
+  it('maps a builder rejection of an unknown ministry to invalid_query', async () => {
+    // stage + ministry passes the input schema, then expandMinistry refuses the value. The
+    // real builder runs on the params the handler produced, so this pins the actual
+    // rejection; it reached the wire as a bare -32007 with no reason and no recovery (#12).
+    searchDrafts.mockImplementation(async (params: DraftsSearchParams) => {
+      buildDraftsRequest(params);
+      throw new Error('unreachable — the builder was expected to reject these params');
+    });
+    const ctx = createMockContext({ errors: risSearchDrafts.errors });
+    const input = risSearchDrafts.input.parse({ stage: 'review_drafts', ministry: 'BMXX' });
+    const err = await captureError(risSearchDrafts.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.message).toContain('Unknown ministry "BMXX"');
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('Correct the parameter named in the message'),
+    });
   });
 });
 

@@ -7,9 +7,10 @@
  * The core contract: unparseable OR unresolvable input is a `{ found: false, kind, guidance }`
  * RESULT, never a throw — the agent self-corrects from structured guidance better than from
  * an exception (fleet precedent: eur-lex lookup_celex, pubmed/courtlistener lookup_citation).
- * The ONLY thrown error is `upstream_error` when a routed search fails upstream
- * (ServiceUnavailable). A service InvalidParams/ValidationError during a routed lookup is a
- * failed deterministic filter = no resolution = `found: false`, not an error.
+ * The only thrown errors are `upstream_error` (a routed search failed upstream) and
+ * `upstream_timeout` (it did not answer within the deadline). A service
+ * InvalidParams/ValidationError during a routed lookup is a failed deterministic filter =
+ * no resolution = `found: false`, not an error.
  *
  * The resolved record is produced by the corresponding search tool's own record mapper, so an
  * agent chaining a resolved citation sees exactly the shape that tool returns.
@@ -408,6 +409,14 @@ export const risLookupCitation = tool('ris_lookup_citation', {
       retryable: true,
       recovery: 'RIS is temporarily unavailable — retry the same citation after a short delay.',
     },
+    {
+      reason: 'upstream_timeout',
+      code: JsonRpcErrorCode.Timeout,
+      when: 'A routed RIS search did not answer within the request deadline.',
+      retryable: true,
+      recovery:
+        'RIS did not answer in time — retry the same citation shortly, or pass kind plus a court or state hint so fewer routes are tried.',
+    },
   ],
 
   async handler(input, ctx): Promise<LookupResult> {
@@ -417,8 +426,10 @@ export const risLookupCitation = tool('ris_lookup_citation', {
     const asOf = meaningful(input.in_force_as_of) ?? todayInAustria();
 
     /**
-     * Run a routed search: map an upstream failure to this tool's `upstream_error`, and a
-     * failed deterministic filter (InvalidParams / ValidationError) to a not-resolved `null`.
+     * Run a routed search: map an upstream failure to this tool's `upstream_error` or
+     * `upstream_timeout` (separate codes since 0.10.17 split them — `ctx.fail` resolves the
+     * code from the contract entry, so one reason cannot carry both), and a failed
+     * deterministic filter (InvalidParams / ValidationError) to a not-resolved `null`.
      */
     const runSearch = async (
       run: () => Promise<RisSearchResult>,
@@ -426,13 +437,18 @@ export const risLookupCitation = tool('ris_lookup_citation', {
       try {
         return await run();
       } catch (err: unknown) {
-        if (err instanceof McpError && err.code === JsonRpcErrorCode.ServiceUnavailable) {
+        if (!(err instanceof McpError)) throw err;
+        if (err.code === JsonRpcErrorCode.ServiceUnavailable) {
           throw ctx.fail('upstream_error', err.message, { ...ctx.recoveryFor('upstream_error') });
         }
+        if (err.code === JsonRpcErrorCode.Timeout) {
+          throw ctx.fail('upstream_timeout', err.message, {
+            ...ctx.recoveryFor('upstream_timeout'),
+          });
+        }
         if (
-          err instanceof McpError &&
-          (err.code === JsonRpcErrorCode.InvalidParams ||
-            err.code === JsonRpcErrorCode.ValidationError)
+          err.code === JsonRpcErrorCode.InvalidParams ||
+          err.code === JsonRpcErrorCode.ValidationError
         ) {
           return null;
         }

@@ -15,12 +15,17 @@ import {
   JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
+  timeout,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { risSearchAnnouncements } from '@/mcp-server/tools/definitions/ris-search-announcements.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
+import {
+  type AnnouncementsSearchParams,
+  buildAnnouncementsRequest,
+} from '@/services/ris/request-builder.js';
 
 const { searchAnnouncements } = vi.hoisted(() => ({ searchAnnouncements: vi.fn() }));
 
@@ -223,6 +228,57 @@ describe('risSearchAnnouncements — error mapping', () => {
     const err = await captureError(risSearchAnnouncements.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(err.data).toMatchObject({ reason: 'upstream_error', retryable: true });
+  });
+
+  it('maps a fetch deadline to upstream_timeout, keeping -32004 on the wire', async () => {
+    searchAnnouncements.mockRejectedValue(
+      timeout('fetch GET https://data.bka.gv.at timed out.', {}),
+    );
+    const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
+    const input = risSearchAnnouncements.input.parse({ collection: 'social_insurance' });
+    const err = await captureError(risSearchAnnouncements.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.Timeout);
+    expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
+  });
+
+  // Both rejections below pass the input schema and are then refused by the request builder.
+  // The real builder runs on the params the handler produced, so the assertions pin the
+  // actual rejection rather than an invented one. Each reached the wire as a bare -32007
+  // with no reason and no recovery (#12).
+  it('maps a builder rejection of a schema-valid sort_by to invalid_query', async () => {
+    searchAnnouncements.mockImplementation(async (params: AnnouncementsSearchParams) => {
+      buildAnnouncementsRequest(params);
+      throw new Error('unreachable — the builder was expected to reject these params');
+    });
+    const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
+    const input = risSearchAnnouncements.input.parse({
+      collection: 'health_structure_plans',
+      sort_by: 'published',
+    });
+    const err = await captureError(risSearchAnnouncements.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.message).toContain('no confirmed RIS mapping for application Spg');
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('Correct the parameter named in the message'),
+    });
+  });
+
+  it('maps a builder rejection of an unknown issuer to invalid_query', async () => {
+    searchAnnouncements.mockImplementation(async (params: AnnouncementsSearchParams) => {
+      buildAnnouncementsRequest(params);
+      throw new Error('unreachable — the builder was expected to reject these params');
+    });
+    const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
+    const input = risSearchAnnouncements.input.parse({
+      collection: 'ministerial_decrees',
+      issuer: 'BMXX',
+    });
+    const err = await captureError(risSearchAnnouncements.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.message).toContain('Unknown ministry "BMXX"');
+    expect(err.data?.recovery).toBeDefined();
   });
 });
 

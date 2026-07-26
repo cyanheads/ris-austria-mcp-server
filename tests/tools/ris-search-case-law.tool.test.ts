@@ -14,12 +14,14 @@ import {
   JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
+  timeout,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { risSearchCaseLaw } from '@/mcp-server/tools/definitions/ris-search-case-law.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
+import { buildCaseLawRequest, type CaseLawSearchParams } from '@/services/ris/request-builder.js';
 
 const { searchCaseLaw } = vi.hoisted(() => ({ searchCaseLaw: vi.fn() }));
 
@@ -168,6 +170,43 @@ describe('risSearchCaseLaw — error mapping', () => {
     const err = await captureError(risSearchCaseLaw.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(err.data).toMatchObject({ reason: 'upstream_error', retryable: true });
+  });
+
+  it('maps a fetch deadline to upstream_timeout, keeping -32004 on the wire', async () => {
+    // fetchWithTimeout classifies its own deadline as Timeout, not ServiceUnavailable. A
+    // widened upstream_error guard would report -32000 for it, since ctx.fail resolves the
+    // code from the contract entry — so the deadline needs its own declared reason.
+    searchCaseLaw.mockRejectedValue(timeout('fetch GET https://data.bka.gv.at timed out.', {}));
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
+    const input = risSearchCaseLaw.input.parse({ court: 'vfgh', query: 'Datenschutz' });
+    const err = await captureError(risSearchCaseLaw.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.Timeout);
+    expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('retry the same search'),
+    });
+  });
+
+  it('maps a request-builder rejection of a schema-valid sort_by to invalid_query', async () => {
+    // court: normenliste + sort_by: decision_date passes the input schema, then the builder
+    // rejects it: Normenliste has no Sortierung mapping. The rejection reached the wire as a
+    // bare -32007 with no reason and no recovery (#12).
+    searchCaseLaw.mockImplementation(async (params: CaseLawSearchParams) => {
+      buildCaseLawRequest(params);
+      throw new Error('unreachable — the builder was expected to reject these params');
+    });
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
+    const input = risSearchCaseLaw.input.parse({
+      court: 'normenliste',
+      sort_by: 'decision_date',
+    });
+    const err = await captureError(risSearchCaseLaw.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.message).toContain('no confirmed RIS mapping for application Normenliste');
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('Correct the parameter named in the message'),
+    });
   });
 });
 

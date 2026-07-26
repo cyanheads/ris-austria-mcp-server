@@ -14,6 +14,7 @@ import {
   JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
+  timeout,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -250,7 +251,7 @@ describe('risTrackChanges — error mapping', () => {
     expect(err.message).toContain('Seitennummer');
     // …alongside this tool's recovery hint, which a contract-less throw would have lost.
     expect(err.data?.recovery).toMatchObject({
-      hint: expect.stringContaining('Correct the parameter RIS names'),
+      hint: expect.stringContaining('Correct the parameter named in the message'),
     });
     // invalid_query declares no retryable flag — an input error is not worth retrying.
     expect(err.data?.retryable).toBeUndefined();
@@ -264,6 +265,18 @@ describe('risTrackChanges — error mapping', () => {
     const err = await captureError(risTrackChanges.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(err.data).toMatchObject({ reason: 'upstream_error', retryable: true });
+  });
+
+  it('maps a fetch deadline to upstream_timeout, keeping -32004 on the wire', async () => {
+    trackChanges.mockRejectedValue(timeout('fetch GET https://data.bka.gv.at timed out.', {}));
+    const ctx = createMockContext({ errors: risTrackChanges.errors });
+    const input = risTrackChanges.input.parse({ application: 'BrKons' });
+    const err = await captureError(risTrackChanges.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.Timeout);
+    expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('narrow the change window'),
+    });
   });
 });
 

@@ -17,6 +17,8 @@ import {
   JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
+  timeout,
+  validationError,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -227,6 +229,31 @@ describe('risLookupCitation — norm route', () => {
     expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(err.data).toMatchObject({ reason: 'upstream_error', retryable: true });
   });
+
+  it('throws the upstream_timeout contract when the routed search hits its deadline', async () => {
+    searchLegislation.mockRejectedValue(timeout('fetch GET https://data.bka.gv.at timed out.', {}));
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
+    const input = risLookupCitation.input.parse({ citation: '§ 6 DSG' });
+    const err = await captureError(risLookupCitation.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.Timeout);
+    expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
+  });
+
+  it.each([
+    ['InvalidParams', invalidParams("The 'FassungVom' element is invalid.", {})],
+    ['ValidationError', validationError('sortBy has no confirmed RIS mapping.', {})],
+  ])(
+    'treats a routed-search %s as a failed filter — found: false, not a throw',
+    async (_label, rejection) => {
+      // The deliberate divergence from the search family: for this tool a rejected
+      // deterministic filter means the citation did not resolve, so it must stay a result.
+      searchLegislation.mockRejectedValue(rejection);
+      const ctx = createMockContext({ errors: risLookupCitation.errors });
+      const input = risLookupCitation.input.parse({ citation: '§ 6 DSG' });
+      const result = await risLookupCitation.handler(input, ctx);
+      expect(result.found).toBe(false);
+    },
+  );
 });
 
 describe('risLookupCitation — abbreviation-first norm citations (#5)', () => {
@@ -257,27 +284,28 @@ describe('risLookupCitation — abbreviation-first norm citations (#5)', () => {
     ['FremdenpolizeiG 2005 §26', 'FremdenpolizeiG 2005', '26', 'Paragraph'],
   ];
 
-  it.each(
-    CASES,
-  )('parses "%s" to a norm and routes to searchLegislation with { title: "%s", section: "%s" }', async (citation, title, section, sectionType) => {
-    searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));
-    const ctx = createMockContext();
-    const input = risLookupCitation.input.parse({ citation });
-    const result = await risLookupCitation.handler(input, ctx);
-    const today = todayInAustria();
+  it.each(CASES)(
+    'parses "%s" to a norm and routes to searchLegislation with { title: "%s", section: "%s" }',
+    async (citation, title, section, sectionType) => {
+      searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));
+      const ctx = createMockContext();
+      const input = risLookupCitation.input.parse({ citation });
+      const result = await risLookupCitation.handler(input, ctx);
+      const today = todayInAustria();
 
-    expect(searchLegislation).toHaveBeenCalledTimes(1);
-    expect(searchLegislation.mock.calls[0]?.[0]).toEqual({
-      application: 'BrKons',
-      inForceAsOf: today,
-      title,
-      sectionFrom: section,
-      sectionTo: section,
-      sectionType,
-    });
-    expect(result.found).toBe(true);
-    expect(result.kind).toBe('norm');
-  });
+      expect(searchLegislation).toHaveBeenCalledTimes(1);
+      expect(searchLegislation.mock.calls[0]?.[0]).toEqual({
+        application: 'BrKons',
+        inForceAsOf: today,
+        title,
+        sectionFrom: section,
+        sectionTo: section,
+        sectionType,
+      });
+      expect(result.found).toBe(true);
+      expect(result.kind).toBe('norm');
+    },
+  );
 
   it('resolves an abbreviation-first citation under an explicit kind: "norm" (the case the live review reported as found:false)', async () => {
     searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));

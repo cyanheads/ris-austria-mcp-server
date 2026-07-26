@@ -9,7 +9,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 
 import {
   COURTS_WITHOUT_DECISION_KIND,
@@ -29,7 +29,7 @@ import type {
 import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisHit } from '@/services/ris/types.js';
 
-import { isoDateString } from './_shared.js';
+import { failSearchError, isoDateString } from './_shared.js';
 
 const COURT_CODES = RIS_COURTS.map((c) => c.code) as [RisCourtCode, ...RisCourtCode[]];
 const STATE_CODES = RIS_STATES.map((s) => s.code) as [RisStateCode, ...RisStateCode[]];
@@ -348,9 +348,9 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'A parameter value failed validation — decision_kind/subject_area checked locally against the reference tables, or RIS rejected the value in-band (message passed through verbatim).',
+      when: 'A parameter value failed validation — decision_kind/subject_area checked locally against the reference tables, sort_by rejected locally because the chosen court’s application has no mapping for it, or RIS rejected the value in-band (message passed through verbatim).',
       recovery:
-        'Correct the parameter RIS names in the message. Valid court codes, decision types/kinds, and syntax: ris_list_reference (topic: courts, decision_types, decision_kinds, or search_syntax).',
+        'Correct the parameter named in the message, or drop it if the court does not support it. Valid court codes, decision types/kinds, and syntax: ris_list_reference (topic: courts, decision_types, decision_kinds, or search_syntax).',
     },
     {
       reason: 'upstream_error',
@@ -359,6 +359,14 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       retryable: true,
       recovery:
         'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the query.',
+    },
+    {
+      reason: 'upstream_timeout',
+      code: JsonRpcErrorCode.Timeout,
+      when: 'RIS did not answer the search within the request deadline.',
+      retryable: true,
+      recovery:
+        'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size, or narrow the date range.',
     },
   ],
 
@@ -492,18 +500,12 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
     };
 
     const courtEntry = RIS_COURTS.find((entry) => entry.code === court);
-    // Map in-band RIS errors onto this tool's declared contract so reason +
-    // recovery reach the wire (service-level throws carry neither).
+    // Map request-builder and service failures onto this tool's declared contract so reason
+    // + recovery reach the wire (neither carries them on its own).
     const result = await getRisService()
       .searchCaseLaw(params, ctx)
       .catch((err: unknown) => {
-        if (err instanceof McpError && err.code === JsonRpcErrorCode.InvalidParams) {
-          throw ctx.fail('invalid_query', err.message, { ...ctx.recoveryFor('invalid_query') });
-        }
-        if (err instanceof McpError && err.code === JsonRpcErrorCode.ServiceUnavailable) {
-          throw ctx.fail('upstream_error', err.message, { ...ctx.recoveryFor('upstream_error') });
-        }
-        throw err;
+        throw failSearchError(err, ctx);
       });
     ctx.log.info('Case-law search completed', {
       court,
