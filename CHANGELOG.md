@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.2.5](changelog/0.2.x/0.2.5.md) — 2026-07-26
+
+ris_search_gazette rejects federal date ranges spanning more than one Bundesgesetzblatt era tier instead of silently serving only the earlier one, and the federal zero-hit notice no longer attributes BgblAlt's coverage floor and metadata-only caveat to BgblPdf results.
+
 ## [0.2.4](changelog/0.2.x/0.2.4.md) — 2026-07-26
 
 ris_lookup_citation rejects impossible calendar dates and the normenliste court hint as input errors instead of reporting them as citation misses, Artikel miss guidance now carries section_type into the retry recipe, and the vwgh/justiz Geschäftszahl reference examples are replaced with citations that resolve.

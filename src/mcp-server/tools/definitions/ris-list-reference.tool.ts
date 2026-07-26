@@ -248,7 +248,7 @@ const TOPIC_BUILDERS: Record<Topic, () => TopicPayload> = {
   }),
   gazette_parts: () => ({
     summary:
-      'Federal gazette parts for the part parameter of ris_search_gazette, plus the three federal era tiers the tool auto-routes across by year.',
+      'Federal gazette parts for the part parameter of ris_search_gazette, plus the three federal era tiers and the coverage window each one serves.',
     entries: [
       ...RIS_GAZETTE_PARTS.map((p) => ({
         value: p.code,
@@ -268,6 +268,8 @@ const TOPIC_BUILDERS: Record<Topic, () => TopicPayload> = {
     notes: [
       'Parts I/II/III exist only from 1997 — earlier issues are partless (pre_1997, BgblPdf only).',
       'A "BGBl. II" number filtered to part1 returns nothing — verify part and year together.',
+      'One ris_search_gazette call serves one era tier. A published_from/published_to interval crossing 2004-01-01 or 1945-01-01 is rejected — split it at the boundary and issue one call per tier.',
+      'RIS carries no federal gazette for 1941–1944: BgblAlt ends in 1940 (GBlÖ) and BgblPdf resumes in 1945 (StGBl).',
     ],
   }),
   law_types: () => ({

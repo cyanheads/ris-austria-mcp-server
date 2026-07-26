@@ -1,9 +1,12 @@
 /**
  * @fileoverview ris_search_gazette — browse Austria's promulgation record at every level of
  * government. `scope` selects the jurisdiction; the three federal era tiers (BgblAuth 2004+,
- * BgblPdf 1945–2003, BgblAlt 1848–1940) are auto-routed by the year in the number or date
- * range, and the resolved application is echoed in enrichment. State scopes pick a `series`
- * (law vs ordinance gazette) and a `state_era` (the authentic LgblAuth vs the state's earlier
+ * BgblPdf 1945–2003, BgblAlt 1848–1940) are auto-routed by the year in the number or the
+ * publication-date interval, and the resolved application is echoed in enrichment. One call
+ * serves one tier, so an interval overlapping two or three of them is rejected locally with
+ * the boundaries to split at, rather than answered from whichever tier the start year
+ * happened to name. State scopes pick a `series` (law vs ordinance gazette) and a
+ * `state_era` (the authentic LgblAuth vs the state's earlier
  * Lgbl/LgblNO series) — orthogonal axes, with `legacy` under `ordinance_gazette` rejected
  * locally since Vbl has no legacy counterpart. Conditional filters are guarded locally before
  * any upstream call. Ordinance gazettes (Vbl) currently cover Tirol only — a non-Tirol request
@@ -79,21 +82,144 @@ function yearFromDate(date: string | undefined): number | undefined {
   return match ? Number.parseInt(match[1] as string, 10) : undefined;
 }
 
+/** One federal era tier as a date interval; `to` is absent for the open-ended current tier. */
+interface FederalTier {
+  readonly application: GazetteApplication;
+  readonly era: GazetteEra;
+  readonly from: string;
+  /** Window as it reads in the cross-tier rejection message. */
+  readonly label: string;
+  readonly to?: string;
+}
+
 /**
- * Route a federal (Bundesgesetzblatt) query to its era tier by the year signal: the number's
- * trailing year, else the date range. `part: pre_1997` forces the post-war PDF tier.
+ * The three federal era tiers, newest first. Each is a separate RIS application that clamps
+ * a query to its own window, so the tiers are chronologically disjoint — no record is
+ * reachable from two of them, and a range crossing a boundary decomposes into contiguous
+ * per-tier segments (live-confirmed 2026-07-26: every tier answers zero for a range outside
+ * its window, and answers the same total for a spanning range as for its own segment alone).
+ * Between BgblAlt and BgblPdf lies a four-year break no application covers.
+ */
+const FEDERAL_TIERS: readonly [FederalTier, FederalTier, FederalTier] = [
+  {
+    application: 'BgblAuth',
+    era: 'current',
+    from: '2004-01-01',
+    label: 'BgblAuth (2004 and later)',
+  },
+  {
+    application: 'BgblPdf',
+    era: 'postwar',
+    from: '1945-01-01',
+    label: 'BgblPdf (1945–2003)',
+    to: '2003-12-31',
+  },
+  {
+    application: 'BgblAlt',
+    era: 'imperial',
+    from: '1848-01-01',
+    label: 'BgblAlt (1848–1940)',
+    to: '1940-12-31',
+  },
+];
+
+const [CURRENT_TIER, POSTWAR_TIER, IMPERIAL_TIER] = FEDERAL_TIERS;
+
+/** The break between BgblAlt (ends 1940) and BgblPdf (resumes 1945) — no application covers it. */
+const FEDERAL_GAP_FROM = '1941-01-01';
+const FEDERAL_GAP_TO = '1944-12-31';
+
+/**
+ * True when a tier/gap window overlaps a requested interval. ISO `YYYY-MM-DD` orders
+ * lexicographically and {@link isoDateString} guarantees the shape, so plain string
+ * comparison is the date comparison. An absent request bound is open in that direction.
+ */
+function windowOverlaps(
+  windowFrom: string,
+  windowTo: string | undefined,
+  from: string | undefined,
+  to: string | undefined,
+): boolean {
+  return !(
+    (to !== undefined && windowFrom > to) ||
+    (windowTo !== undefined && from !== undefined && from > windowTo)
+  );
+}
+
+/**
+ * True when a *bounded* federal interval reaches into the 1941–1944 break. A query with no
+ * date bound at all is unbounded in both directions and would trivially overlap it, which
+ * says nothing about what the caller asked for.
+ */
+function touchesFederalGap(from: string | undefined, to: string | undefined): boolean {
+  if (from === undefined && to === undefined) return false;
+  return windowOverlaps(FEDERAL_GAP_FROM, FEDERAL_GAP_TO, from, to);
+}
+
+/** Every era tier whose window intersects the requested publication-date interval. */
+function owningFederalTiers(
+  from: string | undefined,
+  to: string | undefined,
+): readonly FederalTier[] {
+  return FEDERAL_TIERS.filter((tier) => windowOverlaps(tier.from, tier.to, from, to));
+}
+
+/** Tier the year bucket names — used for a `number`'s year and for an interval no tier owns. */
+function tierForYear(year: number | undefined): FederalTier {
+  if (year === undefined || year >= 2004) return CURRENT_TIER;
+  if (year >= 1945) return POSTWAR_TIER;
+  return IMPERIAL_TIER;
+}
+
+/**
+ * Route a federal (Bundesgesetzblatt) query to its era tier. `part: pre_1997` (the partless
+ * BGBl exists only in the post-war tier) and a year-bearing `number` name the tier outright
+ * and are never rejected. Otherwise the publication-date interval decides: one owning tier
+ * serves it; an interval no tier owns — the 1941–1944 break, or pre-1848 — falls back to the
+ * year bucket and answers zero honestly; an interval overlapping two or three tiers comes
+ * back as `spans` for the handler to reject, since one call serves one application and any
+ * single choice would drop the rest of the interval without saying so.
  */
 function resolveFederalTier(
   number: string | undefined,
   publishedFrom: string | undefined,
   publishedTo: string | undefined,
   part: GazetteSearchParams['part'],
-): { application: GazetteApplication; era: GazetteEra } {
-  if (part === 'pre_1997') return { application: 'BgblPdf', era: 'postwar' };
-  const year = yearFromNumber(number) ?? yearFromDate(publishedFrom) ?? yearFromDate(publishedTo);
-  if (year === undefined || year >= 2004) return { application: 'BgblAuth', era: 'current' };
-  if (year >= 1945) return { application: 'BgblPdf', era: 'postwar' };
-  return { application: 'BgblAlt', era: 'imperial' };
+): { readonly tier: FederalTier } | { readonly spans: readonly FederalTier[] } {
+  if (part === 'pre_1997') return { tier: POSTWAR_TIER };
+  const numberYear = yearFromNumber(number);
+  if (numberYear !== undefined) return { tier: tierForYear(numberYear) };
+  if (publishedFrom === undefined && publishedTo === undefined) return { tier: CURRENT_TIER };
+  const owning = owningFederalTiers(publishedFrom, publishedTo);
+  if (owning.length > 1) return { spans: owning };
+  return {
+    tier: owning[0] ?? tierForYear(yearFromDate(publishedFrom) ?? yearFromDate(publishedTo)),
+  };
+}
+
+/**
+ * The rejection message for a spanning interval: the interval as it was asked for (marking
+ * an open-ended bound), the tier windows it reaches, and the boundary dates to split at,
+ * oldest first.
+ */
+function crossTierMessage(
+  spans: readonly FederalTier[],
+  from: string | undefined,
+  to: string | undefined,
+): string {
+  const interval =
+    from !== undefined && to !== undefined
+      ? `published_from ${from} / published_to ${to}`
+      : from !== undefined
+        ? `published_from ${from} with no published_to (open-ended)`
+        : `published_to ${to} with no published_from (open-ended)`;
+  const windows = spans.map((tier) => tier.label).join(', ');
+  const boundaries = spans
+    .slice(0, -1)
+    .map((tier) => tier.from)
+    .reverse()
+    .join(' and ');
+  return `${interval} spans ${spans.length} federal era tiers — ${windows}. One call serves one tier, so this range would return only part of the interval. Split it at ${boundaries} and issue one call per tier.`;
 }
 
 /** Map an empty string from a form-based client to `undefined`. */
@@ -266,7 +392,7 @@ export function toRecord(hit: RisHit, application: GazetteApplication): GazetteR
 export const risSearchGazette = tool('ris_search_gazette', {
   title: 'Search Austrian Gazettes',
   description:
-    'Browse Austria’s promulgation record — the authentic, legally binding gazettes — at every level of government. scope picks the jurisdiction: federal (default; the Bundesgesetzblatt across three era tiers auto-routed by year — BgblAuth 2004+ authentic, BgblPdf 1945–2003, BgblAlt 1848–1940 metadata-only ÖNB scans), one Bundesland (its Landesgesetzblatt), district (Bezirke promulgations), or municipal (Gemeinde promulgations). For a state scope, series selects law gazettes (law_gazette, the default → LGBl) vs ordinance gazettes (ordinance_gazette → Verordnungsblätter, currently Tirol only), and state_era picks which era of that series to search: current (the default → the authentic LGBl) or legacy (the state’s earlier non-authentic series — Niederösterreich’s systematic LgblNO, or the older Lgbl elsewhere; Wien carries neither, and ordinance gazettes have no legacy series). Filter by query (full text), title, number ("171/2026" — a pre-2004 number auto-routes to the right era tier), part (federal I/II/III or pre_1997), type (laws/regulations/announcements/other), published_from/to, issuer (federal or ordinance gazettes only), district_authority (district only), or municipality (municipal only). Every result carries a binding label (authentic vs historical_record vs consolidated_informational) and the amtssigniert authentic PDF wherever it exists — the binding artifact, never a paraphrase. For one known gazette number, ris_lookup_citation resolves it directly. Coverage windows, era tiers, and part semantics: ris_list_reference topic applications or gazette_parts.',
+    'Browse Austria’s promulgation record — the authentic, legally binding gazettes — at every level of government. scope picks the jurisdiction: federal (default; the Bundesgesetzblatt across three era tiers auto-routed by year — BgblAuth 2004+ authentic, BgblPdf 1945–2003, BgblAlt 1848–1940 metadata-only ÖNB scans; one call serves one tier, so a published_from/published_to interval crossing 2004-01-01 or 1945-01-01 is rejected with the boundaries to split at, and RIS carries no federal gazette for 1941–1944), one Bundesland (its Landesgesetzblatt), district (Bezirke promulgations), or municipal (Gemeinde promulgations). For a state scope, series selects law gazettes (law_gazette, the default → LGBl) vs ordinance gazettes (ordinance_gazette → Verordnungsblätter, currently Tirol only), and state_era picks which era of that series to search: current (the default → the authentic LGBl) or legacy (the state’s earlier non-authentic series — Niederösterreich’s systematic LgblNO, or the older Lgbl elsewhere; Wien carries neither, and ordinance gazettes have no legacy series). Filter by query (full text), title, number ("171/2026" — a pre-2004 number auto-routes to the right era tier), part (federal I/II/III or pre_1997), type (laws/regulations/announcements/other), published_from/to, issuer (federal or ordinance gazettes only), district_authority (district only), or municipality (municipal only). Every result carries a binding label (authentic vs historical_record vs consolidated_informational) and the amtssigniert authentic PDF wherever it exists — the binding artifact, never a paraphrase. For one known gazette number, ris_lookup_citation resolves it directly. Coverage windows, era tiers, and part semantics: ris_list_reference topic applications or gazette_parts.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     scope: z
@@ -320,9 +446,13 @@ export const risSearchGazette = tool('ris_search_gazette', {
     published_from: isoDateString
       .optional()
       .describe(
-        'Earliest promulgation date (YYYY-MM-DD). A pre-2004 range routes a federal query to an earlier era tier.',
+        'Earliest promulgation date (YYYY-MM-DD). A pre-2004 range routes a federal query to an earlier era tier. Federal: the interval must stay inside one tier — set published_to as well, since a one-sided bound is open into every tier beyond it.',
       ),
-    published_to: isoDateString.optional().describe('Latest promulgation date (YYYY-MM-DD).'),
+    published_to: isoDateString
+      .optional()
+      .describe(
+        'Latest promulgation date (YYYY-MM-DD). Federal: the interval must stay inside one era tier, so pair it with published_from — an interval crossing 2004-01-01 or 1945-01-01 is rejected with the boundaries to split at.',
+      ),
     issuer: z
       .string()
       .optional()
@@ -373,7 +503,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
     servedApplication: z
       .string()
       .describe(
-        'The RIS application that served the query — for federal, the era tier auto-routed by year (BgblAuth 2004+, BgblPdf 1945–2003, BgblAlt 1848–1940); otherwise the resolved state/district/municipal application.',
+        'The RIS application that served the query — for federal, the single era tier auto-routed from the number’s year or the publication-date interval (BgblAuth 2004+, BgblPdf 1945–2003, BgblAlt 1848–1940); otherwise the resolved state/district/municipal application.',
       ),
     notice: z
       .string()
@@ -387,6 +517,13 @@ export const risSearchGazette = tool('ris_search_gazette', {
       when: 'A filter was combined with a scope that does not support it (part off federal; series/state_era off a state scope; district_authority off district; municipality off municipal; issuer outside federal/ordinance gazettes), or series: ordinance_gazette was combined with state_era: legacy (ordinance gazettes have no legacy counterpart) — rejected locally before any upstream call; the message names the offending pair.',
       recovery:
         'Drop the named filter or adjust scope: part applies only to scope: federal; series and state_era only to a state scope; district_authority only to scope: district; municipality only to scope: municipal; issuer only to federal or ordinance gazettes. state_era: legacy has no ordinance-gazette counterpart — drop one of that pair. Semantics: ris_list_reference topic gazette_parts or applications.',
+    },
+    {
+      reason: 'cross_tier_range',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'A federal published_from/published_to interval overlaps more than one Bundesgesetzblatt era tier (BgblAuth 2004+, BgblPdf 1945–2003, BgblAlt 1848–1940) — including a one-sided bound, which is open into every tier beyond it. Rejected locally before any upstream call: one call serves exactly one application, so a spanning range would return the records of a single tier and silently omit the rest of the interval. A year-bearing number or part: pre_1997 names the tier outright and is never rejected.',
+      recovery:
+        'Split the date range at each era boundary — 2004-01-01 (BgblAuth begins) and 1945-01-01 (BgblPdf begins) — and issue one call per tier, then combine the results. Set both published_from and published_to: a one-sided bound spans every tier beyond it. RIS carries no federal gazette for 1941–1944. Tier windows: ris_list_reference topic gazette_parts.',
     },
     {
       reason: 'invalid_query',
@@ -462,9 +599,16 @@ export const risSearchGazette = tool('ris_search_gazette', {
     let application: GazetteApplication;
     let era: GazetteEra | undefined;
     if (scope === 'federal') {
-      const tier = resolveFederalTier(number, publishedFrom, publishedTo, input.part);
-      application = tier.application;
-      era = tier.era;
+      const routed = resolveFederalTier(number, publishedFrom, publishedTo, input.part);
+      if ('spans' in routed) {
+        throw ctx.fail(
+          'cross_tier_range',
+          crossTierMessage(routed.spans, publishedFrom, publishedTo),
+          { ...ctx.recoveryFor('cross_tier_range') },
+        );
+      }
+      application = routed.tier.application;
+      era = routed.tier.era;
     } else if (scope === 'district') {
       application = 'Bvb';
     } else if (scope === 'municipal') {
@@ -554,10 +698,19 @@ export const risSearchGazette = tool('ris_search_gazette', {
           "issuer is a phrase field — try the ministry abbreviation with a trailing * ('BMK*').",
         );
       }
-      if (scope === 'federal' && (era === 'postwar' || era === 'imperial')) {
-        const tier = era === 'postwar' ? 'BgblPdf 1945–2003' : 'BgblAlt 1848–1940';
+      if (scope === 'federal' && era === 'postwar') {
         fragments.push(
-          `Range served by ${tier}; pre-1848 gazettes are not in RIS. BgblAlt is metadata-only — scans are ÖNB-hosted.`,
+          'Range served by BgblPdf 1945–2003 (Staats- und Bundesgesetzblatt), which carries full HTML/PDF renditions. Gazette parts I/II/III exist only from 1997 — for an earlier issue use part: pre_1997 rather than part1/part2/part3.',
+        );
+      }
+      if (scope === 'federal' && era === 'imperial') {
+        fragments.push(
+          'Range served by BgblAlt 1848–1940; pre-1848 gazettes are not in RIS. BgblAlt is metadata-only — hits carry no content_urls, and the scans are ÖNB-hosted, linked as alex_url.',
+        );
+      }
+      if (scope === 'federal' && touchesFederalGap(publishedFrom, publishedTo)) {
+        fragments.push(
+          'RIS carries no federal gazette for 1941–1944 — BgblAlt ends in 1940 (GBlÖ) and BgblPdf resumes in 1945 (StGBl).',
         );
       }
       if (scope === 'district') {

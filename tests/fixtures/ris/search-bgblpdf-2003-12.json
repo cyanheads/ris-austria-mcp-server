@@ -1,0 +1,119 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "140"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "2003_146_1",
+                "Applikation": "BgblPdf",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=BgblPdf&Dokumentnummer=2003_146_1"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "146. Bundesgesetz: Änderung des Krankenanstalten-Arbeitszeitgesetzes ",
+                "Titel": "Bundesgesetz, mit dem das Krankenanstalten-Arbeitszeitgesetz geändert wird",
+                "BgblPdf": {
+                  "Fundstelle": "BGBl. I Nr. 146/2003",
+                  "Teil": "Teil1",
+                  "BeginnseiteStueck": "1981",
+                  "EndseiteStueck": "1982",
+                  "Kundmachungsdatum": "2003-12-30",
+                  "Jahrgang": "2003",
+                  "Bgblnummer": "146/2003",
+                  "BeginnseiteBgbl": "1981",
+                  "EndseiteBgbl": "1981",
+                  "Typ": "Bundesgesetz",
+                  "ParlamentarischeMaterialienNationalrat": "NR: GP XXII IA 252/A AB 317 S. 41.",
+                  "ParlamentarischeMaterialienBundesrat": "BR: AB 6958 S. 704."
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/BgblPdf/2003_146_1/2003_146_1.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/BgblPdf/2003_146_1/2003_146_1.html"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/BgblPdf/2003_146_1/2003_146_1.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "2003_145_1",
+                "Applikation": "BgblPdf",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=BgblPdf&Dokumentnummer=2003_145_1"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "145. Bundesgesetz: 2. Sozialversicherungs-Änderungsgesetz 2003 – 2. SVÄG 2003",
+                "Titel": "Bundesgesetz, mit dem das Allgemeine Sozialversicherungsgesetz, das Gewerbliche Sozialversicherungsgesetz, das Bauern-Sozialversicherungsgesetz und das Beamten-Kranken- und Unfallversicherungsgesetz geändert werden (2. Sozialversicherungs-Änderungsgesetz 2003 – 2. SVÄG 2003)",
+                "BgblPdf": {
+                  "Fundstelle": "BGBl. I Nr. 145/2003",
+                  "Teil": "Teil1",
+                  "BeginnseiteStueck": "1949",
+                  "EndseiteStueck": "1980",
+                  "Kundmachungsdatum": "2003-12-30",
+                  "Jahrgang": "2003",
+                  "Bgblnummer": "145/2003",
+                  "BeginnseiteBgbl": "1949",
+                  "EndseiteBgbl": "1980",
+                  "Typ": "Bundesgesetz",
+                  "ParlamentarischeMaterialienNationalrat": "NR: GP XXII RV 310 AB 316 S. 41.",
+                  "ParlamentarischeMaterialienBundesrat": "BR: 6926 AB 6957 S. 704."
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": {
+                    "DataType": "Pdf",
+                    "Url": "https://www.ris.bka.gv.at/Dokumente/BgblPdf/2003_145_1/2003_145_1.pdf"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

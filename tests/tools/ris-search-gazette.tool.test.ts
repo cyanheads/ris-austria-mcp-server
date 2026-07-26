@@ -188,11 +188,33 @@ describe('risSearchGazette — federal era-tier routing (servedApplication)', ()
     expect(getEnrichment(ctx).servedApplication).toBe('BgblPdf');
   });
 
-  it('routes a pre-1945 date range to BgblAlt', async () => {
+  // Both bounds are set: a one-sided published_from is open into every later tier and is
+  // rejected as cross-tier, so it can no longer stand in for "an imperial-era range".
+  it('routes a pre-1941 date range to BgblAlt', async () => {
     const ctx = createMockContext();
-    const input = risSearchGazette.input.parse({ published_from: '1900-01-01' });
+    const input = risSearchGazette.input.parse({
+      published_from: '1900-01-01',
+      published_to: '1930-12-31',
+    });
     await risSearchGazette.handler(input, ctx);
     expect(getEnrichment(ctx).servedApplication).toBe('BgblAlt');
+  });
+
+  it('routes a date range inside the post-war window to BgblPdf', async () => {
+    const ctx = createMockContext();
+    const input = risSearchGazette.input.parse({
+      published_from: '1961-01-01',
+      published_to: '1961-12-31',
+    });
+    await risSearchGazette.handler(input, ctx);
+    expect(getEnrichment(ctx).servedApplication).toBe('BgblPdf');
+  });
+
+  it('routes a query with no date bound at all to the current tier', async () => {
+    const ctx = createMockContext();
+    const input = risSearchGazette.input.parse({ query: 'Datenschutz' });
+    await risSearchGazette.handler(input, ctx);
+    expect(getEnrichment(ctx).servedApplication).toBe('BgblAuth');
   });
 
   it('forces the postwar tier for part: pre_1997 regardless of number', async () => {
@@ -254,6 +276,198 @@ describe('risSearchGazette — state_era series routing (servedApplication)', ()
   });
 });
 
+// One call serves one application, so a federal publication-date interval must lie inside a
+// single era tier. Before this, the interval was collapsed to the start year and the query was
+// served entirely by whichever tier that named — a successful-looking result missing every
+// record from the other side of the boundary (#11).
+describe('risSearchGazette — cross-tier federal date ranges', () => {
+  const zeroHitsResult = parseSearchResponse(fixture('search-zero-hits.json'));
+
+  it('rejects the 2003/2004 boundary span, naming both tiers and the split date', async () => {
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
+    const input = risSearchGazette.input.parse({
+      scope: 'federal',
+      published_from: '2003-12-01',
+      published_to: '2004-01-31',
+      page_size: 10,
+    });
+    const err = await captureError(risSearchGazette.handler(input, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(err.data).toMatchObject({ reason: 'cross_tier_range' });
+    expect(err.message).toContain('published_from 2003-12-01 / published_to 2004-01-31');
+    expect(err.message).toContain('spans 2 federal era tiers');
+    expect(err.message).toContain('BgblAuth (2004 and later)');
+    expect(err.message).toContain('BgblPdf (1945–2003)');
+    expect(err.message).toContain('Split it at 2004-01-01');
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('2004-01-01 (BgblAuth begins)'),
+    });
+    expect(searchGazette).not.toHaveBeenCalled();
+  });
+
+  it('serves the December-only control from BgblPdf, with December dates only', async () => {
+    searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-bgblpdf-2003-12.json')));
+    const ctx = createMockContext();
+    const input = risSearchGazette.input.parse({
+      scope: 'federal',
+      published_from: '2003-12-01',
+      published_to: '2003-12-31',
+      page_size: 10,
+    });
+    const result = await risSearchGazette.handler(input, ctx);
+    expect(getEnrichment(ctx).servedApplication).toBe('BgblPdf');
+    expect(getEnrichment(ctx).totalCount).toBe(140);
+    expect(result.results).toHaveLength(2);
+    for (const record of result.results) {
+      expect(record.published).toMatch(/^2003-12-/u);
+      expect(record.binding).toBe('historical_record');
+    }
+  });
+
+  it('serves the January-only control from BgblAuth, with January dates only', async () => {
+    searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-bgblauth-2004-01.json')));
+    const ctx = createMockContext();
+    const input = risSearchGazette.input.parse({
+      scope: 'federal',
+      published_from: '2004-01-01',
+      published_to: '2004-01-31',
+      page_size: 10,
+    });
+    const result = await risSearchGazette.handler(input, ctx);
+    expect(getEnrichment(ctx).servedApplication).toBe('BgblAuth');
+    expect(getEnrichment(ctx).totalCount).toBe(72);
+    expect(result.results).toHaveLength(2);
+    for (const record of result.results) {
+      expect(record.published).toMatch(/^2004-01-/u);
+      expect(record.binding).toBe('authentic');
+    }
+  });
+
+  it('rejects a three-tier span, naming every tier and both boundaries in order', async () => {
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
+    const input = risSearchGazette.input.parse({
+      published_from: '1900-01-01',
+      published_to: '2010-12-31',
+    });
+    const err = await captureError(risSearchGazette.handler(input, ctx));
+    expect(err.data).toMatchObject({ reason: 'cross_tier_range' });
+    expect(err.message).toContain('spans 3 federal era tiers');
+    expect(err.message).toContain('BgblAlt (1848–1940)');
+    expect(err.message).toContain('Split it at 1945-01-01 and 2004-01-01');
+    expect(searchGazette).not.toHaveBeenCalled();
+  });
+
+  it('rejects a one-sided published_from that is open into a later tier', async () => {
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
+    const input = risSearchGazette.input.parse({ published_from: '2003-12-01' });
+    const err = await captureError(risSearchGazette.handler(input, ctx));
+    expect(err.data).toMatchObject({ reason: 'cross_tier_range' });
+    expect(err.message).toContain(
+      'published_from 2003-12-01 with no published_to (open-ended) spans 2 federal era tiers',
+    );
+    expect(searchGazette).not.toHaveBeenCalled();
+  });
+
+  it('rejects a one-sided published_to that is open into an earlier tier', async () => {
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
+    const input = risSearchGazette.input.parse({ published_to: '2003-12-31' });
+    const err = await captureError(risSearchGazette.handler(input, ctx));
+    expect(err.data).toMatchObject({ reason: 'cross_tier_range' });
+    expect(err.message).toContain(
+      'published_to 2003-12-31 with no published_from (open-ended) spans 2 federal era tiers',
+    );
+    expect(searchGazette).not.toHaveBeenCalled();
+  });
+
+  // No application covers 1941–1944: BgblAlt ends in 1940, BgblPdf resumes in 1945. The
+  // interval owns no tier, so it is a legitimate zero-hit answer with a notice, not a
+  // cross-tier rejection.
+  it('serves a range falling entirely in the 1941–1944 gap as zero hits with a notice', async () => {
+    searchGazette.mockResolvedValue(zeroHitsResult);
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
+    const input = risSearchGazette.input.parse({
+      published_from: '1941-01-01',
+      published_to: '1944-12-31',
+    });
+    const result = await risSearchGazette.handler(input, ctx);
+    expect(result.results).toEqual([]);
+    expect(searchGazette).toHaveBeenCalledOnce();
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.totalCount).toBe(0);
+    expect(enrichment.servedApplication).toBe('BgblAlt');
+    expect(enrichment.notice).toContain(
+      'RIS carries no federal gazette for 1941–1944 — BgblAlt ends in 1940 (GBlÖ) and BgblPdf resumes in 1945 (StGBl).',
+    );
+  });
+
+  it('rejects a range that straddles the gap and both tiers around it', async () => {
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
+    const input = risSearchGazette.input.parse({
+      published_from: '1939-01-01',
+      published_to: '1946-12-31',
+    });
+    const err = await captureError(risSearchGazette.handler(input, ctx));
+    expect(err.data).toMatchObject({ reason: 'cross_tier_range' });
+    expect(err.message).toContain('spans 2 federal era tiers');
+    expect(err.message).toContain('Split it at 1945-01-01');
+    expect(searchGazette).not.toHaveBeenCalled();
+  });
+
+  it('serves a range that starts in the gap and ends in one tier, noting the gap', async () => {
+    searchGazette.mockResolvedValue(zeroHitsResult);
+    const ctx = createMockContext();
+    const input = risSearchGazette.input.parse({
+      published_from: '1941-01-01',
+      published_to: '1946-12-31',
+    });
+    await risSearchGazette.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.servedApplication).toBe('BgblPdf');
+    expect(enrichment.notice).toContain('RIS carries no federal gazette for 1941–1944');
+  });
+
+  // part: pre_1997 and a year-bearing number name the tier outright — the date range is a
+  // secondary filter there, so neither is refused for spanning.
+  it('keeps part: pre_1997 pinned to BgblPdf despite a spanning range', async () => {
+    searchGazette.mockResolvedValue(zeroHitsResult);
+    const ctx = createMockContext();
+    const input = risSearchGazette.input.parse({
+      part: 'pre_1997',
+      published_from: '2003-12-01',
+      published_to: '2004-01-31',
+    });
+    await risSearchGazette.handler(input, ctx);
+    expect(getEnrichment(ctx).servedApplication).toBe('BgblPdf');
+    expect(searchGazette).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a number's trailing year in charge of the tier despite a spanning range", async () => {
+    searchGazette.mockResolvedValue(zeroHitsResult);
+    const ctx = createMockContext();
+    const input = risSearchGazette.input.parse({
+      number: '146/2003',
+      published_from: '2003-12-01',
+      published_to: '2004-01-31',
+    });
+    await risSearchGazette.handler(input, ctx);
+    expect(getEnrichment(ctx).servedApplication).toBe('BgblPdf');
+    expect(searchGazette).toHaveBeenCalledOnce();
+  });
+
+  it('leaves non-federal scopes untouched by the tier check', async () => {
+    searchGazette.mockResolvedValue(zeroHitsResult);
+    const ctx = createMockContext();
+    const input = risSearchGazette.input.parse({
+      scope: 'salzburg',
+      published_from: '1900-01-01',
+      published_to: '2026-12-31',
+    });
+    await risSearchGazette.handler(input, ctx);
+    expect(getEnrichment(ctx).servedApplication).toBe('LgblAuth');
+    expect(searchGazette).toHaveBeenCalledOnce();
+  });
+});
+
 describe('risSearchGazette — zero-hit notices', () => {
   const zeroHitsResult = parseSearchResponse(fixture('search-zero-hits.json'));
 
@@ -295,14 +509,41 @@ describe('risSearchGazette — zero-hit notices', () => {
     );
   });
 
-  it('includes the historical-era caveat for an imperial-era federal range', async () => {
+  // The two historical tiers get their own fragment. BgblAlt's floor (1848) and its
+  // metadata-only status are not BgblPdf's — a shared string told a post-war caller its
+  // results carried no content_urls when that tier is exactly the one that has them (#24).
+  it('names only BgblAlt’s window and caveats for an imperial-era federal range', async () => {
     const ctx = createMockContext();
-    const input = risSearchGazette.input.parse({ published_from: '1900-01-01' });
+    const input = risSearchGazette.input.parse({
+      published_from: '1900-01-01',
+      published_to: '1930-12-31',
+    });
     await risSearchGazette.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
     expect(notice).toContain(
-      'Range served by BgblAlt 1848–1940; pre-1848 gazettes are not in RIS.',
+      'Range served by BgblAlt 1848–1940; pre-1848 gazettes are not in RIS. BgblAlt is metadata-only — hits carry no content_urls, and the scans are ÖNB-hosted, linked as alex_url.',
     );
+    expect(notice).not.toContain('BgblPdf');
+  });
+
+  it('names only BgblPdf’s window and caveats for a post-war federal range', async () => {
+    const ctx = createMockContext();
+    const input = risSearchGazette.input.parse({
+      published_from: '1950-01-01',
+      published_to: '1950-12-31',
+      title: 'Zzzqxnonexistent',
+    });
+    await risSearchGazette.handler(input, ctx);
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain(
+      'Range served by BgblPdf 1945–2003 (Staats- und Bundesgesetzblatt), which carries full HTML/PDF renditions.',
+    );
+    expect(notice).toContain('Gazette parts I/II/III exist only from 1997');
+    expect(notice).toContain('part: pre_1997');
+    // BgblAlt's floor and its metadata-only caveat belong to the imperial branch alone.
+    expect(notice).not.toContain('BgblAlt');
+    expect(notice).not.toContain('metadata-only');
+    expect(notice).not.toContain('1848');
   });
 
   it('includes the district-coverage guidance for scope: district', async () => {

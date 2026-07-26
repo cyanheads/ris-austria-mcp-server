@@ -1,0 +1,127 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "72"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "BGBLA_2004_II_68",
+                "Applikation": "BgblAuth",
+                "Organ": "BMGF (Bundesministerium für Gesundheit und Frauen)",
+                "Einbringer": "BMGF (Bundesministerium für Gesundheit und Frauen)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/eli/bgbl/II/2004/68/20040130"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "Grundausbildungsverordnung des Bundesministeriums für Gesundheit und Frauen (Grundausbildungsverordnung BMGF)",
+                "Titel": "Verordnung der Bundesministerin für Gesundheit und Frauen betreffend die Grundausbildung des Bundesministeriums für Gesundheit und Frauen (Grundausbildungsverordnung BMGF)",
+                "Eli": "https://www.ris.bka.gv.at/eli/bgbl/II/2004/68/20040130",
+                "BgblAuth": {
+                  "Bgblnummer": "BGBl. II Nr. 68/2004",
+                  "Teil": "Teil2",
+                  "Ausgabedatum": "2004-01-30",
+                  "Typ": "Verordnung",
+                  "AlteDokumentnummer": "COO_2026_100_2_56798"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2004_II_68/BGBLA_2004_II_68.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2004_II_68/BGBLA_2004_II_68.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2004_II_68/BGBLA_2004_II_68.rtf"
+                    },
+                    {
+                      "DataType": "Authentisch",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2004_II_68/BGBLA_2004_II_68.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "BGBLA_2004_II_67",
+                "Applikation": "BgblAuth",
+                "Organ": "BMGF (Bundesministerium für Gesundheit und Frauen)",
+                "Einbringer": "BMGF (Bundesministerium für Gesundheit und Frauen)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://www.ris.bka.gv.at/eli/bgbl/II/2004/67/20040129"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "Übertragung von Buchhaltungsaufgaben",
+                "Titel": "Verordnung der Bundesministerin für Gesundheit und Frauen über die Übertragung von Buchhaltungsaufgaben",
+                "Eli": "https://www.ris.bka.gv.at/eli/bgbl/II/2004/67/20040129",
+                "BgblAuth": {
+                  "Bgblnummer": "BGBl. II Nr. 67/2004",
+                  "Teil": "Teil2",
+                  "Ausgabedatum": "2004-01-29",
+                  "Typ": "Verordnung",
+                  "AlteDokumentnummer": "COO_2026_100_2_59984"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2004_II_67/BGBLA_2004_II_67.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2004_II_67/BGBLA_2004_II_67.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2004_II_67/BGBLA_2004_II_67.rtf"
+                    },
+                    {
+                      "DataType": "Authentisch",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2004_II_67/BGBLA_2004_II_67.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
