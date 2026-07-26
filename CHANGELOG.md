@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.2.1](changelog/0.2.x/0.2.1.md) — 2026-07-26
+
+Schema-valid rejections, generic upstream 5xx, and slow content renders now carry the declared error contract instead of a bare undocumented code.
+
 ## [0.2.0](changelog/0.2.x/0.2.0.md) — 2026-07-16 · ⚠️ Breaking
 
 ris_search_gazette's include_non_authentic boolean is removed and replaced by an explicit state_era: 'current' | 'legacy' selector; un-migrated callers silently get authentic results instead of an error.
