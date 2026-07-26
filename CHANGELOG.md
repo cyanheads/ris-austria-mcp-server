@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.2.4](changelog/0.2.x/0.2.4.md) — 2026-07-26
+
+ris_lookup_citation rejects impossible calendar dates and the normenliste court hint as input errors instead of reporting them as citation misses, Artikel miss guidance now carries section_type into the retry recipe, and the vwgh/justiz Geschäftszahl reference examples are replaced with citations that resolve.
+
 ## [0.2.3](changelog/0.2.x/0.2.3.md) — 2026-07-26
 
 ris_search_case_law surfaces normenliste law identity plus cross-court indexes/state/note, ris_search_legislation surfaces English-translation provenance, and the search retry budget no longer exceeds the client's request deadline on a slow upstream.

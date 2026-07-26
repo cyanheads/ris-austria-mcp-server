@@ -1,6 +1,6 @@
 # ris-austria-mcp-server - Directory Structure
 
-Generated on: 2026-07-26 16:59:39
+Generated on: 2026-07-26 18:08:29
 
 ```text
 ris-austria-mcp-server/
@@ -205,9 +205,11 @@ ris-austria-mcp-server/
 │   ├── services/
 │   │   └── ris/
 │   │       ├── normalizer.test.ts
+│   │       ├── reference-examples.test.ts
 │   │       ├── request-builder.test.ts
 │   │       └── ris-service.test.ts
 │   └── tools/
+│       ├── _shared.test.ts
 │       ├── ris-get-document.tool.test.ts
 │       ├── ris-list-reference.tool.test.ts
 │       ├── ris-lookup-citation.tool.test.ts
