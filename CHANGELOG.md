@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.2.7](changelog/0.2.x/0.2.7.md) — 2026-07-31
+
+Search-tool rejections now name the caller's own parameter and value instead of internal service identifiers and RIS application codes, and an out-of-range page leads the recovery hint on all five search tools.
+
 ## [0.2.6](changelog/0.2.x/0.2.6.md) — 2026-07-31
 
 ris_lookup_citation now sends VwGH's labelled Sammlungsnummer form for collection citations, falls back to a Bundesland's legacy Lgbl gazette series on a pre-e-Recht citation, and composes gazette miss guidance per route instead of one shared string.

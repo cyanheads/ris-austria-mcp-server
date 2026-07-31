@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.3",
   "name": "ris-austria-mcp-server",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Search Austrian federal and state law, court decisions, and the authentic Bundesgesetzblatt (RIS).",
   "author": { "name": "cyanheads" },
   "repository": {

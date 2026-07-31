@@ -1,6 +1,6 @@
 {
   "name": "ris-austria-mcp-server",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Search Austrian consolidated federal & state law, court decisions, and the authentic Bundesgesetzblatt from the official RIS via MCP. Keyless. STDIO or Streamable HTTP.",
   "author": {
     "name": "cyanheads"
