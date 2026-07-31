@@ -104,6 +104,30 @@ describe('RisService.buildDocumentContentUrl', () => {
     expectValidationError(() => service.buildDocumentContentUrl('BrKons', 'NOR1?x=1', 'html'));
     expectValidationError(() => service.buildDocumentContentUrl('BrKons', '', 'html'));
   });
+
+  // A draft's companion documents (Erläuterungen, Textgegenüberstellung, WFA, covering
+  // letter, annexes) live in the parent document's folder under an opaque per-record
+  // filename, so they are addressed by name rather than reconstructed.
+  it('builds a companion-document URL inside the document folder', () => {
+    expect(
+      service.buildDocumentContentUrl(
+        'Begut',
+        'BEGUT_8E53444F_FF2D_4C7A_944B_B79785E8F290',
+        'html',
+        'Materialien_0001_2716E555_EB43_4642_A87A_3CF88FFCDB08',
+      ),
+    ).toBe(
+      `${CONTENT_BASE}/Dokumente/Begut/BEGUT_8E53444F_FF2D_4C7A_944B_B79785E8F290/Materialien_0001_2716E555_EB43_4642_A87A_3CF88FFCDB08.html`,
+    );
+  });
+
+  it('holds the companion filename to the same safe-character pattern as the document number', () => {
+    for (const contentName of ['../../etc/passwd', 'Materialien_0001?x=1', 'a/b', '']) {
+      expectValidationError(() =>
+        service.buildDocumentContentUrl('Begut', 'BEGUT_COO_2026_0001', 'html', contentName),
+      );
+    }
+  });
 });
 
 describe('RisService — HTTP 500 carrying a RIS error envelope', () => {

@@ -250,11 +250,18 @@ export class RisService {
   /**
    * Construct a content URL for a document number from the per-application path-segment
    * map (`/Dokumente/{segment}/{DOKNR}/{DOKNR}.{format}`), harvested live 2026-07-05.
+   *
+   * `contentName` names a file inside the document's folder other than the main rendition —
+   * the `Materialien_`/`Schreiben_`/`Anlagen_` companion documents a draft ships alongside
+   * its bill text (`/Dokumente/{segment}/{DOKNR}/{contentName}.{format}`). It is held to the
+   * same safe-character pattern as the document number, so nothing outside the folder is
+   * constructible.
    */
   buildDocumentContentUrl(
     application: string,
     documentNumber: string,
     format: RisContentFormat,
+    contentName?: string,
   ): string {
     const segment = CONTENT_PATH_SEGMENTS.get(application);
     if (segment === undefined) {
@@ -277,8 +284,14 @@ export class RisService {
         },
       );
     }
+    if (contentName !== undefined && !DOCUMENT_NUMBER_PATTERN.test(contentName)) {
+      throw validationError(`"${contentName}" is not a valid RIS content filename.`, {
+        contentName,
+      });
+    }
     const doknr = encodeURIComponent(documentNumber);
-    return `${this.config.contentBaseUrl}/Dokumente/${segment}/${doknr}/${doknr}.${format}`;
+    const file = contentName === undefined ? doknr : encodeURIComponent(contentName);
+    return `${this.config.contentBaseUrl}/Dokumente/${segment}/${doknr}/${file}.${format}`;
   }
 
   /** Fetch one document rendition from the content host (allowlist-guarded). */

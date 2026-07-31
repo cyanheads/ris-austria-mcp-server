@@ -2,13 +2,16 @@
  * @fileoverview ris_get_document — read one RIS document's full text (markdown/html/xml)
  * or its rendition URLs, with explicit binding status and the amtssigniert Authentisch PDF
  * surfaced wherever it exists. Two addressing modes route to the same fetch path:
- * `document_number` + `application`, or a `document_url` from a result's content_urls.
+ * `document_number` + `application`, or a `document_url` from a result's content_urls — the
+ * latter also carrying the one route to a draft's companion documents (`Materialien_`,
+ * `Schreiben_`, `Anlagen_`), whose per-record opaque filenames no document number reaches.
  * Format availability varies by application (full text · authentic-PDF-only · PDF-only ·
  * metadata-only) — a text-format request against a non-text application degrades to a
  * `format_unavailable` notice on a success result, never an error. Markdown conversion drops
  * the `.sr-only` screen-reader twin RIS ships beside every abbreviated citation, keeping the
- * visible form; `html` and `xml` pass through untouched. Oversized markdown overflows to a
- * retrievable §/Artikel/Anlage section outline (never a silent truncation); a follow-up call
+ * visible form; `html` and `xml` pass through untouched. Oversized markdown carrying
+ * §/Artikel/Anlage structure overflows to a retrievable section outline (never a silent
+ * truncation, and never for a rendition with no such headings); a follow-up call
  * with `sections:[…]` returns just the chosen sections, and a selector matching nothing gets
  * the outline back with a notice rather than the whole document. The shared
  * {@link renderDocument} helper backs both this tool and the `ris://document/…` resource.
@@ -51,12 +54,22 @@ type DocumentFormat = 'markdown' | 'html' | 'xml' | 'urls_only';
 
 /**
  * Serialized-length budget for inlining document text. Above it, markdown overflows to a
- * §/Artikel/Anlage section outline instead of returning whole — generous, so it fires only
- * on the pathological documents (multi-hundred-KB consolidations and government bills).
+ * §/Artikel/Anlage section outline instead of returning whole — but only when the rendition
+ * segments into at least two of those sections. A rendition carrying none of them has nothing
+ * to outline and returns whole however large: court decisions, gazette and announcement
+ * bodies, and consolidated `§ 0` promulgation records all do, measured live to 399,972 bytes
+ * on a Bvwg decision.
+ *
+ * Sized against what one tool result can carry into a working context (≈10K tokens of legal
+ * prose), not against what counts as a pathological document: across live samples the
+ * documents callers routinely read land well under it — consolidated-law sections at 2–3 KB,
+ * drafts and bills at 6–36 KB — while the multi-act bills and long translations that motivated
+ * the outline (71 KB–199 KB) route through it.
+ *
  * Handed to `outlineOnOverflow`, which measures `JSON.stringify` length (≈ UTF-8 bytes for
  * the mostly-Latin legal text); the exact `byte_size` is reported separately.
  */
-const OUTLINE_BUDGET_BYTES = 500_000;
+export const OUTLINE_BUDGET_BYTES = 40_000;
 
 const APPLICATION_CODES = RIS_APPLICATIONS.map((app) => app.code) as [string, ...string[]];
 
@@ -72,14 +85,24 @@ const APPLICATION_BY_SEGMENT = new Map<string, RisApplication>(
 );
 
 /**
- * Lowercase file extensions a main-document rendition URL may end in — the constructible
+ * Lowercase file extensions a rendition URL may end in — the constructible
  * `RisContentFormat` set plus the derived `.pdfsig` authentic variant (see
- * {@link authenticPdfFrom}). A `document_url`'s trailing filename must be
- * `{documentNumber}.{ext}` for one of these; any other filename (a `Materialien_`/`Anlagen_…`
- * content attachment, an unknown extension) addresses non-main content this tool would
- * otherwise silently swap for the main document.
+ * {@link authenticPdfFrom}). A `document_url`'s trailing filename must carry one of these;
+ * an unknown extension addresses something this tool cannot render.
  */
 const RENDITION_EXTENSIONS = new Set<string>([...RIS_CONTENT_FORMATS, 'pdfsig']);
+
+/**
+ * Filename stem of a companion document — the `Erläuterungen`, `Textgegenüberstellung`,
+ * `Vorblatt und WFA`, cover letter, and annex texts a `Begut` draft or `RegV` bill ships
+ * beside its main text, surfaced on a `ris_search_drafts` record's `materials`. RIS names
+ * them `{Materialien|Schreiben|Anlagen}_{NNNN}_{UUID}` (underscore-separated UUID), a shape
+ * every one of 2,436 companion URLs sampled live across 200 draft records matches exactly.
+ * The stem is opaque and per-record — the URL is the only handle, so nothing about a
+ * companion is reconstructible from a document number.
+ */
+const COMPANION_STEM =
+  /^(?:Materialien|Schreiben|Anlagen)_\d{4}_[0-9A-F]{8}(?:_[0-9A-F]{4}){3}_[0-9A-F]{12}$/iu;
 
 /**
  * Drop RIS's screen-reader twin, pass every other span through untouched. RIS renditions
@@ -130,7 +153,11 @@ interface RenditionContentUrls {
   xml?: string;
 }
 
-/** A resolved document rendition — the shared unit behind the tool and the resource. */
+/**
+ * A resolved document rendition — the shared unit behind the tool and the resource. A
+ * companion document resolves to the same shape, addressed by `contentName` inside the
+ * parent document's folder.
+ */
 export interface DocumentRendition {
   /** Application code the document belongs to (echoed). */
   readonly application: string;
@@ -154,7 +181,12 @@ export interface DocumentRendition {
 
 /** Result of parsing a caller-supplied document_url into an application + document number. */
 type ParsedDocumentUrl =
-  | { readonly application: string; readonly documentNumber: string }
+  | {
+      readonly application: string;
+      /** Companion-document filename stem; absent for a main-document rendition. */
+      readonly contentName?: string;
+      readonly documentNumber: string;
+    }
   | { readonly error: string };
 
 /**
@@ -204,10 +236,11 @@ export function parseDocumentUrl(url: string, contentBaseUrl: string): ParsedDoc
     return { error: `"${rawDocumentNumber}" is not a decodable path segment (malformed % escape)` };
   }
   // A folder URL (…/{segment}/{documentNumber}[/]) carries no trailing filename and resolves
-  // fine. A trailing filename is a main-document rendition only when it is exactly
-  // {documentNumber}.{ext} for a known rendition extension; a content attachment
-  // (Materialien_/Anlagen_… memoranda and annexes) or any deeper nesting names non-main
-  // content the fetch would silently swap for the main document — reject it here instead.
+  // fine. A trailing filename addresses one of exactly two things: the main-document
+  // rendition, named {documentNumber}.{ext}, or a companion document, named with one of the
+  // three {@link COMPANION_STEM} prefixes. Anything else — an unknown stem, an unknown
+  // extension, deeper nesting — is content this tool would otherwise fetch blind or silently
+  // swap for the main document, so it is rejected here.
   if (filename !== undefined) {
     const decodedFilename = decodePathSegment(filename);
     if (decodedFilename === undefined) {
@@ -216,10 +249,18 @@ export function parseDocumentUrl(url: string, contentBaseUrl: string): ParsedDoc
     const dot = decodedFilename.lastIndexOf('.');
     const stem = dot === -1 ? decodedFilename : decodedFilename.slice(0, dot);
     const extension = dot === -1 ? '' : decodedFilename.slice(dot + 1).toLowerCase();
-    if (rest.length > 0 || stem !== documentNumber || !RENDITION_EXTENSIONS.has(extension)) {
+    const isMainDocument = stem === documentNumber;
+    const addressable =
+      rest.length === 0 &&
+      RENDITION_EXTENSIONS.has(extension) &&
+      (isMainDocument || COMPANION_STEM.test(stem));
+    if (!addressable) {
       return {
-        error: `"${decodedFilename}" points at a content attachment or non-rendition file, not a main-document rendition — pass a main-document URL as returned in content_urls`,
+        error: `"${decodedFilename}" is neither a main-document rendition (${documentNumber}.{ext}) nor a companion document (Materialien_/Schreiben_/Anlagen_…) — pass a URL exactly as returned in a result's content_urls or materials`,
       };
+    }
+    if (!isMainDocument) {
+      return { application: app.code, contentName: stem, documentNumber };
     }
   }
   return { application: app.code, documentNumber };
@@ -233,13 +274,24 @@ function authenticPdfFrom(pdfUrl: string): string {
 /**
  * Construct the rendition URLs for a document from its application's format availability.
  * `buildDocumentContentUrl` throws `ValidationError` for an unsafe document number.
+ *
+ * A companion document (`contentName`) is published as XML, HTML and PDF; RTF only
+ * sometimes (present on 291 of 715 companion references sampled live) and the signed
+ * `.pdfsig` never — RIS 404s the renditions it does not list, so only the three it always
+ * carries are constructed.
  */
 function buildRenditionUrls(
   service: ReturnType<typeof getRisService>,
   app: RisApplication,
   documentNumber: string,
+  contentName?: string,
 ): { contentUrls: RenditionContentUrls; authenticPdfUrl?: string } {
   if (app.formats === 'none') return { contentUrls: {} }; // BgblAlt — no content URLs to build
+  if (contentName !== undefined) {
+    const url = (format: RisContentFormat) =>
+      service.buildDocumentContentUrl(app.code, documentNumber, format, contentName);
+    return { contentUrls: { xml: url('xml'), html: url('html'), pdf: url('pdf') } };
+  }
   const pdf = service.buildDocumentContentUrl(app.code, documentNumber, 'pdf');
   const authenticPdfUrl = app.binding === 'authentic' ? authenticPdfFrom(pdf) : undefined;
   if (app.formats === 'authentic_pdf_only') {
@@ -425,12 +477,17 @@ export function renderOutlineSections(sections: readonly SectionMeta[]): string 
  * and convert one RIS document. Throws framework errors (`validationError` for an unknown
  * application or unsafe document number; `notFound`/`serviceUnavailable`/`timeout` from the
  * content fetch) — callers map these onto their own typed contract.
+ *
+ * `contentName` addresses a companion document inside the same folder instead of the main
+ * rendition; the requested `format` still selects the rendition, exactly as it does for a
+ * main document.
  */
 export async function renderDocument(
   applicationCode: string,
   documentNumber: string,
   format: DocumentFormat,
   ctx: Context,
+  contentName?: string,
 ): Promise<DocumentRendition> {
   const app = APPLICATION_BY_CODE.get(applicationCode);
   if (!app) {
@@ -440,7 +497,7 @@ export async function renderDocument(
     });
   }
   const service = getRisService();
-  const urls = buildRenditionUrls(service, app, documentNumber);
+  const urls = buildRenditionUrls(service, app, documentNumber, contentName);
   const base = {
     application: app.code,
     bindingStatus: app.binding,
@@ -459,7 +516,7 @@ export async function renderDocument(
   if (format === 'urls_only') return base;
 
   const fetchFormat: RisContentFormat = format === 'xml' ? 'xml' : 'html';
-  const url = service.buildDocumentContentUrl(app.code, documentNumber, fetchFormat);
+  const url = service.buildDocumentContentUrl(app.code, documentNumber, fetchFormat, contentName);
   const fetched = await service.fetchDocumentContent(url, ctx);
   const rendered =
     format === 'markdown' ? MARKDOWN_CONVERTER.translate(fetched.text) : fetched.text;
@@ -480,13 +537,13 @@ const ContentUrlsSchema = z
     rtf: z.string().optional().describe('RTF rendition URL.'),
   })
   .describe(
-    'Constructed rendition URLs. Empty for authentic-PDF-only (Bvb/GrA/KmGer) and metadata-only (BgblAlt) applications — see authentic_pdf_url and the notice.',
+    'Constructed rendition URLs. Empty for authentic-PDF-only (Bvb/GrA/KmGer) and metadata-only (BgblAlt) applications — see authentic_pdf_url and the notice. For a companion document (a draft’s Erläuterungen, Textgegenüberstellung, WFA, cover letter, or annex) these are the companion’s own XML/HTML/PDF, not the parent document’s.',
   );
 
 export const risGetDocument = tool('ris_get_document', {
   title: 'Get RIS Document',
   description:
-    'Fetch one RIS document’s full text or its rendition URLs, with explicit binding status and the amtssigniert authentic PDF surfaced wherever it exists. Address the document exactly one of two ways: document_number plus application (both copied verbatim from a ris_search_* or ris_lookup_citation result), or a document_url from a result’s content_urls. format: markdown (default — the HTML rendition converted to markdown), html (raw HTML rendition), xml (the RIS Nutzdaten XML), or urls_only (no fetch — every rendition URL, including the Authentisch PDF). Format availability varies by application and the tool degrades explicitly, never silently: consolidated law, gazettes, case law, drafts, and most sectoral collections carry full text; district and municipal promulgations and court rules (Bvb, GrA, KmGer) publish only the signed authentic PDF; party-transparency decisions and council minutes (Upts, Mrp) are PDF-only; the 1848–1940 imperial gazettes (BgblAlt) are metadata-only — for these a text-format request returns a format_unavailable notice with the usable URL, not an error. Every result carries binding_status; only authentic (amtssigniert) publications are legally binding. This tool returns content, not fresh metadata — the metadata rides the search/lookup step that produced the document number. When the markdown text overflows the byte budget the tool returns a §/Artikel/Anlage section outline (kind: outline) instead of truncating; re-call with sections:[…] naming outline entries to retrieve just those, and a name matching no section returns the outline again with a notice rather than the whole document. Markdown drops the screen-reader expansions RIS ships alongside each abbreviated citation, keeping the visible citation form; raw html/xml renditions are returned exactly as published and, carrying no markdown headings, always return in full.',
+    'Fetch one RIS document’s full text or its rendition URLs, with explicit binding status and the amtssigniert authentic PDF surfaced wherever it exists. Address the document exactly one of two ways: document_number plus application (both copied verbatim from a ris_search_* or ris_lookup_citation result), or a document_url from a result’s content_urls — or, for a draft’s companion documents (Erläuterungen, Textgegenüberstellung, WFA, cover letter, annexes), from a ris_search_drafts record’s materials[].urls, which is the only route to them. format: markdown (default — the HTML rendition converted to markdown), html (raw HTML rendition), xml (the RIS Nutzdaten XML), or urls_only (no fetch — every rendition URL, including the Authentisch PDF). Format availability varies by application and the tool degrades explicitly, never silently: consolidated law, gazettes, case law, drafts, and most sectoral collections carry full text; district and municipal promulgations and court rules (Bvb, GrA, KmGer) publish only the signed authentic PDF; party-transparency decisions and council minutes (Upts, Mrp) are PDF-only; the 1848–1940 imperial gazettes (BgblAlt) are metadata-only — for these a text-format request returns a format_unavailable notice with the usable URL, not an error. Every result carries binding_status; only authentic (amtssigniert) publications are legally binding. This tool returns content, not fresh metadata — the metadata rides the search/lookup step that produced the document number. When the markdown text overflows the 40,000-byte budget and carries at least two §/Artikel/Anlage headings the tool returns a section outline (kind: outline) instead of truncating; re-call with sections:[…] naming outline entries to retrieve just those, and a name matching no section returns the outline again with a notice rather than the whole document. Outlining needs those headings: a rendition without them — most court decisions, many gazette and announcement bodies, and every raw html/xml rendition — has nothing to outline and returns whole at any size. Markdown drops the screen-reader expansions RIS ships alongside each abbreviated citation, keeping the visible citation form; raw html/xml renditions are returned exactly as published.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     document_number: z
@@ -505,7 +562,7 @@ export const risGetDocument = tool('ris_get_document', {
       .string()
       .optional()
       .describe(
-        'A https://www.ris.bka.gv.at/Dokumente/… main-document rendition URL as returned in a result’s content_urls — the alternative to document_number + application. Must address a main-document rendition ({documentNumber}.{ext}); content-attachment URLs (Materialien_/Anlagen_… memoranda and annexes) are not fetchable this way.',
+        'A https://www.ris.bka.gv.at/Dokumente/… rendition URL as returned in a result’s content_urls — the alternative to document_number + application. Also the only way to read a draft’s companion documents: pass a URL from a ris_search_drafts record’s materials[].urls (Materialien_/Schreiben_/Anlagen_… — the Erläuterungen, Textgegenüberstellung, WFA, cover letter, or annex), whose filenames are opaque and per-record and so cannot be reached through document_number. Any other filename is rejected.',
       ),
     format: z
       .enum(['markdown', 'html', 'xml', 'urls_only'])
@@ -517,7 +574,7 @@ export const risGetDocument = tool('ris_get_document', {
       .array(z.string())
       .optional()
       .describe(
-        'Section names to retrieve, each copied verbatim from a prior outline response (kind: outline). Omit for the full document — which returns a §/Artikel/Anlage outline instead when the markdown overflows the byte budget. A name that matches no section is never silently ignored: a total miss returns the outline (kind: outline) with a notice, a partial miss returns the matched sections with a notice naming the rest. Applies to markdown only — html, xml, and urls_only carry no headings to select from and return in full.',
+        'Section names to retrieve, each copied verbatim from a prior outline response (kind: outline). Omit for the full document — which returns a §/Artikel/Anlage outline instead when the markdown overflows the 40,000-byte budget and carries at least two such headings. A name that matches no section is never silently ignored: a total miss returns the outline (kind: outline) with a notice, a partial miss returns the matched sections with a notice naming other sections to pick from. Applies to markdown only — html, xml, and urls_only carry no headings to select from and return in full.',
       ),
   }),
   output: z.object({
@@ -631,6 +688,7 @@ export const risGetDocument = tool('ris_get_document', {
 
     let resolvedApplication: string;
     let resolvedDocumentNumber: string;
+    let resolvedContentName: string | undefined;
     if (documentUrl !== undefined) {
       if (documentNumber !== undefined || application !== undefined) {
         throw failAddressing(
@@ -645,6 +703,7 @@ export const risGetDocument = tool('ris_get_document', {
       }
       resolvedApplication = parsed.application;
       resolvedDocumentNumber = parsed.documentNumber;
+      resolvedContentName = parsed.contentName;
     } else {
       if (documentNumber === undefined || application === undefined) {
         throw failAddressing(
@@ -661,6 +720,7 @@ export const risGetDocument = tool('ris_get_document', {
       resolvedDocumentNumber,
       format,
       ctx,
+      resolvedContentName,
     ).catch((err: unknown) => {
       if (err instanceof McpError) {
         if (err.code === JsonRpcErrorCode.ValidationError) {
@@ -716,8 +776,11 @@ export const risGetDocument = tool('ris_get_document', {
       const selection = selectDocumentSections(rendition.text, requestedSections);
       if (selection.text !== '') {
         if (selection.unmatched.length > 0) {
+          // Names candidates from the roster rather than promising an outline on a re-call
+          // without sections:[…] — that re-call only outlines a document over the byte
+          // budget, and returns the whole text for every document under it.
           ctx.enrich.notice(
-            `Returned only the matched sections — ${quoteNames(selection.unmatched)} named no section of this document and ${selection.unmatched.length === 1 ? 'was' : 'were'} skipped. Re-call ris_get_document without sections:[…] for the outline of all ${selection.available.length} §/Artikel/Anlage sections.`,
+            `Returned only the matched sections — ${quoteNames(selection.unmatched)} named no section of this document and ${selection.unmatched.length === 1 ? 'was' : 'were'} skipped. This document has ${selection.available.length} §/Artikel/Anlage sections; copy a name verbatim and re-call ris_get_document with the same addressing — e.g. ${exampleSectionNames(selection.available)}.`,
           );
         }
         return {

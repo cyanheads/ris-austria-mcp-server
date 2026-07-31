@@ -34,8 +34,8 @@ vi.mock('@/services/ris/ris-service.js', async (importOriginal) => {
   // constructed URLs stay correct without duplicating the per-application segment map.
   const real = new actual.RisService('test-agent/0.0.0');
   buildDocumentContentUrl.mockImplementation(
-    (application: string, documentNumber: string, format: RisContentFormat) =>
-      real.buildDocumentContentUrl(application, documentNumber, format),
+    (application: string, documentNumber: string, format: RisContentFormat, contentName?: string) =>
+      real.buildDocumentContentUrl(application, documentNumber, format, contentName),
   );
   return {
     ...actual,
@@ -130,6 +130,28 @@ describe('risDocumentResource — overflow degradation', () => {
     expect(result).toContain('sections');
     expect(result).toContain('ris_get_document');
     // The full document body is not inlined — only the outline.
+    expect(result).not.toContain('xSECTIONx1x');
+  });
+
+  // The resource shares outlineDocument() with the tool, so it follows the byte budget
+  // wherever that lands — including the band that stopped overflowing once the
+  // screen-reader strip halved every rendered byte count.
+  it('degrades a document sized between the current budget and the pre-strip calibration', async () => {
+    const body = (n: number) => `<p>${`xSECTIONx${n}x `.repeat(1000)}</p>`;
+    const html = Array.from(
+      { length: 6 },
+      (_, i) => `<h2>Artikel ${i + 1}</h2>${body(i + 1)}`,
+    ).join('\n');
+    fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
+    const ctx = createMockContext({ uri: new URL('ris://document/BrKons/NOR40262691') });
+    const params = risDocumentResource.params!.parse({
+      application: 'BrKons',
+      documentNumber: 'NOR40262691',
+    });
+    const result = await risDocumentResource.handler(params, ctx);
+
+    expect(result).toContain('6 sections');
+    expect(result).toContain('ris_get_document');
     expect(result).not.toContain('xSECTIONx1x');
   });
 

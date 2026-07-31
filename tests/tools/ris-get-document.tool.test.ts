@@ -24,6 +24,7 @@ import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  OUTLINE_BUDGET_BYTES,
   parseDocumentUrl,
   risGetDocument,
   selectDocumentSections,
@@ -41,8 +42,8 @@ vi.mock('@/services/ris/ris-service.js', async (importOriginal) => {
   // constructed URLs stay correct without duplicating the per-application segment map.
   const real = new actual.RisService('test-agent/0.0.0');
   buildDocumentContentUrl.mockImplementation(
-    (application: string, documentNumber: string, format: RisContentFormat) =>
-      real.buildDocumentContentUrl(application, documentNumber, format),
+    (application: string, documentNumber: string, format: RisContentFormat, contentName?: string) =>
+      real.buildDocumentContentUrl(application, documentNumber, format, contentName),
   );
   return {
     ...actual,
@@ -65,6 +66,16 @@ async function captureError(promise: Promise<unknown>): Promise<McpError> {
 function oversizedArticlesHtml(): string {
   const body = (n: number) => `<p>${`xSECTIONx${n}x `.repeat(4000)}</p>`;
   return Array.from({ length: 15 }, (_, i) => `<h2>Artikel ${i + 1}</h2>${body(i + 1)}`).join('\n');
+}
+
+/**
+ * HTML rendering to ~60 KB of markdown across 6 `## Artikel N` sections — a real government
+ * bill's order of magnitude, and the band the budget moved through: over the current budget,
+ * far under the 500,000 it used to be.
+ */
+function midSizedArticlesHtml(): string {
+  const body = (n: number) => `<p>${`xSECTIONx${n}x `.repeat(1000)}</p>`;
+  return Array.from({ length: 6 }, (_, i) => `<h2>Artikel ${i + 1}</h2>${body(i + 1)}`).join('\n');
 }
 
 /** Read a captured RIS rendition fixture as its raw body text. */
@@ -170,24 +181,37 @@ describe('risGetDocument — addressing guards (no fetch)', () => {
     expect(fetchDocumentContent).not.toHaveBeenCalled();
   });
 
-  it('rejects a content-attachment document_url (Materialien_…) as unsupported_url', async () => {
+  // Widening the accepted filename set is the whole security surface of this tool: a stem
+  // that is neither the document number nor a companion document is content the tool would
+  // fetch blind. The host + /Dokumente/ allowlist is unchanged and still rejects everything
+  // outside it (the two cases above).
+  it.each([
+    ['an unknown filename prefix', 'Beilagen_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.html'],
+    ['a companion prefix with a non-UUID tail', 'Materialien_0001_not-a-uuid.html'],
+    ['a companion prefix with no ordinal', 'Materialien_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.html'],
+    [
+      'a companion filename with an unrenderable extension',
+      'Materialien_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.exe',
+    ],
+    ['a bare sibling filename', 'index.html'],
+    ['a percent-encoded traversal out of the document folder', '..%2F..%2Fetc%2Fpasswd.html'],
+  ])('rejects %s as unsupported_url', async (_label, filename) => {
     const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
-      document_url:
-        'https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/Materialien_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.html',
+      document_url: `https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/${filename}`,
     });
     const err = await captureError(risGetDocument.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'unsupported_url' });
-    expect(err.message).toContain('content attachment');
+    expect(err.message).toContain('neither a main-document rendition');
     expect(fetchDocumentContent).not.toHaveBeenCalled();
   });
 
-  it('rejects a content-attachment document_url (Anlagen_…) as unsupported_url', async () => {
+  it('rejects a companion filename nested below the document folder as unsupported_url', async () => {
     const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
       document_url:
-        'https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/Anlagen_0002_1A2B3C4D_5E6F_7081_9A0B_C1D2E3F40506.pdf',
+        'https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/Materialien_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15/payload.html',
     });
     const err = await captureError(risGetDocument.handler(input, ctx));
     expect(err.data).toMatchObject({ reason: 'unsupported_url' });
@@ -322,6 +346,78 @@ describe('risGetDocument — format handling', () => {
   });
 });
 
+describe('risGetDocument — companion documents (materials)', () => {
+  const FOLDER =
+    'https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_8E53444F_FF2D_4C7A_944B_B79785E8F290';
+  const ERLAEUTERUNGEN = 'Materialien_0001_2716E555_EB43_4642_A87A_3CF88FFCDB08';
+
+  /** Resolve a companion document_url against canned rendition text. */
+  async function callWithUrl(
+    documentUrl: string,
+    format?: 'markdown' | 'html' | 'xml' | 'urls_only',
+  ) {
+    fetchDocumentContent.mockResolvedValue({
+      text: '<h1>Erläuterungen</h1><p>Zu Artikel 1</p>',
+      byteSize: 40,
+      url: documentUrl,
+    });
+    const ctx = createMockContext();
+    const input = risGetDocument.input.parse({
+      document_url: documentUrl,
+      ...(format !== undefined && { format }),
+    });
+    return { ctx, result: await risGetDocument.handler(input, ctx) };
+  }
+
+  // A companion's filename is opaque and per-record, so the URL from a ris_search_drafts
+  // record's materials is the only handle — reconstructing {documentNumber}.{ext} fetches
+  // the bill instead. That substitution is what #6 stopped by rejecting the URL outright;
+  // the fetch now carries the companion stem through.
+  it('fetches the companion rendition itself, not the parent document', async () => {
+    const { ctx, result } = await callWithUrl(`${FOLDER}/${ERLAEUTERUNGEN}.html`);
+
+    expect(fetchDocumentContent).toHaveBeenCalledWith(`${FOLDER}/${ERLAEUTERUNGEN}.html`, ctx);
+    expect(result.text).toContain('Erläuterungen');
+    expect(result.application).toBe('Begut');
+    expect(result.document_number).toBe('BEGUT_8E53444F_FF2D_4C7A_944B_B79785E8F290');
+  });
+
+  it.each([
+    ['Materialien', `${FOLDER}/Materialien_0002_55843001_EEE2_4D11_AFF3_79A7A2A9D637.rtf`],
+    ['Schreiben', `${FOLDER}/Schreiben_0002_C0BFE98B_E9CD_4ABB_A7C2_A339C59413FB.pdf`],
+    ['Anlagen', `${FOLDER}/Anlagen_0001_3B3F31A7_CD7C_49D0_A5F6_D08C607C1620.xml`],
+  ])('accepts a %s_ companion URL whatever rendition it names', async (_prefix, documentUrl) => {
+    // The requested format still selects the rendition, exactly as for a main document —
+    // markdown reads the companion's HTML twin rather than the .rtf/.pdf/.xml passed in.
+    const { ctx } = await callWithUrl(documentUrl);
+    const stem = documentUrl
+      .split('/')
+      .pop()
+      ?.replace(/\.\w+$/u, '');
+    expect(fetchDocumentContent).toHaveBeenCalledWith(`${FOLDER}/${stem}.html`, ctx);
+  });
+
+  it('fetches the companion XML rendition for format: xml', async () => {
+    const { ctx } = await callWithUrl(`${FOLDER}/${ERLAEUTERUNGEN}.html`, 'xml');
+    expect(fetchDocumentContent).toHaveBeenCalledWith(`${FOLDER}/${ERLAEUTERUNGEN}.xml`, ctx);
+  });
+
+  // RIS 404s the renditions it does not list for a companion: RTF is published for well
+  // under half of them and the signed .pdfsig for none, so advertising either would hand
+  // the caller a dead URL.
+  it('carries the companion’s own content_urls and no authentic PDF', async () => {
+    const { result } = await callWithUrl(`${FOLDER}/${ERLAEUTERUNGEN}.html`, 'urls_only');
+
+    expect(result.content_urls).toEqual({
+      xml: `${FOLDER}/${ERLAEUTERUNGEN}.xml`,
+      html: `${FOLDER}/${ERLAEUTERUNGEN}.html`,
+      pdf: `${FOLDER}/${ERLAEUTERUNGEN}.pdf`,
+    });
+    expect(result.content_urls.rtf).toBeUndefined();
+    expect(result.authentic_pdf_url).toBeUndefined();
+  });
+});
+
 describe('risGetDocument — screen-reader twins (markdown only)', () => {
   // RIS ships each abbreviated citation twice: the visible form in <span aria-hidden="true">
   // and a spelled-out expansion in <span class="sr-only">. Translated as-is they concatenate
@@ -453,7 +549,7 @@ describe('risGetDocument — overflow (outline + selective retrieval)', () => {
     expect(result.kind).toBe('outline');
     expect(result.truncated).toBe(true);
     expect(result.text).toBeUndefined();
-    expect(result.byte_size).toBeGreaterThan(500_000);
+    expect(result.byte_size).toBeGreaterThan(OUTLINE_BUDGET_BYTES);
     expect(result.sections?.length).toBeGreaterThanOrEqual(2);
     expect(result.sections?.map((section) => section.name)).toContain('Artikel 1');
     // Sections come largest-first with a positive byte size.
@@ -489,6 +585,49 @@ describe('risGetDocument — overflow (outline + selective retrieval)', () => {
     expect(result.text).toContain('xSECTIONx2x');
     expect(result.text).not.toContain('xSECTIONx5x');
     expect(result.byte_size).toBeGreaterThan(0);
+  });
+
+  // The budget was calibrated before the screen-reader strip roughly halved every rendered
+  // byte count, and stopped reaching the government bills it was written for — they came
+  // back whole at 144–199 KB. A document in this band routes through the outline again.
+  it('outlines a document sized between the current budget and the pre-#16 calibration', async () => {
+    const html = midSizedArticlesHtml();
+    fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
+    const ctx = createMockContext();
+    const input = risGetDocument.input.parse({
+      document_number: 'NOR40262691',
+      application: 'BrKons',
+    });
+    const result = await risGetDocument.handler(input, ctx);
+
+    expect(result.byte_size).toBeGreaterThan(OUTLINE_BUDGET_BYTES);
+    expect(result.byte_size).toBeLessThan(500_000);
+    expect(result.kind).toBe('outline');
+    expect(result.truncated).toBe(true);
+    expect(result.text).toBeUndefined();
+    expect(result.sections).toHaveLength(6);
+    expect(getEnrichment(ctx).notice).toContain('too large to return in full');
+  });
+
+  // The budget bounds only segmentable markdown. Court decisions, gazette bodies and
+  // consolidated promulgation records carry no §/Artikel/Anlage headings, so there is
+  // nothing to outline and nothing for a sections:[…] re-call to name — they come back
+  // whole rather than cut, which is what the tool description and docs/design.md state.
+  it('returns a heading-free rendition whole however far over the budget', async () => {
+    const html = `<p>${'Der Beschwerdeführer brachte vor. '.repeat(4000)}</p>`;
+    fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
+    const ctx = createMockContext();
+    const input = risGetDocument.input.parse({
+      document_number: 'JJT_20260101_BVWG_001',
+      application: 'Bvwg',
+    });
+    const result = await risGetDocument.handler(input, ctx);
+
+    expect(result.byte_size).toBeGreaterThan(OUTLINE_BUDGET_BYTES);
+    expect(result.kind).toBe('full');
+    expect(result.truncated).toBeUndefined();
+    expect(result.sections).toBeUndefined();
+    expect(result.text).toContain('Der Beschwerdeführer');
   });
 
   it('returns full text unchanged for a document under the budget', async () => {
@@ -582,7 +721,29 @@ describe('risGetDocument — sections selector disclosure (under budget)', () =>
     expect(result.text).toContain('Änderung des Kinderbetreuungsgeldgesetzes');
     const notice = getEnrichment(ctx).notice as string;
     expect(notice).toContain('"Artikel 9999"');
-    expect(notice).not.toContain('"Artikel 2"');
+    expect(notice).toContain('was skipped');
+  });
+
+  // The notice used to send the caller back without sections:[…] "for the outline of all N
+  // sections" — a re-call that only outlines a document over the byte budget and returns the
+  // whole text for every document under it, which is where a partial miss is disclosed at
+  // all. It names candidates from the roster it already holds instead.
+  it('offers section names on a partial miss instead of promising an unreachable outline', async () => {
+    const { ctx } = await callTool(ARTIKEL_SECTIONS_HTML, {
+      sections: ['Artikel 2', 'Artikel 9999'],
+    });
+    const notice = getEnrichment(ctx).notice as string;
+
+    expect(notice).toContain('3 §/Artikel/Anlage sections');
+    expect(notice).toContain('copy a name verbatim');
+    expect(notice).toContain('"Artikel 1"');
+    expect(notice).not.toContain('without sections');
+
+    // And the promise the old wording made is genuinely unreachable here: the same call
+    // without sections:[…] returns the whole document, not an outline.
+    const { result: reCall } = await callTool(ARTIKEL_SECTIONS_HTML, {});
+    expect(reCall.kind).toBe('full');
+    expect(reCall.sections).toBeUndefined();
   });
 
   it('says the selector was ignored on a rendition with no addressable sections', async () => {
@@ -710,18 +871,42 @@ describe('risGetDocument — format() parity', () => {
 describe('parseDocumentUrl (errors-as-values)', () => {
   const CONTENT_BASE = 'https://www.ris.bka.gv.at';
 
-  it('rejects a content-attachment URL (Materialien_…) with a clear error', () => {
+  it.each([
+    ['Materialien_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.html'],
+    ['Anlagen_0002_1A2B3C4D_5E6F_7081_9A0B_C1D2E3F40506.pdf'],
+    ['Schreiben_0002_C0BFE98B_E9CD_4ABB_A7C2_A339C59413FB.rtf'],
+  ])('parses the companion URL %s to its filename stem', (filename) => {
     const parsed = parseDocumentUrl(
-      'https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/Materialien_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.html',
+      `https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/${filename}`,
+      CONTENT_BASE,
+    );
+    expect(parsed).toEqual({
+      application: 'RegV',
+      contentName: filename.replace(/\.\w+$/u, ''),
+      documentNumber: 'REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39',
+    });
+  });
+
+  // The accepted set widened by exactly three filename shapes; everything else in the
+  // folder stays unaddressable, so a caller cannot steer the fetch at an arbitrary file.
+  it.each([
+    ['Beilagen_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.html'],
+    ['Materialien_0001_9D11747B.html'],
+    ['Materialien_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.exe'],
+    ['MaterialienX_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.html'],
+    ['..%2F..%2FDokumente%2Fother.html'],
+  ])('rejects the non-addressable filename %s', (filename) => {
+    const parsed = parseDocumentUrl(
+      `https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/${filename}`,
       CONTENT_BASE,
     );
     expect(parsed).toHaveProperty('error');
-    if ('error' in parsed) expect(parsed.error).toContain('content attachment');
+    if ('error' in parsed) expect(parsed.error).toContain('neither a main-document rendition');
   });
 
-  it('rejects a content-attachment URL (Anlagen_…)', () => {
+  it('rejects a companion filename with a path segment below it', () => {
     const parsed = parseDocumentUrl(
-      'https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/Anlagen_0002_1A2B3C4D_5E6F_7081_9A0B_C1D2E3F40506.pdf',
+      'https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/Materialien_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15/payload.html',
       CONTENT_BASE,
     );
     expect(parsed).toHaveProperty('error');
