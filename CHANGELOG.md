@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.3.0](changelog/0.3.x/0.3.0.md) — 2026-07-31
+
+ris_search_drafts surfaces a draft's companion documents and both it and ris_search_announcements gain the RIS web view; ris_get_document fetches a companion by URL and its outline budget is re-derived to 40,000 bytes.
+
 ## [0.2.7](changelog/0.2.x/0.2.7.md) — 2026-07-31
 
 Search-tool rejections now name the caller's own parameter and value instead of internal service identifiers and RIS application codes, and an out-of-range page leads the recovery hint on all five search tools.
