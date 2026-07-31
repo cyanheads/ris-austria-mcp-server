@@ -374,9 +374,9 @@ export const risSearchLegislation = tool('ris_search_legislation', {
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'RIS rejected a parameter value in-band — the Client error message is passed through verbatim; it names the invalid element and its valid values. Unsupported filter combinations are caught earlier as scope_filter_mismatch.',
+      when: 'A page past the last page of results, or RIS rejecting a parameter value in-band — the Client error message is passed through verbatim, in German. It names the invalid element and its valid values, except for a page past the end, which names no parameter at all. Unsupported filter combinations are caught earlier as scope_filter_mismatch.',
       recovery:
-        'Correct the parameter named in the message. Ground valid codes with ris_list_reference (topic: states, section_types, changed_since_intervals, or search_syntax).',
+        'For a page past the end, request a lower page, starting from 1. Otherwise correct the parameter named in the message. Ground valid codes with ris_list_reference (topic: states, section_types, changed_since_intervals, or search_syntax).',
     },
     {
       reason: 'upstream_error',

@@ -201,9 +201,9 @@ export const risSearchDrafts = tool('ris_search_drafts', {
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'A parameter value was rejected — either locally (ministry matched no entry in the RIS ministries table, or matched more than one), or by RIS in-band (the Client error message is passed through verbatim and names the invalid element and its valid values).',
+      when: 'A page past the last page of results; or a parameter value rejected locally (ministry matched no entry in the RIS ministries table, or matched more than one); or RIS rejecting a value in-band (the Client error message is passed through verbatim, in German, and it does not name the page).',
       recovery:
-        'Correct the parameter named in the message; the message lists the closest ministry matches when one was passed. Ministry codes: ris_list_reference topic ministries.',
+        'For a page past the end, request a lower page, starting from 1. Otherwise correct the parameter named in the message; the message lists the closest ministry matches when a ministry was passed. Ministry codes: ris_list_reference topic ministries.',
     },
     {
       reason: 'upstream_error',

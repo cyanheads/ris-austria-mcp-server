@@ -32,6 +32,11 @@ function fixture(name: string): unknown {
   return JSON.parse(readFileSync(new URL(`../fixtures/ris/${name}`, import.meta.url), 'utf8'));
 }
 
+/** Read a fixture as the raw body text RIS puts on the wire. */
+function rawFixture(name: string): string {
+  return readFileSync(new URL(`../fixtures/ris/${name}`, import.meta.url), 'utf8');
+}
+
 /** Mirrors the tool's own (unexported) `todayInAustria()` for asserting the defaulted date. */
 function todayInAustria(): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -216,6 +221,41 @@ describe('risSearchLegislation — error mapping', () => {
     expect(err.data?.recovery).toMatchObject({
       hint: expect.stringContaining('retry the same search'),
     });
+  });
+
+  it('leads the recovery hint with the page for an out-of-range page (#30)', async () => {
+    // End-to-end across the seam: the REAL service, fetch stubbed with RIS's verbatim HTTP
+    // 500 body, so the assertion pins what a caller receives rather than a hand-built error.
+    // RIS names no element for a page past the end, so "correct the parameter named in the
+    // message" resolves to nothing and the four reference topics the hint used to end on
+    // are dead ends. The page has to come first.
+    const actual = await vi.importActual<typeof import('@/services/ris/ris-service.js')>(
+      '@/services/ris/ris-service.js',
+    );
+    const realService = new actual.RisService('ris-austria-mcp-server/test');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(new Response(rawFixture('error-500-page-overflow.json'), { status: 500 })),
+      ),
+    );
+    searchLegislation.mockImplementation((params, ctx) =>
+      realService.searchLegislation(params, ctx),
+    );
+
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
+    const input = risSearchLegislation.input.parse({ title: 'DSG', page: 9999 });
+    const err = await captureError(risSearchLegislation.handler(input, ctx));
+
+    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.message).toContain('Seitennummer');
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringMatching(
+        /^For a page past the end, request a lower page, starting from 1\./u,
+      ),
+    });
+    vi.unstubAllGlobals();
   });
 
   it('leaves an unmapped service code untouched rather than folding it into a neighbour', async () => {

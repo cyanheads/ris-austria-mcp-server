@@ -26,7 +26,12 @@ import type {
 import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisHit } from '@/services/ris/types.js';
 
-import { failSearchError, isoDateString } from './_shared.js';
+import {
+  failSearchError,
+  isoDateString,
+  rewriteUnsupportedParam,
+  type UnsupportedParam,
+} from './_shared.js';
 
 const STATE_CODES = RIS_STATES.map((s) => s.code) as [RisStateCode, ...RisStateCode[]];
 const GAZETTE_SCOPE_VALUES = ['federal', ...STATE_CODES, 'district', 'municipal'] as [
@@ -172,47 +177,53 @@ function tierForYear(year: number | undefined): FederalTier {
 }
 
 /**
- * Route a federal (Bundesgesetzblatt) query to its era tier. `part: pre_1997` (the partless
- * BGBl exists only in the post-war tier) and a year-bearing `number` name the tier outright
- * and are never rejected. Otherwise the publication-date interval decides: one owning tier
- * serves it; an interval no tier owns — the 1941–1944 break, or pre-1848 — falls back to the
- * year bucket and answers zero honestly; an interval overlapping two or three tiers comes
- * back as `spans` for the handler to reject, since one call serves one application and any
- * single choice would drop the rest of the interval without saying so.
+ * Route a federal (Bundesgesetzblatt) query to its era tier, alongside `routedBy` — the
+ * caller input that selected it, since no field names a tier outright. `part: pre_1997` (the
+ * partless BGBl exists only in the post-war tier) and a year-bearing `number` decide it
+ * directly and are never rejected. Otherwise the publication-date interval decides: one
+ * owning tier serves it; an interval no tier owns — the 1941–1944 break, or pre-1848 — falls
+ * back to the year bucket and answers zero honestly; an interval overlapping two or three
+ * tiers comes back as `spans` for the handler to reject, since one call serves one
+ * application and any single choice would drop the rest of the interval without saying so.
  */
 function resolveFederalTier(
   number: string | undefined,
   publishedFrom: string | undefined,
   publishedTo: string | undefined,
   part: GazetteSearchParams['part'],
-): { readonly tier: FederalTier } | { readonly spans: readonly FederalTier[] } {
-  if (part === 'pre_1997') return { tier: POSTWAR_TIER };
-  const numberYear = yearFromNumber(number);
-  if (numberYear !== undefined) return { tier: tierForYear(numberYear) };
-  if (publishedFrom === undefined && publishedTo === undefined) return { tier: CURRENT_TIER };
+):
+  | { readonly routedBy: string; readonly spans: readonly FederalTier[] }
+  | { readonly routedBy: string; readonly tier: FederalTier } {
+  if (part === 'pre_1997') return { routedBy: "part: 'pre_1997'", tier: POSTWAR_TIER };
+  if (number !== undefined) {
+    const numberYear = yearFromNumber(number);
+    if (numberYear !== undefined) {
+      return { routedBy: `number '${number}'`, tier: tierForYear(numberYear) };
+    }
+  }
+  if (publishedFrom === undefined && publishedTo === undefined) {
+    return { routedBy: "scope 'federal'", tier: CURRENT_TIER };
+  }
+  // The interval as it was asked for, marking an open-ended bound.
+  const routedBy =
+    publishedFrom !== undefined && publishedTo !== undefined
+      ? `published_from ${publishedFrom} / published_to ${publishedTo}`
+      : publishedFrom !== undefined
+        ? `published_from ${publishedFrom} with no published_to (open-ended)`
+        : `published_to ${publishedTo} with no published_from (open-ended)`;
   const owning = owningFederalTiers(publishedFrom, publishedTo);
-  if (owning.length > 1) return { spans: owning };
+  if (owning.length > 1) return { routedBy, spans: owning };
   return {
+    routedBy,
     tier: owning[0] ?? tierForYear(yearFromDate(publishedFrom) ?? yearFromDate(publishedTo)),
   };
 }
 
 /**
- * The rejection message for a spanning interval: the interval as it was asked for (marking
- * an open-ended bound), the tier windows it reaches, and the boundary dates to split at,
- * oldest first.
+ * The rejection message for a spanning interval: the interval as it was asked for, the tier
+ * windows it reaches, and the boundary dates to split at, oldest first.
  */
-function crossTierMessage(
-  spans: readonly FederalTier[],
-  from: string | undefined,
-  to: string | undefined,
-): string {
-  const interval =
-    from !== undefined && to !== undefined
-      ? `published_from ${from} / published_to ${to}`
-      : from !== undefined
-        ? `published_from ${from} with no published_to (open-ended)`
-        : `published_to ${to} with no published_from (open-ended)`;
+function crossTierMessage(spans: readonly FederalTier[], interval: string): string {
   const windows = spans.map((tier) => tier.label).join(', ');
   const boundaries = spans
     .slice(0, -1)
@@ -225,6 +236,68 @@ function crossTierMessage(
 /** Map an empty string from a form-based client to `undefined`. */
 function meaningful(value: string | undefined): string | undefined {
   return value !== undefined && value !== '' ? value : undefined;
+}
+
+/**
+ * The gazette a call resolved to, named the way the caller selected it — by `scope`,
+ * `series`, and `state_era` for the fixed jurisdictions, and for the two historical federal
+ * tiers by the window plus `routedBy`, the `number`, `part`, or date bound that landed the
+ * call there (no input names a tier outright).
+ */
+function gazetteLabel(application: GazetteApplication, scope: string, routedBy: string): string {
+  switch (application) {
+    case 'BgblAlt':
+      return `the 1848–1940 federal gazette, which ${routedBy} selected`;
+    case 'BgblAuth':
+      return 'the 2004-and-later federal gazette';
+    case 'BgblPdf':
+      return `the 1945–2003 federal gazette, which ${routedBy} selected`;
+    case 'Bvb':
+      return "scope 'district'";
+    case 'GrA':
+      return "scope 'municipal'";
+    case 'Lgbl':
+      return `state_era 'legacy' under scope '${scope}'`;
+    case 'LgblAuth':
+      return `scope '${scope}'`;
+    case 'LgblNO':
+      return "the Niederösterreich systematic collection (scope 'niederoesterreich', state_era 'legacy')";
+    case 'Vbl':
+      return "series 'ordinance_gazette'";
+  }
+}
+
+/**
+ * A request-builder rejection restated in the vocabulary the caller sent — the tool's own
+ * field names, and `where`, the resolved gazette named by the selection behind it (see
+ * {@link gazetteLabel}), which the builder never receives. Returns `undefined` for anything
+ * this tool has nothing more precise to say about, leaving the builder's message in place.
+ *
+ * Each corrective has to hold for every gazette its rejection is reachable from. `number`
+ * and `part` reach exactly one application each, so they can name the switch that works;
+ * `issuer` and `type` reach several, so they state the limit and stop rather than send the
+ * caller to a gazette other than the one they asked about.
+ */
+function callerFacingRejection(rejected: UnsupportedParam, where: string): string | undefined {
+  switch (rejected.param) {
+    case 'issuer':
+      return `issuer is not available for ${where} — the issuing-body filter covers the 2004-and-later federal gazette and ordinance gazettes. Drop issuer.`;
+    case 'number':
+      return `number is not available for ${where}. Drop number, or set state_era: 'current' to search Niederösterreich's authentic Landesgesetzblatt by number.`;
+    case 'part':
+      return `part is not available for ${where} — federal gazette parts I/II/III exist only from 1997. Drop part.`;
+    case 'sortBy':
+      if (rejected.value === undefined) return;
+      return `sort_by: '${rejected.value}' is not available for ${where}.${
+        rejected.alternatives.length > 0
+          ? ` Use sort_by: ${rejected.alternatives.map((value) => `'${value}'`).join(' or ')}, or drop sort_by.`
+          : ' Drop sort_by — this gazette carries no sortable column.'
+      }`;
+    case 'type':
+      return `type is not available for ${where}. Drop type — it filters the federal gazette from 1945 on and state law gazettes.`;
+    default:
+      return;
+  }
 }
 
 const ContentUrlsSchema = z
@@ -528,9 +601,9 @@ export const risSearchGazette = tool('ris_search_gazette', {
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'A parameter value was rejected — either locally, because the gazette series the scope routes to carries no mapping for it (a sort_by column, or a state absent from the historical Lgbl series), or by RIS in-band (the Client error message is passed through verbatim and names the invalid element and its valid values).',
+      when: 'A page past the last page of results; or a parameter the resolved gazette does not carry — sort_by, number, type, part, issuer, or a state absent from the historical Lgbl series — rejected locally before any upstream call, naming the field and the gazette that rejected it (by scope/series/state_era, or for a federal era tier by its window and the input that routed there); or RIS rejecting a value in-band (the Client error message is passed through verbatim, in German, and it does not name the page).',
       recovery:
-        'Correct the parameter named in the message, or drop it if this gazette series does not carry it. Part and type semantics: ris_list_reference topic gazette_parts or law_types.',
+        'For a page past the end, request a lower page, starting from 1. Otherwise correct the parameter named in the message, or drop it if this gazette does not carry it. Part and type semantics: ris_list_reference topic gazette_parts or law_types.',
     },
     {
       reason: 'upstream_error',
@@ -598,14 +671,16 @@ export const risSearchGazette = tool('ris_search_gazette', {
 
     let application: GazetteApplication;
     let era: GazetteEra | undefined;
+    // Only the federal era tiers are routed rather than named; elsewhere the scope is the
+    // selection, and the gazette label ignores this.
+    let routedBy = `scope '${scope}'`;
     if (scope === 'federal') {
       const routed = resolveFederalTier(number, publishedFrom, publishedTo, input.part);
+      routedBy = routed.routedBy;
       if ('spans' in routed) {
-        throw ctx.fail(
-          'cross_tier_range',
-          crossTierMessage(routed.spans, publishedFrom, publishedTo),
-          { ...ctx.recoveryFor('cross_tier_range') },
-        );
+        throw ctx.fail('cross_tier_range', crossTierMessage(routed.spans, routedBy), {
+          ...ctx.recoveryFor('cross_tier_range'),
+        });
       }
       application = routed.tier.application;
       era = routed.tier.era;
@@ -658,12 +733,18 @@ export const risSearchGazette = tool('ris_search_gazette', {
       ...(input.page_size !== undefined && { pageSize: input.page_size }),
     };
 
-    // Map request-builder and service failures onto this tool's declared contract so reason
-    // + recovery reach the wire (neither carries them on its own).
+    // Restate a builder rejection in this tool's vocabulary, then map it and every service
+    // failure onto the declared contract so reason + recovery reach the wire (neither
+    // carries them on its own).
     const result = await getRisService()
       .searchGazette(params, ctx)
       .catch((err: unknown) => {
-        throw failSearchError(err, ctx);
+        throw failSearchError(
+          rewriteUnsupportedParam(err, (rejected) =>
+            callerFacingRejection(rejected, gazetteLabel(application, scope, routedBy)),
+          ),
+          ctx,
+        );
       });
     ctx.log.info('Gazette search completed', {
       application,

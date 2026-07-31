@@ -29,7 +29,12 @@ import type {
 import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisHit, RisJudikaturMetadata } from '@/services/ris/types.js';
 
-import { failSearchError, isoDateString } from './_shared.js';
+import {
+  failSearchError,
+  isoDateString,
+  rewriteUnsupportedParam,
+  type UnsupportedParam,
+} from './_shared.js';
 
 const COURT_CODES = RIS_COURTS.map((c) => c.code) as [RisCourtCode, ...RisCourtCode[]];
 const STATE_CODES = RIS_STATES.map((s) => s.code) as [RisStateCode, ...RisStateCode[]];
@@ -38,7 +43,7 @@ const CHANGED_SINCE_CODES = RIS_CHANGED_SINCE_INTERVALS.map((i) => i.code) as [
   ...ChangedSinceCode[],
 ];
 
-/** Case-number-and-dates params rejected for normenliste (a norm index, not decisions). */
+/** Courts whose RIS search schema carries no Entscheidungsart (decision_kind) parameter. */
 const NO_DECISION_KIND = new Set<string>(COURTS_WITHOUT_DECISION_KIND);
 
 /** First 4-digit year in a court's documented coverage window, when one is stated. */
@@ -50,6 +55,20 @@ function coverageStartYear(window: string | null): number | undefined {
 /** Map an empty string from a form-based client to `undefined`. */
 function meaningful(value: string | undefined): string | undefined {
   return value !== undefined && value !== '' ? value : undefined;
+}
+
+/**
+ * A request-builder rejection restated with the `court` value the caller sent and the input
+ * field it belongs to. Every court-conditional filter is already refused by the local guards
+ * below, so `sort_by` under normenliste is the one combination that gets this far; anything
+ * else returns `undefined` and keeps the builder's own message rather than inventing a cause.
+ */
+function callerFacingRejection(
+  rejected: UnsupportedParam,
+  court: RisCourtCode,
+): string | undefined {
+  if (rejected.param !== 'sortBy' || court !== 'normenliste') return;
+  return "sort_by is not available for court 'normenliste' — the VwGH norm index lists laws rather than decisions, so it carries no decision date or case number to sort on. Drop sort_by, or search court: 'vwgh' for the decisions themselves.";
 }
 
 const ContentUrlsSchema = z
@@ -382,7 +401,9 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
     sort_by: z
       .enum(['decision_date', 'case_number'])
       .optional()
-      .describe('Sort column. Default: upstream order.'),
+      .describe(
+        'Sort column. Default: upstream order. Not available for court: normenliste, which indexes laws rather than decisions.',
+      ),
     sort_direction: z
       .enum(['ascending', 'descending'])
       .optional()
@@ -424,9 +445,9 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'A parameter value failed validation — decision_kind/subject_area checked locally against the reference tables, sort_by rejected locally because the chosen court’s application has no mapping for it, or RIS rejected the value in-band (message passed through verbatim).',
+      when: 'A page past the last page of results, or a parameter value that failed validation — decision_kind/subject_area checked locally against the reference tables, sort_by rejected locally because court normenliste indexes laws rather than decisions, or RIS rejected the value in-band (message passed through verbatim, in German, and it does not name the page).',
       recovery:
-        'Correct the parameter named in the message, or drop it if the court does not support it. Valid court codes, decision types/kinds, and syntax: ris_list_reference (topic: courts, decision_types, decision_kinds, or search_syntax).',
+        'For a page past the end, request a lower page, starting from 1. Otherwise correct the parameter named in the message, or drop it if the court does not support it. Valid court codes, decision types/kinds, and syntax: ris_list_reference (topic: courts, decision_types, decision_kinds, or search_syntax).',
     },
     {
       reason: 'upstream_error',
@@ -576,12 +597,16 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
     };
 
     const courtEntry = RIS_COURTS.find((entry) => entry.code === court);
-    // Map request-builder and service failures onto this tool's declared contract so reason
-    // + recovery reach the wire (neither carries them on its own).
+    // Restate a builder rejection in this tool's vocabulary, then map it and every service
+    // failure onto the declared contract so reason + recovery reach the wire (neither
+    // carries them on its own).
     const result = await getRisService()
       .searchCaseLaw(params, ctx)
       .catch((err: unknown) => {
-        throw failSearchError(err, ctx);
+        throw failSearchError(
+          rewriteUnsupportedParam(err, (rejected) => callerFacingRejection(rejected, court)),
+          ctx,
+        );
       });
     ctx.log.info('Case-law search completed', {
       court,

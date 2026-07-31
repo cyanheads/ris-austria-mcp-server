@@ -602,23 +602,81 @@ describe('risSearchGazette — error mapping', () => {
     expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
   });
 
-  // Both rejections below pass the input schema and are then refused by the request builder.
-  // The real builder runs on the params the handler produced, so the assertions pin the
-  // actual rejection rather than an invented one. Each reached the wire as a bare -32007
-  // with no reason and no recovery (#12).
-  it('maps a builder rejection of a schema-valid sort_by to invalid_query', async () => {
-    searchGazette.mockImplementation(async (params: GazetteSearchParams) => {
-      buildGazetteRequest(params);
-      throw new Error('unreachable — the builder was expected to reject these params');
-    });
+  // Each case below passes the input schema and is then refused by the request builder. The
+  // real builder runs on the params the handler produced, so the asserted message is the one
+  // a caller actually receives. The builder names the service param and the RIS application
+  // code the caller never sent; the handler restates every one of them over the tool's own
+  // field names and the scope/series/state_era — or, for a federal era tier, the window plus
+  // the input that routed there (#12, #29).
+  it.each([
+    [
+      'sort_by on the current federal tier',
+      { scope: 'federal', sort_by: 'number' },
+      "sort_by: 'number' is not available for the 2004-and-later federal gazette. Use sort_by: 'published', or drop sort_by.",
+    ],
+    [
+      'type on district gazettes',
+      { scope: 'district', type: 'laws' },
+      "type is not available for scope 'district'. Drop type — it filters the federal gazette from 1945 on and state law gazettes.",
+    ],
+    [
+      'number on the Niederösterreich legacy series',
+      { scope: 'niederoesterreich', state_era: 'legacy', number: '61/2026' },
+      "number is not available for the Niederösterreich systematic collection (scope 'niederoesterreich', state_era 'legacy'). Drop number, or set state_era: 'current' to search Niederösterreich's authentic Landesgesetzblatt by number.",
+    ],
+    [
+      'part on the imperial tier a pre-1941 number routed to',
+      { scope: 'federal', number: '189/1902', part: 'part1' },
+      "part is not available for the 1848–1940 federal gazette, which number '189/1902' selected — federal gazette parts I/II/III exist only from 1997. Drop part.",
+    ],
+    [
+      'issuer on the post-war tier a pre-2004 number routed to',
+      { scope: 'federal', number: '171/1980', issuer: 'BMF' },
+      "issuer is not available for the 1945–2003 federal gazette, which number '171/1980' selected — the issuing-body filter covers the 2004-and-later federal gazette and ordinance gazettes. Drop issuer.",
+    ],
+    [
+      'issuer on the post-war tier a pre-2004 date range routed to',
+      { scope: 'federal', published_from: '1980-01-01', published_to: '1980-12-31', issuer: 'BMF' },
+      'issuer is not available for the 1945–2003 federal gazette, which published_from 1980-01-01 / published_to 1980-12-31 selected — the issuing-body filter covers the 2004-and-later federal gazette and ordinance gazettes. Drop issuer.',
+    ],
+  ])(
+    'states a builder rejection of %s in the caller’s vocabulary',
+    async (_label, raw, message) => {
+      searchGazette.mockImplementation(async (params: GazetteSearchParams) => {
+        buildGazetteRequest(params);
+        throw new Error('unreachable — the builder was expected to reject these params');
+      });
+      const ctx = createMockContext({ errors: risSearchGazette.errors });
+      const input = risSearchGazette.input.parse(raw);
+      const err = await captureError(risSearchGazette.handler(input, ctx));
+      expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+      expect(err.data).toMatchObject({ reason: 'invalid_query' });
+      expect(err.message).toBe(message);
+      // Nothing the caller could not have written itself survives into the message.
+      expect(err.message).not.toMatch(/BgblAuth|BgblPdf|BgblAlt|LgblNO|Bvb|sortBy/u);
+      expect(err.message).not.toContain('silently ignored upstream');
+      expect(err.data?.recovery).toMatchObject({
+        hint: expect.stringContaining('correct the parameter named in the message'),
+      });
+    },
+  );
+
+  it('leads the recovery hint with the page for an out-of-range page (#30)', async () => {
+    // RIS answers a page past the end with a German message that names no element, so
+    // "correct the parameter named in the message" resolves to nothing and the reference
+    // topics are dead ends. The page has to come first in the hint.
+    searchGazette.mockRejectedValue(
+      invalidParams('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
+    );
     const ctx = createMockContext({ errors: risSearchGazette.errors });
-    const input = risSearchGazette.input.parse({ scope: 'federal', sort_by: 'number' });
+    const input = risSearchGazette.input.parse({ query: 'Datenschutz', page: 9999 });
     const err = await captureError(risSearchGazette.handler(input, ctx));
-    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
-    expect(err.message).toContain('no confirmed RIS mapping for application BgblAuth');
+    expect(err.message).toContain('Seitennummer');
     expect(err.data?.recovery).toMatchObject({
-      hint: expect.stringContaining('Correct the parameter named in the message'),
+      hint: expect.stringMatching(
+        /^For a page past the end, request a lower page, starting from 1\./u,
+      ),
     });
   });
 

@@ -177,7 +177,26 @@ describe('risSearchDrafts — error mapping', () => {
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
     expect(err.message).toContain('Unknown ministry "BMXX"');
     expect(err.data?.recovery).toMatchObject({
-      hint: expect.stringContaining('Correct the parameter named in the message'),
+      hint: expect.stringContaining('correct the parameter named in the message'),
+    });
+  });
+
+  it('leads the recovery hint with the page for an out-of-range page (#30)', async () => {
+    // RIS answers a page past the end with a German message that names no element, so
+    // "correct the parameter named in the message" resolves to nothing and the ministries
+    // topic the hint used to end on is a dead end. The page has to come first.
+    searchDrafts.mockRejectedValue(
+      invalidParams('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
+    );
+    const ctx = createMockContext({ errors: risSearchDrafts.errors });
+    const input = risSearchDrafts.input.parse({ stage: 'review_drafts', page: 9999 });
+    const err = await captureError(risSearchDrafts.handler(input, ctx));
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.message).toContain('Seitennummer');
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringMatching(
+        /^For a page past the end, request a lower page, starting from 1\./u,
+      ),
     });
   });
 });

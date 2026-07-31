@@ -187,10 +187,11 @@ describe('risSearchCaseLaw — error mapping', () => {
     });
   });
 
-  it('maps a request-builder rejection of a schema-valid sort_by to invalid_query', async () => {
+  it('states a request-builder rejection of a schema-valid sort_by in the caller’s vocabulary', async () => {
     // court: normenliste + sort_by: decision_date passes the input schema, then the builder
-    // rejects it: Normenliste has no Sortierung mapping. The rejection reached the wire as a
-    // bare -32007 with no reason and no recovery (#12).
+    // rejects it. The builder speaks its own vocabulary — the service param name `sortBy`
+    // and the RIS application code `Normenliste`, neither of which the caller sent — so the
+    // handler restates the rejection over the input field and court value it did send (#29).
     searchCaseLaw.mockImplementation(async (params: CaseLawSearchParams) => {
       buildCaseLawRequest(params);
       throw new Error('unreachable — the builder was expected to reject these params');
@@ -203,9 +204,34 @@ describe('risSearchCaseLaw — error mapping', () => {
     const err = await captureError(risSearchCaseLaw.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
-    expect(err.message).toContain('no confirmed RIS mapping for application Normenliste');
+    expect(err.message).toBe(
+      "sort_by is not available for court 'normenliste' — the VwGH norm index lists laws rather than decisions, so it carries no decision date or case number to sort on. Drop sort_by, or search court: 'vwgh' for the decisions themselves.",
+    );
+    // Nothing the caller could not have written itself survives into the message.
+    expect(err.message).not.toContain('sortBy');
+    expect(err.message).not.toContain('Normenliste');
+    expect(err.message).not.toContain('silently ignored upstream');
     expect(err.data?.recovery).toMatchObject({
-      hint: expect.stringContaining('Correct the parameter named in the message'),
+      hint: expect.stringContaining('correct the parameter named in the message'),
+    });
+  });
+
+  it('leads the recovery hint with the page for an out-of-range page (#30)', async () => {
+    // RIS answers a page past the end with a German message that names no element, so
+    // "correct the parameter named in the message" resolves to nothing and the reference
+    // topics are dead ends. The page has to come first in the hint.
+    searchCaseLaw.mockRejectedValue(
+      invalidParams('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
+    );
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
+    const input = risSearchCaseLaw.input.parse({ court: 'vfgh', query: 'Datenschutz', page: 9999 });
+    const err = await captureError(risSearchCaseLaw.handler(input, ctx));
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.message).toContain('Seitennummer');
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringMatching(
+        /^For a page past the end, request a lower page, starting from 1\./u,
+      ),
     });
   });
 });

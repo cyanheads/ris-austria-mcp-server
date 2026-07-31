@@ -96,10 +96,31 @@ const DECISION_KINDS_BY_COURT = new Map<string, (typeof RIS_DECISION_KINDS)[numb
 /** States the Vbl backend actually resolves — other values pass schema validation but 500. */
 const VBL_COVERED_STATES: readonly RisStateCode[] = ['tirol'];
 
-function unsupported(param: string, application: string): never {
+/**
+ * Reject a caller field the target application has no confirmed mapping for.
+ *
+ * The message is diagnostic text for logs: it speaks the builder's vocabulary (the service
+ * param name and the RIS application code), neither of which the caller sent. Every tool
+ * whose input can reach this rewrites it into its own vocabulary at its `.catch()`, off the
+ * structured `data` — so `param`, the rejected `value`, and the `alternatives` that *are*
+ * mapped are carried as separate fields rather than fused into one identifier.
+ */
+function unsupported(
+  param: string,
+  application: string,
+  rejected?: { readonly value: string; readonly alternatives: readonly string[] },
+): never {
+  const label = rejected === undefined ? param : `${param}: ${rejected.value}`;
   throw validationError(
-    `Parameter "${param}" has no confirmed RIS mapping for application ${application} — it would be silently ignored upstream, so it is rejected instead.`,
-    { application, param },
+    `Parameter "${label}" has no confirmed RIS mapping for application ${application} — it would be silently ignored upstream, so it is rejected instead.`,
+    {
+      application,
+      param,
+      ...(rejected !== undefined && {
+        alternatives: [...rejected.alternatives],
+        value: rejected.value,
+      }),
+    },
   );
 }
 
@@ -644,8 +665,11 @@ export function buildGazetteRequest(params: GazetteSearchParams): RisRequest {
     bag.set('Gemeinde', params.municipality);
   }
   if (params.sortBy !== undefined) {
-    const column = GAZETTE_SORT_COLUMNS[app]?.[params.sortBy];
-    if (!column) unsupported(`sortBy: ${params.sortBy}`, app);
+    const columns = GAZETTE_SORT_COLUMNS[app] ?? {};
+    const column = columns[params.sortBy];
+    if (!column) {
+      unsupported('sortBy', app, { alternatives: Object.keys(columns), value: params.sortBy });
+    }
     bag.sort(column, params.sortDirection);
   }
   bag.paging(params);
@@ -890,8 +914,11 @@ export function buildAnnouncementsRequest(params: AnnouncementsSearchParams): Ri
   }
   bag.changedSince(params.changedSince);
   if (params.sortBy !== undefined) {
-    const column = ANNOUNCEMENT_SORT_COLUMNS[app]?.[params.sortBy];
-    if (!column) unsupported(`sortBy: ${params.sortBy}`, app);
+    const columns = ANNOUNCEMENT_SORT_COLUMNS[app] ?? {};
+    const column = columns[params.sortBy];
+    if (!column) {
+      unsupported('sortBy', app, { alternatives: Object.keys(columns), value: params.sortBy });
+    }
     bag.sort(column, params.sortDirection);
   }
   bag.paging(params);

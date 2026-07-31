@@ -334,6 +334,24 @@ describe('buildGazetteRequest', () => {
     expectValidationError(() => buildGazetteRequest({ application: 'BgblAuth', sortBy: 'number' }));
   });
 
+  it('carries the rejected sort value and the mapped alternatives as separate data fields', () => {
+    // The tool layer rewrites this rejection into the caller's vocabulary and needs both the
+    // rejected value and the columns that DO exist as data — a `sortBy: number` composite
+    // fused into `param` would have to be string-parsed apart to say either (#29).
+    let caught: McpError | undefined;
+    try {
+      buildGazetteRequest({ application: 'BgblAuth', sortBy: 'number' });
+    } catch (error) {
+      caught = error as McpError;
+    }
+    expect(caught?.data).toMatchObject({
+      alternatives: ['published'],
+      application: 'BgblAuth',
+      param: 'sortBy',
+      value: 'number',
+    });
+  });
+
   it('rejects out-of-scope filters locally', () => {
     expectValidationError(() => buildGazetteRequest({ application: 'BgblAuth', year: '1902' }));
     expectValidationError(() => buildGazetteRequest({ application: 'LgblAuth', part: 'part1' }));
@@ -490,6 +508,23 @@ describe('buildAnnouncementsRequest', () => {
     expectValidationError(() =>
       buildAnnouncementsRequest({ collection: 'health_structure_plans', sortBy: 'published' }),
     );
+  });
+
+  it('reports an empty alternatives list for a collection with no sortable column', () => {
+    // KmGer maps neither sort column, so the tool layer has no substitute to offer and must
+    // say "drop sort_by" rather than name one (#29).
+    let caught: McpError | undefined;
+    try {
+      buildAnnouncementsRequest({ collection: 'court_rules', sortBy: 'number' });
+    } catch (error) {
+      caught = error as McpError;
+    }
+    expect(caught?.data).toMatchObject({
+      alternatives: [],
+      application: 'KmGer',
+      param: 'sortBy',
+      value: 'number',
+    });
   });
 });
 

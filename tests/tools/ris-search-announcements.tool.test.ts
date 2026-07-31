@@ -241,26 +241,69 @@ describe('risSearchAnnouncements — error mapping', () => {
     expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
   });
 
-  // Both rejections below pass the input schema and are then refused by the request builder.
-  // The real builder runs on the params the handler produced, so the assertions pin the
-  // actual rejection rather than an invented one. Each reached the wire as a bare -32007
-  // with no reason and no recovery (#12).
-  it('maps a builder rejection of a schema-valid sort_by to invalid_query', async () => {
-    searchAnnouncements.mockImplementation(async (params: AnnouncementsSearchParams) => {
-      buildAnnouncementsRequest(params);
-      throw new Error('unreachable — the builder was expected to reject these params');
-    });
+  // Each case below passes the input schema and is then refused by the request builder. The
+  // real builder runs on the params the handler produced, so the asserted message is the one
+  // a caller actually receives. The builder names the service param and the RIS application
+  // code the caller never sent; the handler restates both over the collection value and the
+  // tool's own field name, and names the sort columns the collection does have where it has
+  // any (#12, #29).
+  it.each([
+    [
+      'a collection that sorts by number only',
+      { collection: 'health_structure_plans', sort_by: 'published' },
+      "sort_by: 'published' is not available for collection 'health_structure_plans'. Use sort_by: 'number', or drop sort_by.",
+    ],
+    [
+      'a collection with no sortable column at all',
+      { collection: 'court_rules', sort_by: 'number' },
+      "sort_by: 'number' is not available for collection 'court_rules'. Drop sort_by — this collection carries no sortable column.",
+    ],
+    [
+      'a decrees collection with no sortable column',
+      { collection: 'ministerial_decrees', sort_by: 'published' },
+      "sort_by: 'published' is not available for collection 'ministerial_decrees'. Drop sort_by — this collection carries no sortable column.",
+    ],
+  ])(
+    'states a builder sort_by rejection for %s in the caller’s vocabulary',
+    async (_label, raw, message) => {
+      searchAnnouncements.mockImplementation(async (params: AnnouncementsSearchParams) => {
+        buildAnnouncementsRequest(params);
+        throw new Error('unreachable — the builder was expected to reject these params');
+      });
+      const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
+      const input = risSearchAnnouncements.input.parse(raw);
+      const err = await captureError(risSearchAnnouncements.handler(input, ctx));
+      expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+      expect(err.data).toMatchObject({ reason: 'invalid_query' });
+      expect(err.message).toBe(message);
+      // Nothing the caller could not have written itself survives into the message.
+      expect(err.message).not.toMatch(/Spg|KmGer|Erlaesse|sortBy/u);
+      expect(err.message).not.toContain('silently ignored upstream');
+      expect(err.data?.recovery).toMatchObject({
+        hint: expect.stringContaining('correct the parameter named in the message'),
+      });
+    },
+  );
+
+  it('leads the recovery hint with the page for an out-of-range page (#30)', async () => {
+    // RIS answers a page past the end with a German message that names no element, so
+    // "correct the parameter named in the message" resolves to nothing and the reference
+    // topics are dead ends. The page has to come first in the hint.
+    searchAnnouncements.mockRejectedValue(
+      invalidParams('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
+    );
     const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
     const input = risSearchAnnouncements.input.parse({
-      collection: 'health_structure_plans',
-      sort_by: 'published',
+      collection: 'social_insurance',
+      page: 9999,
     });
     const err = await captureError(risSearchAnnouncements.handler(input, ctx));
-    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
-    expect(err.message).toContain('no confirmed RIS mapping for application Spg');
+    expect(err.message).toContain('Seitennummer');
     expect(err.data?.recovery).toMatchObject({
-      hint: expect.stringContaining('Correct the parameter named in the message'),
+      hint: expect.stringMatching(
+        /^For a page past the end, request a lower page, starting from 1\./u,
+      ),
     });
   });
 

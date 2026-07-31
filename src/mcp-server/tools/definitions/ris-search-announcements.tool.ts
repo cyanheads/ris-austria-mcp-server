@@ -25,7 +25,12 @@ import type {
 import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisHit } from '@/services/ris/types.js';
 
-import { failSearchError, isoDateString } from './_shared.js';
+import {
+  failSearchError,
+  isoDateString,
+  rewriteUnsupportedParam,
+  type UnsupportedParam,
+} from './_shared.js';
 
 const COLLECTION_CODES = RIS_COLLECTIONS.map((c) => c.code) as [
   RisCollectionCode,
@@ -54,6 +59,24 @@ const ANNOUNCEMENT_BINDING: Record<
 /** Map an empty string from a form-based client to `undefined`. */
 function meaningful(value: string | undefined): string | undefined {
   return value !== undefined && value !== '' ? value : undefined;
+}
+
+/**
+ * A request-builder rejection restated with the `collection` value the caller sent and the
+ * input field it belongs to. Every other filter is already refused against the collection's
+ * parameter set below, so sort_by is the one that gets this far; anything else returns
+ * `undefined` and keeps the builder's own message rather than inventing a cause.
+ */
+function callerFacingRejection(
+  rejected: UnsupportedParam,
+  collection: RisCollectionCode,
+): string | undefined {
+  if (rejected.param !== 'sortBy' || rejected.value === undefined) return;
+  return `sort_by: '${rejected.value}' is not available for collection '${collection}'.${
+    rejected.alternatives.length > 0
+      ? ` Use sort_by: ${rejected.alternatives.map((value) => `'${value}'`).join(' or ')}, or drop sort_by.`
+      : ' Drop sort_by — this collection carries no sortable column.'
+  }`;
 }
 
 const ContentUrlsSchema = z
@@ -314,9 +337,9 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'A parameter value was rejected — either locally (an unknown or ambiguous issuer, a plan_state outside regional health-structure plans, or a sort_by column the collection’s application has no mapping for), or by RIS in-band (the Client error message is passed through verbatim and names the invalid element and its valid values).',
+      when: 'A page past the last page of results; or a parameter value rejected locally — an unknown or ambiguous issuer, a plan_state outside regional health-structure plans, or a sort_by value this collection has no column for, in which case the message names the values it does sort by; or RIS rejecting a value in-band (the Client error message is passed through verbatim, in German, and it does not name the page).',
       recovery:
-        'Correct the parameter named in the message, or drop it if this collection does not carry it. Collections and their issuers: ris_list_reference topic collections or issuing_bodies.',
+        'For a page past the end, request a lower page, starting from 1. Otherwise correct the parameter named in the message, or drop it if this collection does not carry it. Collections and their issuers: ris_list_reference topic collections or issuing_bodies.',
     },
     {
       reason: 'upstream_error',
@@ -410,12 +433,16 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       ...(input.page_size !== undefined && { pageSize: input.page_size }),
     };
 
-    // Map request-builder and service failures onto this tool's declared contract so reason
-    // + recovery reach the wire (neither carries them on its own).
+    // Restate a builder rejection in this tool's vocabulary, then map it and every service
+    // failure onto the declared contract so reason + recovery reach the wire (neither
+    // carries them on its own).
     const result = await getRisService()
       .searchAnnouncements(params, ctx)
       .catch((err: unknown) => {
-        throw failSearchError(err, ctx);
+        throw failSearchError(
+          rewriteUnsupportedParam(err, (rejected) => callerFacingRejection(rejected, collection)),
+          ctx,
+        );
       });
     ctx.log.info('Announcements search completed', {
       collection,

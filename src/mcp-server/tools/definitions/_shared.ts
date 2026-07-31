@@ -6,7 +6,7 @@
 
 import type { TypedFail, TypedRecoveryFor } from '@cyanheads/mcp-ts-core';
 import { z } from '@cyanheads/mcp-ts-core';
-import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode, McpError, validationError } from '@cyanheads/mcp-ts-core/errors';
 
 /** Months with 30 days — the only non-February lengths a day of 31 can overshoot. */
 const THIRTY_DAY_MONTHS = new Set([4, 6, 9, 11]);
@@ -91,4 +91,43 @@ export function failSearchError(error: unknown, ctx: SearchFailureContext): unkn
   return reason === undefined
     ? error
     : ctx.fail(reason, error.message, { ...ctx.recoveryFor(reason) });
+}
+
+/** A request-builder unsupported-parameter rejection, as the builder recorded it. */
+export interface UnsupportedParam {
+  /** Values of the same parameter that *are* mapped for the target application. */
+  readonly alternatives: readonly string[];
+  /** The builder's own parameter name, e.g. `sortBy`. */
+  readonly param: string;
+  /** The rejected value, when the rejection was value-specific. */
+  readonly value?: string;
+}
+
+/**
+ * Replace the request builder's unsupported-parameter message with one written in the
+ * calling tool's own vocabulary, so the caller reads back a field it actually sent.
+ *
+ * The builder holds only the resolved RIS application, never the tool input that selected
+ * it, so it cannot name the caller's `court`/`scope`/`collection` itself. The handler still
+ * has that input in scope here, and `rewrite` returns the finished message — or `undefined`
+ * to leave a combination the tool has nothing better to say about untouched.
+ *
+ * `param` and `application` appearing together identify that rejection; the builder's other
+ * `validationError`s (state coverage, ministry expansion) already name what the caller sent
+ * and pass through unchanged, as does every error from the service.
+ */
+export function rewriteUnsupportedParam(
+  error: unknown,
+  rewrite: (rejected: UnsupportedParam) => string | undefined,
+): unknown {
+  if (!(error instanceof McpError)) return error;
+  const { data } = error;
+  if (typeof data?.param !== 'string' || typeof data.application !== 'string') return error;
+  const { alternatives, param, value } = data;
+  const message = rewrite({
+    alternatives: Array.isArray(alternatives) ? (alternatives as string[]) : [],
+    param,
+    ...(typeof value === 'string' && { value }),
+  });
+  return message === undefined ? error : validationError(message, data);
 }
