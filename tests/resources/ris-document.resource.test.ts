@@ -155,6 +155,30 @@ describe('risDocumentResource — overflow degradation', () => {
     expect(result).not.toContain('xSECTIONx1x');
   });
 
+  // The resource degrades through the same roster helper, so a heading-free decision — which
+  // used to be inlined whole at any size — now lists the windows the tool can retrieve.
+  it('degrades an oversized heading-free document to a window outline', async () => {
+    const body = 'Der Beschwerdeführer brachte vor. '.repeat(8);
+    const html = Array.from({ length: 400 }, (_, i) => `<p>xPARAx${i}x ${body}</p>`).join('\n');
+    fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
+    const ctx = createMockContext({ uri: new URL('ris://document/Bvwg/JJT_20260101_BVWG_001') });
+    const params = risDocumentResource.params!.parse({
+      application: 'Bvwg',
+      documentNumber: 'JJT_20260101_BVWG_001',
+    });
+    const result = await risDocumentResource.handler(params, ctx);
+
+    expect(result).toContain('Part 1 of ');
+    expect(result).toContain('contiguous windows');
+    expect(result).toContain('ris_get_document');
+    // The roster is windows, and the heading says so — this surface carries only names and
+    // byte sizes, so calling them sections is the only thing that could correct the reader.
+    expect(result).toMatch(/\*\*\d+ windows\*\*/u);
+    expect(result).not.toContain('sections** (retrieve');
+    // The body is not inlined — only the roster and the notice.
+    expect(result).not.toContain('xPARAx0x');
+  });
+
   it('returns markdown text in full for a document under the budget', async () => {
     fetchDocumentContent.mockResolvedValue({
       text: '<p>Kurzer <b>Text</b></p>',

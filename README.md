@@ -132,8 +132,8 @@ Read and export a single document.
 - `format`: `markdown` (default, boilerplate stripped), raw `html`, RIS `xml`, or `urls_only`
 - Every response carries a binding status: `authentic` (with amtssigniert PDF URL), `consolidated_informational`, `historical_record`, `decision`, `preparatory`, `administrative_directive`, or `translation`
 - Applications that publish only the signed PDF (district and municipal promulgations, court rules) or only scans (1848–1940 gazettes, ÖNB-hosted) return a `format_unavailable` notice with the usable URLs instead of failing
-- Markdown over 40,000 bytes returns a §/Artikel/Anlage section outline (`kind: outline`) instead of truncating. Re-call with `sections:[…]` to pull the sections you need
-- Outlining needs those headings. A rendition without them — most court decisions, gazette and announcement bodies, every raw `html`/`xml` — has nothing to outline and returns whole at any size
+- Markdown over 40,000 bytes returns an outline (`kind: outline`) instead of truncating. Re-call with `sections:[…]` to pull the entries you need
+- Outline entries are the document's §/Artikel/Anlage sections, or — for the court decisions, gazette bodies and announcements that carry no such headings — contiguous byte windows named `Part 1 of N` … `Part N of N`, cut at line breaks and covering the text with nothing dropped. Raw `html`/`xml` are never sliced and return whole at any size
 - Returns content, not fresh metadata. The upstream API has no document-by-number search, so document numbers come from a prior search or lookup result
 
 ---

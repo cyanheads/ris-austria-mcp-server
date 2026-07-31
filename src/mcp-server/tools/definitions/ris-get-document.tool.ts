@@ -10,11 +10,11 @@
  * metadata-only) — a text-format request against a non-text application degrades to a
  * `format_unavailable` notice on a success result, never an error. Markdown conversion drops
  * the `.sr-only` screen-reader twin RIS ships beside every abbreviated citation, keeping the
- * visible form; `html` and `xml` pass through untouched. Oversized markdown carrying
- * §/Artikel/Anlage structure overflows to a retrievable section outline (never a silent
- * truncation, and never for a rendition with no such headings); a follow-up call
- * with `sections:[…]` returns just the chosen sections, and a selector matching nothing gets
- * the outline back with a notice rather than the whole document. The shared
+ * visible form; `html` and `xml` pass through untouched. Oversized markdown overflows to a
+ * retrievable outline rather than a silent truncation — its §/Artikel/Anlage sections, or
+ * `Part n of N` byte windows where it carries no such headings; a follow-up call with
+ * `sections:[…]` returns just the chosen entries, and a selector matching nothing gets the
+ * outline back with a notice rather than the whole document. The shared
  * {@link renderDocument} helper backs both this tool and the `ris://document/…` resource.
  * @module mcp-server/tools/definitions/ris-get-document
  */
@@ -51,21 +51,23 @@ const BINDING_STATUSES = [
 ] as const satisfies readonly RisBindingStatus[];
 
 /** Requested output format. `markdown` and `html` both read the HTML rendition. */
-type DocumentFormat = 'markdown' | 'html' | 'xml' | 'urls_only';
+export type DocumentFormat = 'markdown' | 'html' | 'xml' | 'urls_only';
 
 /**
- * Serialized-length budget for inlining document text. Above it, markdown overflows to a
- * §/Artikel/Anlage section outline instead of returning whole — but only when the rendition
- * segments into at least two of those sections. A rendition carrying none of them has nothing
- * to outline and returns whole however large: court decisions, gazette and announcement
- * bodies, and consolidated `§ 0` promulgation records all do, measured live to 399,972 bytes
- * on a Bvwg decision.
+ * Serialized-length budget for inlining document text, and the size of one addressable
+ * window. Above it, markdown overflows to an outline instead of returning whole — its
+ * §/Artikel/Anlage sections where it carries at least two such headings, else the byte
+ * windows {@link windowDocument} cuts, so a rendition the segmenter cannot split is
+ * retrievable rather than returned whole at any size (court decisions, gazette and
+ * announcement bodies, and consolidated `§ 0` promulgation records all carry no headings,
+ * measured live to 399,972 bytes on a Bvwg decision).
  *
  * Sized against what one tool result can carry into a working context (≈10K tokens of legal
  * prose), not against what counts as a pathological document: across live samples the
  * documents callers routinely read land well under it — consolidated-law sections at 2–3 KB,
  * drafts and bills at 6–36 KB — while the multi-act bills and long translations that motivated
- * the outline (71 KB–199 KB) route through it.
+ * the outline (71 KB–199 KB) route through it. One number serves both roles because a window
+ * is by definition one result's worth, which is what the budget already means.
  *
  * Handed to `outlineOnOverflow`, which measures `JSON.stringify` length (≈ UTF-8 bytes for
  * the mostly-Latin legal text); the exact `byte_size` is reported separately.
@@ -360,16 +362,22 @@ function formatUnavailableNotice(
 }
 
 /**
- * One addressable section of a rendered RIS document — a structural unit sliced from its
- * heading up to the next, plus the leading `Präambel` when the document opens with text
- * before its first heading.
+ * One addressable entry of a rendered RIS document. Two kinds, never mixed in one roster:
+ * a `section` is a structural unit sliced from its heading up to the next (plus the leading
+ * `Präambel` when the document opens with text before its first heading); a `window` is a
+ * contiguous byte slice of a document carrying no such headings.
  */
 export interface DocumentSection {
-  /** UTF-8 byte size of the section text. */
+  /** UTF-8 byte size of the entry's text. */
   readonly bytes: number;
-  /** Section identifier — a §/Artikel/Anlage marker, article-qualified so names stay unique. */
+  /** Which roster this entry belongs to — see {@link addressableSections}. */
+  readonly kind: 'section' | 'window';
+  /**
+   * Entry identifier — a §/Artikel/Anlage marker (article-qualified so names stay unique)
+   * for a section, `Part n of N` for a window.
+   */
   readonly name: string;
-  /** The section's text, from its heading up to the next heading. */
+  /** The entry's text: heading to next heading for a section, line to line for a window. */
   readonly text: string;
 }
 
@@ -406,6 +414,7 @@ export function segmentDocument(text: string): DocumentSection[] {
     const seen = (counts.get(name) ?? 0) + 1;
     counts.set(name, seen);
     sections.push({
+      kind: 'section',
       name: seen > 1 ? `${name} (${seen})` : name,
       text: slice,
       bytes: encoder.encode(slice).length,
@@ -428,34 +437,166 @@ export function segmentDocument(text: string): DocumentSection[] {
   return sections;
 }
 
+/**
+ * Shape of a window name. `Part n of N` is the one entry name {@link segmentDocument} can
+ * never produce — a section name always opens with a §/Artikel/Anlage marker — so it also
+ * identifies a roster's kind on a surface that carries only names and byte sizes.
+ */
+const WINDOW_NAME = /^Part \d+ of \d+$/u;
+
+/**
+ * Cut rendered document text into near-even windows snapped to line boundaries, named
+ * `Part 1 of N` … `Part N of N` in document order. The retrieval path for a rendition
+ * {@link segmentDocument} cannot split; returns `[]` under the budget and for text that
+ * carries no line break to cut on, which the caller reads as "nothing to outline".
+ *
+ * Even windows rather than fill-the-budget windows: filling leaves a runt tail (a 40,440-byte
+ * decision splits 39,602 + 838, buying a round-trip for a scrap) while an even split of the
+ * same document is 20,196 + 20,244. Each window's target is the bytes still unassigned over
+ * the windows still to cut, so the remainder that snapping to the next line break carries
+ * forward is spread across the rest instead of piling onto the tail.
+ *
+ * Two rules keep the budget a ceiling rather than an aspiration. A window never takes a line
+ * that would carry it past the budget, so snapping to the next line break cannot overshoot;
+ * and when the tail still lands over — the target sitting just under the budget leaves the
+ * last window everything the earlier ones declined — the window count rises until every
+ * window fits. A line longer than the budget is the exception, and the reason the count stops
+ * rising rather than climbing to one window per line: splitting inside a line would put the
+ * cut where the caller cannot see it, so such a line sits alone in a window that goes over.
+ *
+ * Window bytes sum to the document's byte size exactly — the windows concatenate back to the
+ * input, so nothing is dropped or double-counted.
+ */
+export function windowDocument(text: string, budget: number): DocumentSection[] {
+  const encoder = new TextEncoder();
+  const total = encoder.encode(text).length;
+  if (total <= budget) return [];
+
+  const lines = text.split('\n');
+  if (lines.length < 2) return []; // no line break to cut on
+  const lineBytes = lines.map(
+    (line, i) => encoder.encode(line).length + (i === lines.length - 1 ? 0 : 1),
+  );
+
+  /** Line-index boundaries of `count` runs, each targeting an even share of what is left. */
+  const cut = (count: number): number[] => {
+    const bounds = [0];
+    let cursor = 0;
+    let consumed = 0;
+    for (let remaining = count; remaining > 1; remaining -= 1) {
+      const target = (total - consumed) / remaining;
+      const limit = lines.length - (remaining - 1); // leave one line per remaining window
+      let bytes = 0;
+      while (cursor < limit && bytes < target) {
+        const next = lineBytes[cursor] ?? 0;
+        if (bytes > 0 && bytes + next > budget) break;
+        bytes += next;
+        cursor += 1;
+      }
+      bounds.push(cursor);
+      consumed += bytes;
+    }
+    bounds.push(lines.length);
+    return bounds;
+  };
+
+  /** Every run fits the budget, or is the lone over-budget line nothing can split. */
+  const fits = (bounds: readonly number[]): boolean =>
+    bounds.slice(0, -1).every((from, i) => {
+      const to = bounds[i + 1] ?? lines.length;
+      return to - from <= 1 || lineBytes.slice(from, to).reduce((sum, n) => sum + n, 0) <= budget;
+    });
+
+  // A document with fewer lines than the budget asks windows for cannot have more windows
+  // than it has lines — every line over the budget is one nothing can split.
+  const floor = Math.min(Math.ceil(total / budget), lines.length);
+  let bounds = cut(floor);
+  for (let count = floor + 1; count <= lines.length && !fits(bounds); count += 1) {
+    bounds = cut(count);
+  }
+
+  const slices = bounds
+    .slice(0, -1)
+    .map((from, i) => {
+      const to = bounds[i + 1] ?? lines.length;
+      return lines.slice(from, to).join('\n') + (to < lines.length ? '\n' : '');
+    })
+    .filter((slice) => slice !== '');
+  if (slices.length < 2) return [];
+  return slices.map((slice, i) => ({
+    kind: 'window' as const,
+    name: `Part ${i + 1} of ${slices.length}`,
+    text: slice,
+    bytes: encoder.encode(slice).length,
+  }));
+}
+
+/**
+ * The one roster of what a caller can address in a rendition — §/Artikel/Anlage sections
+ * where the markdown carries at least two of them, else the byte windows an over-budget
+ * document is cut into. Both the outline and the `sections:[…]` selector resolve through
+ * here, so every entry the outline advertises is retrievable by name.
+ *
+ * Markdown only. `html` and `xml` are byte-identical passthroughs of the published artifact
+ * and a mid-document slice of either is not well-formed, so they stay whole at any size and
+ * a caller who needs one has `content_urls`.
+ *
+ * The two-entry floor matches `outlineOnOverflow`'s own short-circuit: an outline whose only
+ * possible `sections` argument returns the same bytes costs a round-trip and buys nothing.
+ */
+export function addressableSections(text: string, format: DocumentFormat): DocumentSection[] {
+  const sections = segmentDocument(text);
+  if (sections.length >= 2) return sections;
+  return format === 'markdown' ? windowDocument(text, OUTLINE_BUDGET_BYTES) : [];
+}
+
 /** Outcome of resolving a `sections:[…]` selector against a rendered document. */
 export interface SectionSelection {
-  /** The document's whole section roster, largest first — what the caller can re-pick from. */
+  /**
+   * The document's whole entry roster — what the caller can re-pick from. Sections come
+   * largest first; windows keep document order (see {@link outlineDocument}).
+   */
   readonly available: SectionMeta[];
-  /** Concatenated text of the matched sections, in document order; `''` when none matched. */
+  /** Concatenated text of the matched entries, in document order; `''` when none matched. */
   readonly text: string;
-  /** Requested names that matched no section, in the order requested. */
+  /** Requested names that matched no entry, in the order requested. */
   readonly unmatched: string[];
+  /** Whether `available` lists byte windows rather than §/Artikel/Anlage sections. */
+  readonly windowed: boolean;
 }
 
 /**
  * Resolve a `sections:[…]` selector against rendered document text — the selective-retrieval
- * counterpart to the outline. The handler re-fetches the document (the upstream query is
- * deterministic, so it reproduces the same text) and slices it to the requested sections.
+ * counterpart to the outline, resolving through the same {@link addressableSections} roster
+ * so every advertised name retrieves. The handler re-fetches the document (the upstream query
+ * is deterministic, so it reproduces the same text) and slices it to the requested entries.
  * Reports the unmatched names and the full roster alongside the matched text so the handler
  * can disclose a mismatch instead of silently returning something the caller didn't ask for.
  */
-export function selectDocumentSections(text: string, want: readonly string[]): SectionSelection {
-  const sections = segmentDocument(text);
+export function selectDocumentSections(
+  text: string,
+  want: readonly string[],
+  format: DocumentFormat,
+): SectionSelection {
+  const sections = addressableSections(text, format);
+  const windowed = sections[0]?.kind === 'window';
   const names = new Set(sections.map((section) => section.name));
   const wanted = new Set(want);
   const matched = sections.filter((section) => wanted.has(section.name));
+  const available = sections.map(({ name, bytes }) => ({ name, bytes }));
+  // Same split as the outline's: a section roster is a menu, so largest first puts the
+  // substantial units on top; a window roster is a reading sequence and keeps document order.
+  if (!windowed) available.sort((a, b) => b.bytes - a.bytes);
   return {
-    available: sections
-      .map(({ name, bytes }) => ({ name, bytes }))
-      .sort((a, b) => b.bytes - a.bytes),
-    text: matched.map((section) => section.text).join('\n\n'),
+    available,
+    // No separator: every entry is a contiguous slice that already carries the line break
+    // ending it, so a multi-entry selection reassembles the source byte for byte and its
+    // size is the sum of the byte sizes the outline advertised. Inserting one would put
+    // bytes on the wire that are not in the document — enough, in a table-heavy RIS body,
+    // to split a table at the seam and orphan its rows from their header row.
+    text: matched.map((section) => section.text).join(''),
     unmatched: [...new Set(want)].filter((name) => !names.has(name)),
+    windowed,
   };
 }
 
@@ -466,22 +607,37 @@ function quoteNames(names: readonly string[]): string {
 
 /**
  * Apply the outline-on-overflow contract to rendered document text: whole under the byte
- * budget (or with fewer than two structural sections), else a section outline. Shares
- * {@link segmentDocument} as the section extractor so the tool and the resource segment
- * identically; the `notice` builder is caller-specific (each points at its own re-call).
+ * budget (or with fewer than two addressable entries), else an outline of `roster`. The
+ * caller passes the roster it already resolved through {@link addressableSections}, so the
+ * outline it advertises and the wording of its notice describe the same entries; the `notice`
+ * builder is caller-specific (each points at its own re-call).
+ *
+ * `outlineOnOverflow` sorts entries largest first and offers no opt-out. That reads as a menu
+ * for a section roster, where the names say what each entry is. A window roster is a reading
+ * sequence, and a caller that walks `sections` in array order — the obvious way to read one
+ * — would take the document out of order, so document order is restored for it here.
  */
 export function outlineDocument(
   text: string,
+  roster: readonly DocumentSection[],
   notice: (sections: SectionMeta[]) => string,
 ): OutlineResult<{ text: string }> {
-  return outlineOnOverflow(
+  const decision = outlineOnOverflow(
     { text },
     {
       budget: OUTLINE_BUDGET_BYTES,
-      extract: (doc) => segmentDocument(doc.text).map(({ name, bytes }) => ({ name, bytes })),
+      extract: () => roster.map(({ name, bytes }) => ({ name, bytes })),
       notice,
     },
   );
+  if (decision.kind === 'full' || roster[0]?.kind !== 'window') return decision;
+  const order = new Map(roster.map((entry, i) => [entry.name, i] as const));
+  return {
+    ...decision,
+    sections: [...decision.sections].sort(
+      (a, b) => (order.get(a.name) ?? 0) - (order.get(b.name) ?? 0),
+    ),
+  };
 }
 
 /** Name the three largest sections, quoted, as examples for a re-call notice. */
@@ -493,15 +649,20 @@ export function exampleSectionNames(sections: readonly SectionMeta[]): string {
 }
 
 /**
- * Render an outline — the section roster the agent picks from — to markdown. Shared by the
- * tool's `format()` (as a content block) and the resource (as its body), so both client
- * surfaces list identical sections. Deliberately says nothing about *why* the outline was
- * returned: the tool emits one both on a byte overflow and on an unmatched `sections`
- * selector, and the accompanying notice is what separates the two.
+ * Render an outline — the roster the agent picks from — to markdown. Shared by the tool's
+ * `format()` (as a content block) and the resource (as its body), so both client surfaces
+ * list identical entries. A roster is all sections or all windows ({@link addressableSections}
+ * never mixes them), and the heading names which, since this surface carries only names and
+ * byte sizes: windows are a reading sequence listed in document order, sections a menu listed
+ * largest first. Deliberately says nothing about *why* the outline was returned: the tool
+ * emits one both on a byte overflow and on an unmatched `sections` selector, and the
+ * accompanying notice is what separates the two.
  */
 export function renderOutlineSections(sections: readonly SectionMeta[]): string {
   return [
-    `**${sections.length} sections** (retrieve by name):`,
+    WINDOW_NAME.test(sections[0]?.name ?? '')
+      ? `**${sections.length} windows** (retrieve by name, in this order):`
+      : `**${sections.length} sections** (retrieve by name):`,
     ...sections.map((section) => `- \`${section.name}\` — ${section.bytes} bytes`),
   ].join('\n');
 }
@@ -577,7 +738,7 @@ const ContentUrlsSchema = z
 export const risGetDocument = tool('ris_get_document', {
   title: 'Get RIS Document',
   description:
-    'Fetch one RIS document’s full text or its rendition URLs, with explicit binding status and the amtssigniert authentic PDF surfaced wherever it exists. Address the document exactly one of two ways: document_number plus application (both copied verbatim from a ris_search_* or ris_lookup_citation result), or a document_url from a result’s content_urls — or, for a draft’s companion documents (Erläuterungen, Textgegenüberstellung, WFA, cover letter, annexes), a ris_search_drafts record’s materials[].url, which is the only route to them. format: markdown (default — the HTML rendition converted to markdown), html (raw HTML rendition), xml (the RIS Nutzdaten XML), or urls_only (no fetch — every rendition URL, including the Authentisch PDF). Format availability varies by application and the tool degrades explicitly, never silently: consolidated law, gazettes, case law, drafts, and most sectoral collections carry full text; district and municipal promulgations and court rules (Bvb, GrA, KmGer) publish only the signed authentic PDF; party-transparency decisions and council minutes (Upts, Mrp) are PDF-only; the 1848–1940 imperial gazettes (BgblAlt) are metadata-only — for these a text-format request returns a format_unavailable notice with the usable URL, not an error. Every result carries binding_status; only authentic (amtssigniert) publications are legally binding. This tool returns content, not fresh metadata — the metadata rides the search/lookup step that produced the document number. When the markdown text overflows the 40,000-byte budget and carries at least two §/Artikel/Anlage headings the tool returns a section outline (kind: outline) instead of truncating; re-call with sections:[…] naming outline entries to retrieve just those, and a name matching no section returns the outline again with a notice rather than the whole document. Outlining needs those headings: a rendition without them — most court decisions, many gazette and announcement bodies, and every raw html/xml rendition — has nothing to outline and returns whole at any size. Markdown drops the screen-reader expansions RIS ships alongside each abbreviated citation, keeping the visible citation form; raw html/xml renditions are returned exactly as published.',
+    'Fetch one RIS document’s full text or its rendition URLs, with explicit binding status and the amtssigniert authentic PDF surfaced wherever it exists. Address the document exactly one of two ways: document_number plus application (both copied verbatim from a ris_search_* or ris_lookup_citation result), or a document_url from a result’s content_urls — or, for a draft’s companion documents (Erläuterungen, Textgegenüberstellung, WFA, cover letter, annexes), a ris_search_drafts record’s materials[].url, which is the only route to them. format: markdown (default — the HTML rendition converted to markdown), html (raw HTML rendition), xml (the RIS Nutzdaten XML), or urls_only (no fetch — every rendition URL, including the Authentisch PDF). Format availability varies by application and the tool degrades explicitly, never silently: consolidated law, gazettes, case law, drafts, and most sectoral collections carry full text; district and municipal promulgations and court rules (Bvb, GrA, KmGer) publish only the signed authentic PDF; party-transparency decisions and council minutes (Upts, Mrp) are PDF-only; the 1848–1940 imperial gazettes (BgblAlt) are metadata-only — for these a text-format request returns a format_unavailable notice with the usable URL, not an error. Every result carries binding_status; only authentic (amtssigniert) publications are legally binding. This tool returns content, not fresh metadata — the metadata rides the search/lookup step that produced the document number. When the markdown text overflows the 40,000-byte budget the tool returns an outline (kind: outline) instead of truncating: the document’s §/Artikel/Anlage sections where it carries at least two such headings, otherwise contiguous byte windows named Part 1 of N … Part N of N covering the whole text and listed in document order. Re-call with sections:[…] naming outline entries to retrieve just those; a name matching no entry returns the outline again with a notice rather than the whole document. Windows are cut at line breaks, not at sentence or § boundaries, so one can open mid-sentence — read them in order and pull the neighbour when a passage straddles a cut. Raw html and xml renditions are never sliced and return whole at any size. Markdown drops the screen-reader expansions RIS ships alongside each abbreviated citation, keeping the visible citation form; raw html/xml renditions are returned exactly as published.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     document_number: z
@@ -608,7 +769,7 @@ export const risGetDocument = tool('ris_get_document', {
       .array(z.string())
       .optional()
       .describe(
-        'Section names to retrieve, each copied verbatim from a prior outline response (kind: outline). Omit for the full document — which returns a §/Artikel/Anlage outline instead when the markdown overflows the 40,000-byte budget and carries at least two such headings. A name that matches no section is never silently ignored: a total miss returns the outline (kind: outline) with a notice, a partial miss returns the matched sections with a notice naming other sections to pick from. Applies to markdown only — html, xml, and urls_only carry no headings to select from and return in full.',
+        'Entry names to retrieve, each copied verbatim from a prior outline response (kind: outline) — §/Artikel/Anlage section names, or window names of the form "Part 2 of 6". Omit for the full document, which returns an outline instead when the markdown overflows the 40,000-byte budget. A name that matches no entry is never silently ignored: a total miss returns the outline (kind: outline) with a notice, a partial miss returns the matched entries with a notice naming others to pick from. Applies to markdown only — html, xml, and urls_only are never sliced and return in full.',
       ),
   }),
   output: z.object({
@@ -631,22 +792,22 @@ export const risGetDocument = tool('ris_get_document', {
       .boolean()
       .optional()
       .describe(
-        'Present and true when the full text isn’t inline because a section outline was returned instead (kind: outline) — either the document overflowed the byte budget, or a sections:[…] selector matched nothing. The notice names which. Retrieve sections via the sections input, or fetch content_urls for the whole artifact.',
+        'Present and true when the full text isn’t inline because an outline was returned instead (kind: outline) — either the document overflowed the byte budget, or a sections:[…] selector matched nothing. The notice names which. Retrieve entries via the sections input, or fetch content_urls for the whole artifact.',
       ),
     kind: z
       .enum(['full', 'outline'])
       .describe(
-        'full — the complete response (document text, selected sections, or rendition URLs). outline — sections lists the retrievable §/Artikel/Anlage units instead of the text, either because it overflowed the byte budget or because a sections:[…] selector matched nothing; re-call with sections:[…] naming entries from it.',
+        'full — the complete response (document text, selected entries, or rendition URLs). outline — sections lists the retrievable entries instead of the text, either because the document overflowed the byte budget or because a sections:[…] selector matched nothing; re-call with sections:[…] naming entries from it.',
       ),
     sections: z
       .array(
         OUTLINE_VARIANT.shape.sections.element.describe(
-          'A retrievable §/Artikel/Anlage section — its name and UTF-8 byte size.',
+          'A retrievable entry — a §/Artikel/Anlage section or a Part n of N byte window, with its UTF-8 byte size.',
         ),
       )
       .optional()
       .describe(
-        'Present when kind = outline: the document’s §/Artikel/Anlage sections, largest first, each with its UTF-8 byte size. Copy names into the sections input verbatim to retrieve them.',
+        'Present when kind = outline: the document’s addressable entries, each with its UTF-8 byte size — §/Artikel/Anlage sections listed largest first, or, when the markdown carries no such headings, Part n of N byte windows listed in document order and summing to byte_size. Copy names into the sections input verbatim to retrieve them; naming several in one call returns their text concatenated in document order, with nothing inserted between them.',
       ),
     binding_status: z
       .enum(BINDING_STATUSES)
@@ -820,14 +981,19 @@ export const risGetDocument = tool('ris_get_document', {
     // roster (driven by the no-match, not by the byte budget) so the caller can tell "your
     // names were wrong" from "that section really is that large".
     if (requestedSections.length > 0) {
-      const selection = selectDocumentSections(rendition.text, requestedSections);
+      const selection = selectDocumentSections(rendition.text, requestedSections, format);
+      // How the roster was built — the two kinds want different re-call guidance, and for a
+      // windowed roster the outline exists *because* of the byte budget.
+      const roster = selection.windowed
+        ? `${selection.available.length} contiguous byte windows, since it carries no §/Artikel/Anlage headings and overflows the ${OUTLINE_BUDGET_BYTES}-byte budget`
+        : `${selection.available.length} §/Artikel/Anlage sections`;
       if (selection.text !== '') {
         if (selection.unmatched.length > 0) {
           // Names candidates from the roster rather than promising an outline on a re-call
           // without sections:[…] — that re-call only outlines a document over the byte
           // budget, and returns the whole text for every document under it.
           ctx.enrich.notice(
-            `Returned only the matched sections — ${quoteNames(selection.unmatched)} named no section of this document and ${selection.unmatched.length === 1 ? 'was' : 'were'} skipped. This document has ${selection.available.length} §/Artikel/Anlage sections; copy a name verbatim and re-call ris_get_document with the same addressing — e.g. ${exampleSectionNames(selection.available)}.`,
+            `Returned only the matched entries — ${quoteNames(selection.unmatched)} named no entry of this document and ${selection.unmatched.length === 1 ? 'was' : 'were'} skipped. This document has ${roster}; copy a name verbatim and re-call ris_get_document with the same addressing — e.g. ${exampleSectionNames(selection.available)}.`,
           );
         }
         return {
@@ -839,7 +1005,9 @@ export const risGetDocument = tool('ris_get_document', {
       }
       if (selection.available.length > 0) {
         ctx.enrich.notice(
-          `sections:[…] matched nothing — ${quoteNames(selection.unmatched)} named no section of this document, so the outline below is a selector mismatch, not a size overflow. Copy a name verbatim from sections and re-call ris_get_document with the same addressing — e.g. ${exampleSectionNames(selection.available)}.`,
+          selection.windowed
+            ? `sections:[…] matched nothing — ${quoteNames(selection.unmatched)} named no entry of this document. It is addressed as ${roster}. Copy a name verbatim from sections and re-call ris_get_document with the same addressing — e.g. ${exampleSectionNames(selection.available)}.`
+            : `sections:[…] matched nothing — ${quoteNames(selection.unmatched)} named no section of this document, so the outline below is a selector mismatch, not a size overflow. Copy a name verbatim from sections and re-call ris_get_document with the same addressing — e.g. ${exampleSectionNames(selection.available)}.`,
         );
         return {
           ...base,
@@ -849,18 +1017,22 @@ export const risGetDocument = tool('ris_get_document', {
           ...(byteSize !== undefined && { byte_size: byteSize }),
         };
       }
-      // Nothing to select from and nothing to list — an html/xml rendition or markdown with
-      // no §/Artikel/Anlage headings. Say so, then return the document whole below.
+      // Nothing to select from and nothing to list — a raw html/xml rendition, or markdown
+      // under the budget with no §/Artikel/Anlage headings. Both halves are named: a caller
+      // told only about headings would retry the same selector on a larger document of the
+      // same shape. Say so, then return the document whole below.
       ctx.enrich.notice(
-        `sections:[…] was ignored — this rendition carries no §/Artikel/Anlage headings to select from, so ${quoteNames(selection.unmatched)} could not be resolved. The whole document follows.`,
+        `sections:[…] was ignored — this rendition has no addressable entries, so ${quoteNames(selection.unmatched)} could not be resolved. Raw html and xml are never sliced; markdown carries entries when it has §/Artikel/Anlage headings, or once it overflows the ${OUTLINE_BUDGET_BYTES}-byte budget. The whole document follows.`,
       );
     }
 
-    // Disclosure — whole text under budget (or unsegmentable), else a section outline.
-    const decision = outlineDocument(
-      rendition.text,
-      (sections) =>
-        `Document too large to return in full${byteSize !== undefined ? ` (${byteSize} bytes)` : ''}. Re-call ris_get_document with the same addressing plus sections:[…] naming entries from the outline — e.g. ${exampleSectionNames(sections)}.`,
+    // Disclosure — whole text under budget (or with nothing addressable), else an outline.
+    const addressable = addressableSections(rendition.text, format);
+    const size = byteSize !== undefined ? ` (${byteSize} bytes)` : '';
+    const decision = outlineDocument(rendition.text, addressable, (sections) =>
+      addressable[0]?.kind === 'window'
+        ? `Document too large to return in full${size}. It carries no §/Artikel/Anlage headings, so the outline lists ${sections.length} contiguous windows covering the whole text — read them in the order they are named, and expect a window to open mid-sentence, since the cuts are line breaks rather than sentence or § boundaries. Re-call ris_get_document with the same addressing plus sections:[…] naming entries from the outline — e.g. ${exampleSectionNames(addressable)}.`
+        : `Document too large to return in full${size}. Re-call ris_get_document with the same addressing plus sections:[…] naming entries from the outline — e.g. ${exampleSectionNames(sections)}.`,
     );
     if (decision.kind === 'full') {
       return {

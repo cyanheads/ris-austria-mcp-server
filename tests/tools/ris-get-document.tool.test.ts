@@ -24,10 +24,12 @@ import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  addressableSections,
   OUTLINE_BUDGET_BYTES,
   parseDocumentUrl,
   risGetDocument,
   selectDocumentSections,
+  windowDocument,
 } from '@/mcp-server/tools/definitions/ris-get-document.tool.js';
 import type { RisContentFormat } from '@/services/ris/ris-service.js';
 
@@ -76,6 +78,17 @@ function oversizedArticlesHtml(): string {
 function midSizedArticlesHtml(): string {
   const body = (n: number) => `<p>${`xSECTIONx${n}x `.repeat(1000)}</p>`;
   return Array.from({ length: 6 }, (_, i) => `<h2>Artikel ${i + 1}</h2>${body(i + 1)}`).join('\n');
+}
+
+/**
+ * HTML rendering to heading-free markdown — a court decision's shape, the case the outline
+ * could not reach. Every paragraph opens with its own ordinal token, so a window retrieval
+ * can be checked to return one contiguous run and nothing from its neighbours. 400
+ * paragraphs render to ~112 KB, 150 to ~42 KB (just over the budget).
+ */
+function headingFreeDecisionHtml(paragraphs: number): string {
+  const body = 'Der Beschwerdeführer brachte vor. '.repeat(8);
+  return Array.from({ length: paragraphs }, (_, i) => `<p>xPARAx${i}x ${body}</p>`).join('\n');
 }
 
 /** Read a captured RIS rendition fixture as its raw body text. */
@@ -792,25 +805,139 @@ describe('risGetDocument — overflow (outline + selective retrieval)', () => {
     expect(getEnrichment(ctx).notice).toContain('too large to return in full');
   });
 
-  // The budget bounds only segmentable markdown. Court decisions, gazette bodies and
-  // consolidated promulgation records carry no §/Artikel/Anlage headings, so there is
-  // nothing to outline and nothing for a sections:[…] re-call to name — they come back
-  // whole rather than cut, which is what the tool description and docs/design.md state.
-  it('returns a heading-free rendition whole however far over the budget', async () => {
-    const html = `<p>${'Der Beschwerdeführer brachte vor. '.repeat(4000)}</p>`;
-    fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
-    const ctx = createMockContext();
-    const input = risGetDocument.input.parse({
+  // The budget used to bound segmentable markdown only: a court decision, gazette body or
+  // consolidated promulgation record carries no §/Artikel/Anlage headings, so the extractor
+  // returned nothing and `outlineOnOverflow`'s two-entry floor sent the document back whole
+  // at any size. Those renditions are now cut into contiguous byte windows, which is what
+  // the roster advertises and what a sections:[…] re-call retrieves.
+  it('windows a heading-free rendition that overflows the budget', async () => {
+    const { ctx, result } = await callTool(headingFreeDecisionHtml(400), {
       document_number: 'JJT_20260101_BVWG_001',
       application: 'Bvwg',
     });
-    const result = await risGetDocument.handler(input, ctx);
 
     expect(result.byte_size).toBeGreaterThan(OUTLINE_BUDGET_BYTES);
+    expect(result.kind).toBe('outline');
+    expect(result.truncated).toBe(true);
+    expect(result.text).toBeUndefined();
+
+    // Document order, not the largest-first sort `outlineOnOverflow` applies: a caller that
+    // walks sections[] in array order — the obvious way to read a windowed roster — has to
+    // get the document in the order it was written.
+    const names = result.sections?.map((section) => section.name) ?? [];
+    const count = names.length;
+    expect(count).toBeGreaterThanOrEqual(2);
+    expect(names).toEqual(Array.from({ length: count }, (_, i) => `Part ${i + 1} of ${count}`));
+    // Every window fits the budget, and together they account for the document exactly.
+    expect(result.sections?.every((section) => section.bytes <= OUTLINE_BUDGET_BYTES)).toBe(true);
+    expect(result.sections?.reduce((sum, section) => sum + section.bytes, 0)).toBe(
+      result.byte_size,
+    );
+
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('contiguous windows');
+    expect(notice).toContain('line breaks');
+    expect(notice).toContain('"Part 1 of');
+  });
+
+  it('splits a barely-over-budget decision evenly rather than into a runt tail', async () => {
+    const { result } = await callTool(headingFreeDecisionHtml(150), {
+      document_number: 'JJT_20260101_BVWG_002',
+      application: 'Bvwg',
+    });
+
+    expect(result.byte_size).toBeGreaterThan(OUTLINE_BUDGET_BYTES);
+    expect(result.byte_size).toBeLessThan(2 * OUTLINE_BUDGET_BYTES);
+    expect(result.sections).toHaveLength(2);
+    // Filling the budget would leave a scrap behind the first window; an even split does not.
+    const half = (result.byte_size ?? 0) / 2;
+    for (const section of result.sections ?? []) {
+      expect(section.bytes).toBeGreaterThan(half * 0.9);
+      expect(section.bytes).toBeLessThan(half * 1.1);
+    }
+  });
+
+  it('retrieves one named window and nothing from its neighbours', async () => {
+    const html = headingFreeDecisionHtml(400);
+    const { result: outline } = await callTool(html, {
+      document_number: 'JJT_20260101_BVWG_001',
+      application: 'Bvwg',
+    });
+    const target = outline.sections?.find((section) => section.name.startsWith('Part 2 of '));
+    expect(target).toBeDefined();
+
+    const { ctx, result } = await callTool(html, {
+      document_number: 'JJT_20260101_BVWG_001',
+      application: 'Bvwg',
+      sections: [target?.name as string],
+    });
+
     expect(result.kind).toBe('full');
     expect(result.truncated).toBeUndefined();
-    expect(result.sections).toBeUndefined();
-    expect(result.text).toContain('Der Beschwerdeführer');
+    expect(result.byte_size).toBe(target?.bytes);
+    // The document opens in the first window and ends in the last — neither is this one.
+    expect(result.text).not.toContain('xPARAx0x');
+    expect(result.text).not.toContain('xPARAx399x');
+    expect(result.text).toContain('xPARAx');
+    expect(getEnrichment(ctx).notice).toBeUndefined();
+  });
+
+  // The property the whole roster rests on: what the outline advertises is what a re-call can
+  // retrieve. Every advertised name resolves on its own, and the windows account for the
+  // document byte for byte.
+  it.each([
+    ['a windowed roster', () => headingFreeDecisionHtml(400)],
+    ['a section roster', midSizedArticlesHtml],
+  ])('resolves every entry %s advertises', async (_label, buildHtml) => {
+    const html = buildHtml();
+    const { result: outline } = await callTool(html, {});
+    const entries = outline.sections ?? [];
+    expect(entries.length).toBeGreaterThanOrEqual(2);
+
+    let retrieved = 0;
+    for (const entry of entries) {
+      const { result } = await callTool(html, { sections: [entry.name] });
+      expect(result.kind).toBe('full');
+      expect(result.text).toBeDefined();
+      expect(result.byte_size).toBe(entry.bytes);
+      retrieved += result.byte_size ?? 0;
+    }
+    expect(retrieved).toBe(entries.reduce((sum, entry) => sum + entry.bytes, 0));
+  });
+
+  // The roster exists so a caller can retrieve the document in pieces, which only holds if
+  // the pieces go back together. Naming every window in one call has to return the document
+  // and nothing else — a separator between entries would put bytes on the wire that are not
+  // in the document, and in a table-heavy body would split a table at the seam.
+  it.each([
+    ['every window', () => headingFreeDecisionHtml(400)],
+    ['every section', midSizedArticlesHtml],
+  ])('reassembles the document byte for byte when %s is named at once', async (_l, buildHtml) => {
+    const html = buildHtml();
+    const { result: outline } = await callTool(html, {});
+    const entries = outline.sections ?? [];
+    expect(entries.length).toBeGreaterThanOrEqual(2);
+
+    const { result } = await callTool(html, { sections: entries.map((entry) => entry.name) });
+    expect(result.kind).toBe('full');
+    expect(result.byte_size).toBe(entries.reduce((sum, entry) => sum + entry.bytes, 0));
+    expect(result.byte_size).toBe(outline.byte_size);
+  });
+
+  it('discloses a windowed roster as an overflow, not a selector mismatch', async () => {
+    const { ctx, result } = await callTool(headingFreeDecisionHtml(400), {
+      document_number: 'JJT_20260101_BVWG_001',
+      application: 'Bvwg',
+      sections: ['Artikel 2'],
+    });
+
+    expect(result.kind).toBe('outline');
+    expect(result.truncated).toBe(true);
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('"Artikel 2"');
+    expect(notice).toContain('contiguous byte windows');
+    // The under-budget wording would be false here — this roster exists because of the budget.
+    expect(notice).not.toContain('not a size overflow');
   });
 
   it('returns full text unchanged for a document under the budget', async () => {
@@ -833,29 +960,36 @@ describe('risGetDocument — overflow (outline + selective retrieval)', () => {
     expect(result.byte_size).toBeLessThan(1000);
   });
 
-  it('returns oversized raw html in full — no structural headings to outline', async () => {
-    const bigText = 'A'.repeat(500_050);
-    fetchDocumentContent.mockResolvedValue({
-      text: bigText,
-      byteSize: bigText.length,
-      url: 'https://x',
-    });
-    const ctx = createMockContext();
-    const input = risGetDocument.input.parse({
-      document_number: 'NOR40262691',
-      application: 'BrKons',
-      format: 'html',
-    });
-    const result = await risGetDocument.handler(input, ctx);
+  // Windowing is markdown-only. A raw rendition is the published artifact byte for byte and a
+  // mid-document slice of either is not well-formed, so both stay whole however large — the
+  // caller who asked for one has content_urls.
+  it.each(['html', 'xml'] as const)(
+    'returns an oversized raw %s rendition in full',
+    async (format) => {
+      const bigText =
+        format === 'html' ? 'A'.repeat(500_050) : `<Dokument>${'B'.repeat(500_050)}\n`.repeat(2);
+      fetchDocumentContent.mockResolvedValue({
+        text: bigText,
+        byteSize: bigText.length,
+        url: 'https://x',
+      });
+      const ctx = createMockContext();
+      const input = risGetDocument.input.parse({
+        document_number: 'NOR40262691',
+        application: 'BrKons',
+        format,
+      });
+      const result = await risGetDocument.handler(input, ctx);
 
-    expect(result.kind).toBe('full');
-    expect(result.text).toHaveLength(500_050);
-    expect(result.truncated).toBeUndefined();
-    expect(result.sections).toBeUndefined();
-    expect(result.content_urls.html).toBe(
-      'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
-    );
-  });
+      expect(result.kind).toBe('full');
+      expect(result.text).toBe(bigText);
+      expect(result.truncated).toBeUndefined();
+      expect(result.sections).toBeUndefined();
+      expect(result.content_urls.html).toBe(
+        'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
+      );
+    },
+  );
 });
 
 describe('risGetDocument — sections selector disclosure (under budget)', () => {
@@ -929,7 +1063,10 @@ describe('risGetDocument — sections selector disclosure (under budget)', () =>
     expect(reCall.sections).toBeUndefined();
   });
 
-  it('says the selector was ignored on a rendition with no addressable sections', async () => {
+  // Two paths reach an empty roster now, and the notice names both: a raw rendition, which is
+  // never sliced, and markdown that is under the budget and carries no headings. A caller told
+  // only about headings would retry the same selector on a larger document of the same shape.
+  it('says the selector was ignored on a raw rendition, naming both causes', async () => {
     const { ctx, result } = await callTool(SR_ONLY_HTML, {
       format: 'html',
       sections: ['Artikel 2'],
@@ -938,8 +1075,24 @@ describe('risGetDocument — sections selector disclosure (under budget)', () =>
     expect(result.kind).toBe('full');
     expect(result.text).toBe(SR_ONLY_HTML);
     const notice = getEnrichment(ctx).notice as string;
-    expect(notice).toContain('no §/Artikel/Anlage headings');
+    expect(notice).toContain('no addressable entries');
+    expect(notice).toContain('Raw html and xml are never sliced');
+    expect(notice).toContain('§/Artikel/Anlage headings');
+    expect(notice).toContain(String(OUTLINE_BUDGET_BYTES));
     expect(notice).toContain('"Artikel 2"');
+  });
+
+  it('says the selector was ignored on under-budget heading-free markdown', async () => {
+    const { ctx, result } = await callTool(headingFreeDecisionHtml(20), {
+      document_number: 'JJT_20260101_BVWG_003',
+      application: 'Bvwg',
+      sections: ['Artikel 2'],
+    });
+
+    expect(result.kind).toBe('full');
+    expect(result.byte_size).toBeLessThan(OUTLINE_BUDGET_BYTES);
+    expect(result.text).toContain('xPARAx0x');
+    expect(getEnrichment(ctx).notice).toContain('no addressable entries');
   });
 });
 
@@ -947,27 +1100,155 @@ describe('selectDocumentSections', () => {
   const markdown = ['## Artikel 1\n\nxONEx', `## Artikel 2\n\n${'xTWOx '.repeat(40)}`].join('\n\n');
 
   it('reports matched text, unmatched names, and the largest-first roster', () => {
-    const selection = selectDocumentSections(markdown, ['Artikel 2', 'Artikel 7']);
+    const selection = selectDocumentSections(markdown, ['Artikel 2', 'Artikel 7'], 'markdown');
     expect(selection.text).toContain('xTWOx');
     expect(selection.text).not.toContain('xONEx');
     expect(selection.unmatched).toEqual(['Artikel 7']);
+    expect(selection.windowed).toBe(false);
     // Largest first — Artikel 2 carries the bigger body.
     expect(selection.available.map((section) => section.name)).toEqual(['Artikel 2', 'Artikel 1']);
   });
 
   it('reports an empty text and every requested name when nothing matches', () => {
-    const selection = selectDocumentSections(markdown, ['Artikel 7', 'Artikel 7', 'Anlage 1']);
+    const selection = selectDocumentSections(
+      markdown,
+      ['Artikel 7', 'Artikel 7', 'Anlage 1'],
+      'markdown',
+    );
     expect(selection.text).toBe('');
     // Deduplicated, in the order requested.
     expect(selection.unmatched).toEqual(['Artikel 7', 'Anlage 1']);
     expect(selection.available).toHaveLength(2);
   });
 
-  it('reports an empty roster for text with no structural headings', () => {
-    const selection = selectDocumentSections('<p>kein Titel</p>', ['Artikel 1']);
+  it('reports an empty roster for under-budget text with no structural headings', () => {
+    const selection = selectDocumentSections('kein Titel', ['Artikel 1'], 'markdown');
     expect(selection.available).toEqual([]);
     expect(selection.text).toBe('');
     expect(selection.unmatched).toEqual(['Artikel 1']);
+    expect(selection.windowed).toBe(false);
+  });
+
+  // The over-budget counterpart of the case above: the same heading-free shape is addressable
+  // once it crosses the budget, and it resolves through the same roster the outline advertises.
+  it('reports a window roster for over-budget text with no structural headings', () => {
+    const text = `${'Der Beschwerdeführer brachte vor.\n'.repeat(2000)}`;
+    const selection = selectDocumentSections(text, ['Part 2 of 2'], 'markdown');
+
+    expect(selection.windowed).toBe(true);
+    expect(selection.available.map((entry) => entry.name).sort()).toEqual([
+      'Part 1 of 2',
+      'Part 2 of 2',
+    ]);
+    expect(selection.unmatched).toEqual([]);
+    expect(selection.text).not.toBe('');
+    expect(new TextEncoder().encode(selection.text).length).toBe(
+      selection.available.find((entry) => entry.name === 'Part 2 of 2')?.bytes,
+    );
+  });
+
+  it('never windows a raw rendition, however far over the budget', () => {
+    const text = `${'<p>Nutzdaten</p>\n'.repeat(4000)}`;
+    expect(new TextEncoder().encode(text).length).toBeGreaterThan(OUTLINE_BUDGET_BYTES);
+    for (const format of ['html', 'xml'] as const) {
+      expect(addressableSections(text, format)).toEqual([]);
+      expect(selectDocumentSections(text, ['Part 1 of 2'], format).available).toEqual([]);
+    }
+  });
+});
+
+describe('windowDocument', () => {
+  /** Heading-free prose of roughly `bytes` UTF-8 bytes, one sentence per line. */
+  function prose(bytes: number): string {
+    const line = 'Der Beschwerdeführer brachte vor, dass die Behörde geirrt habe.\n';
+    return line.repeat(Math.ceil(bytes / new TextEncoder().encode(line).length));
+  }
+
+  it('returns nothing under the budget', () => {
+    expect(windowDocument(prose(1_000), OUTLINE_BUDGET_BYTES)).toEqual([]);
+  });
+
+  it('returns nothing for text with no line break to cut on', () => {
+    expect(windowDocument('A'.repeat(100_000), OUTLINE_BUDGET_BYTES)).toEqual([]);
+  });
+
+  it.each([41_000, 90_000, 206_425, 594_555])(
+    'cuts %d bytes into even windows that all fit the budget',
+    (size) => {
+      const text = prose(size);
+      const total = new TextEncoder().encode(text).length;
+      const windows = windowDocument(text, OUTLINE_BUDGET_BYTES);
+
+      expect(windows.length).toBeGreaterThanOrEqual(Math.ceil(total / OUTLINE_BUDGET_BYTES));
+      // The property the budget exists for: no window is itself too large to return.
+      for (const window of windows) expect(window.bytes).toBeLessThanOrEqual(OUTLINE_BUDGET_BYTES);
+      // Nothing dropped, nothing double-counted — the windows are the document.
+      expect(windows.reduce((sum, window) => sum + window.bytes, 0)).toBe(total);
+      expect(windows.map((window) => window.text).join('')).toBe(text);
+      // Named in document order, so the outline's largest-first sort stays readable.
+      expect(windows.map((window) => window.name)).toEqual(
+        windows.map((_, i) => `Part ${i + 1} of ${windows.length}`),
+      );
+      // Even, not fill-then-runt: the smallest window is close to the largest.
+      const sizes = windows.map((window) => window.bytes);
+      expect(Math.min(...sizes)).toBeGreaterThan(Math.max(...sizes) * 0.8);
+    },
+  );
+
+  // Snapping to the next line break overshoots the even target by up to one line, so a
+  // document sitting just under `count × budget` and carrying long lines lands a window over
+  // it — measured live on a 594,555-byte Erv translation whose longest line is 3,427 bytes.
+  // The count rises until every window fits rather than shipping one over the budget.
+  it('adds a window rather than letting the even split overshoot the budget', () => {
+    // 166 × 3,606 B = 598,596 B — 15 even windows of 39,906 B, each of which snaps up to
+    // 43,272 B on the next line break. Sixteen windows of 37,412 B fit.
+    const line = `${'Der Beschwerdeführer brachte vor. '.repeat(103)}\n`;
+    const text = line.repeat(166);
+    const total = new TextEncoder().encode(text).length;
+    const windows = windowDocument(text, OUTLINE_BUDGET_BYTES);
+
+    expect(windows.length).toBeGreaterThan(Math.ceil(total / OUTLINE_BUDGET_BYTES));
+    expect(Math.max(...windows.map((window) => window.bytes))).toBeLessThanOrEqual(
+      OUTLINE_BUDGET_BYTES,
+    );
+    expect(windows.reduce((sum, window) => sum + window.bytes, 0)).toBe(total);
+  });
+
+  // A line longer than the budget cannot be split without cutting mid-line, which would put
+  // the boundary somewhere the caller cannot see. It sits alone in a window that goes over,
+  // and the count stops rising there — no count makes that line fit, so a retry that keeps
+  // going has no fixed point and shreds the rest of the document into one-line windows.
+  it.each([40_000, 50_000, 120_000])(
+    'isolates a %d-byte line in its own window and stops raising the count',
+    (lineSize) => {
+      const text = `${'x'.repeat(lineSize)}\n${prose(50_000)}`;
+      const total = new TextEncoder().encode(text).length;
+      const windows = windowDocument(text, OUTLINE_BUDGET_BYTES);
+
+      expect(windows).toHaveLength(Math.ceil(total / OUTLINE_BUDGET_BYTES));
+      expect(windows[0]?.text).toBe(`${'x'.repeat(lineSize)}\n`);
+      // Only the unsplittable line is over budget; every other window fits.
+      expect(windows.slice(1).every((w) => w.bytes <= OUTLINE_BUDGET_BYTES)).toBe(true);
+      expect(windows.map((window) => window.text).join('')).toBe(text);
+    },
+  );
+
+  // The shape that made the retry degenerate: many small lines behind one it cannot split.
+  it('does not shred a long document around a single over-budget line', () => {
+    const text = `${'x'.repeat(60_000)}\n${'kurze Zeile.\n'.repeat(50_000)}`;
+    const total = new TextEncoder().encode(text).length;
+    const windows = windowDocument(text, OUTLINE_BUDGET_BYTES);
+
+    expect(windows.length).toBeLessThan(2 * Math.ceil(total / OUTLINE_BUDGET_BYTES));
+    expect(windows.reduce((sum, window) => sum + window.bytes, 0)).toBe(total);
+    expect(windows.filter((window) => window.bytes > OUTLINE_BUDGET_BYTES)).toHaveLength(1);
+  });
+
+  it('prefers §/Artikel/Anlage sections over windows when the markdown has both', () => {
+    const text = ['## Artikel 1', prose(30_000), '## Artikel 2', prose(30_000)].join('\n');
+    const roster = addressableSections(text, 'markdown');
+    expect(roster.map((entry) => entry.kind)).toEqual(['section', 'section']);
+    expect(roster.map((entry) => entry.name)).toEqual(['Artikel 1', 'Artikel 2']);
   });
 });
 

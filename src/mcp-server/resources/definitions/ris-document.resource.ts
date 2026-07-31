@@ -3,9 +3,10 @@
  * of ris_get_document. Reads the same content path (HTML rendition converted to markdown) for
  * an (application, documentNumber) pair. Applications with no text rendition (authentic-PDF-only,
  * PDF-only, or metadata-only) return a short note pointing at the usable artifact instead of
- * text. Oversized text degrades to the same §/Artikel/Anlage section outline the tool emits,
- * plus a note pointing at ris_get_document (which carries the sections selector this bare-string
- * resource cannot). Backed by the shared renderDocument helper from the tool definition.
+ * text. Oversized text degrades to the same outline the tool emits — §/Artikel/Anlage sections,
+ * or `Part n of N` byte windows where the rendition carries no such headings — plus a note
+ * pointing at ris_get_document (which carries the sections selector this bare-string resource
+ * cannot). Backed by the shared renderDocument helper from the tool definition.
  * @module mcp-server/resources/definitions/ris-document
  */
 
@@ -13,6 +14,7 @@ import { resource, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 
 import {
+  addressableSections,
   exampleSectionNames,
   outlineDocument,
   renderDocument,
@@ -102,12 +104,14 @@ export const risDocumentResource = resource('ris://document/{application}/{docum
     if (rendition.unavailableNotice !== undefined) return rendition.unavailableNotice;
     if (rendition.text === undefined) return '';
 
-    // Oversized markdown degrades to a section outline plus a notice pointing at the
+    // Oversized markdown degrades to an outline plus a notice pointing at the
     // ris_get_document tool — this bare-string surface carries no section selector.
-    const decision = outlineDocument(
-      rendition.text,
-      (sections) =>
-        `Document too large to inline${rendition.byteSize !== undefined ? ` (${rendition.byteSize} bytes)` : ''}. Use the ris_get_document tool with sections:[…] to retrieve specific sections — e.g. ${exampleSectionNames(sections)}. This resource carries no section selector.`,
+    const addressable = addressableSections(rendition.text, 'markdown');
+    const size = rendition.byteSize !== undefined ? ` (${rendition.byteSize} bytes)` : '';
+    const decision = outlineDocument(rendition.text, addressable, (sections) =>
+      addressable[0]?.kind === 'window'
+        ? `Document too large to inline${size}. It carries no §/Artikel/Anlage headings, so it is listed as ${sections.length} contiguous windows cut at line breaks — read them in the order they are named. Use the ris_get_document tool with sections:[…] to retrieve one — e.g. ${exampleSectionNames(addressable)}. This resource carries no selector.`
+        : `Document too large to inline${size}. Use the ris_get_document tool with sections:[…] to retrieve specific sections — e.g. ${exampleSectionNames(sections)}. This resource carries no section selector.`,
     );
     return decision.kind === 'full'
       ? decision.text
