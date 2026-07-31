@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.2.7-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/ris-austria-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/ris-austria-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/ris-austria-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.3.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/ris-austria-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/ris-austria-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/ris-austria-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -96,7 +96,8 @@ Search federal law before it is enacted.
 - `stage: review_drafts` covers ministerial drafts in public review (Begutachtungsentwürfe). `in_review_on` answers what is in review on a given date
 - `stage: government_bills` covers bills adopted by the council of ministers (Regierungsvorlagen, 2004+), filtered by adoption date
 - `ministry` accepts the abbreviation ("BMF") and the server expands it to RIS's exact designation
-- Output includes review deadlines and council adoption dates
+- Output includes review deadlines, council adoption dates, and the RIS web view
+- `materials` lists the companion documents filed with the draft — Erläuterungen (the drafting reasoning the bill text omits), Textgegenüberstellung, Vorblatt/WFA, covering letter, annexes. Their filenames are opaque and per-record, so passing a `materials[].urls` entry to `ris_get_document` is the only way to read one
 
 ---
 
@@ -107,6 +108,7 @@ Sectoral official gazettes and executive documents: seven collections, five of t
 - `collection`: `social_insurance` (Avsv), `veterinary` (Avn), `court_rules` (KmGer), `trade_exam_rules` (PruefGewO), `health_structure_plans` (Spg, ÖSG/RSG), `ministerial_decrees` (Erlässe), `council_minutes` (Ministerratsprotokolle)
 - Collection-aware filters: issue numbers, issuers (insurance carriers, ministries), cited norm ("decrees citing the DSG"), in-force date for the consolidated collections, plan type and state for health plans, session number and legislature for council minutes
 - Binding labels per collection: `authentic`, `administrative_directive` (decrees bind the administration, not citizens), or `preparatory` (council minutes)
+- Every record carries the RIS web view — the only browsable surface for the PDF-only council minutes and for ministerial decrees
 
 ---
 
@@ -126,11 +128,12 @@ Resolve a citation to its canonical document.
 
 Read and export a single document.
 
-- Addresses documents by `document_number` plus `application` (from any search or lookup result), or by a passed-through `ris.bka.gv.at` document URL (host and path allowlisted)
+- Addresses documents by `document_number` plus `application` (from any search or lookup result), or by a passed-through `ris.bka.gv.at` document URL (host and path allowlisted) — including a draft's companion documents from `ris_search_drafts`'s `materials`, which nothing else can reach
 - `format`: `markdown` (default, boilerplate stripped), raw `html`, RIS `xml`, or `urls_only`
 - Every response carries a binding status: `authentic` (with amtssigniert PDF URL), `consolidated_informational`, `historical_record`, `decision`, `preparatory`, `administrative_directive`, or `translation`
 - Applications that publish only the signed PDF (district and municipal promulgations, court rules) or only scans (1848–1940 gazettes, ÖNB-hosted) return a `format_unavailable` notice with the usable URLs instead of failing
-- Oversized markdown returns a §/Artikel/Anlage section outline (`kind: outline`) instead of truncating. Re-call with `sections:[…]` to pull the sections you need
+- Markdown over 40,000 bytes returns a §/Artikel/Anlage section outline (`kind: outline`) instead of truncating. Re-call with `sections:[…]` to pull the sections you need
+- Outlining needs those headings. A rendition without them — most court decisions, gazette and announcement bodies, every raw `html`/`xml` — has nothing to outline and returns whole at any size
 - Returns content, not fresh metadata. The upstream API has no document-by-number search, so document numbers come from a prior search or lookup result
 
 ---
