@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.4.0](changelog/0.4.x/0.4.0.md) — 2026-07-31 · ⚠️ Breaking
+
+ris_search_drafts materials collapses to one URL per companion; ris_get_document now accepts every companion filename shape RIS publishes, not only its newest one.
+
 ## [0.3.0](changelog/0.3.x/0.3.0.md) — 2026-07-31
 
 ris_search_drafts surfaces a draft's companion documents and both it and ris_search_announcements gain the RIS web view; ris_get_document fetches a companion by URL and its outline budget is re-derived to 40,000 bytes.

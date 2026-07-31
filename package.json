@@ -1,6 +1,6 @@
 {
   "name": "@cyanheads/ris-austria-mcp-server",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "mcpName": "io.github.cyanheads/ris-austria-mcp-server",
   "description": "Search Austrian consolidated federal & state law, court decisions, and the authentic Bundesgesetzblatt from the official RIS via MCP. Keyless. STDIO or Streamable HTTP.",
   "type": "module",
