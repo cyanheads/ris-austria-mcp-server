@@ -43,7 +43,7 @@ export const RIS_COURTS = [
     window: 'Decisions 1980 and later',
     successor: null,
     gzExample: 'G 287/2022',
-    note: 'Official collection numbers use the VfSlg form (e.g. "VfSlg 19.632/2012").',
+    note: 'Official collection numbers use the VfSlg form (e.g. "VfSlg 19.632/2012"); as a collection_number filter the bare number matches dotted or undotted.',
   },
   {
     code: 'vwgh',
@@ -54,7 +54,7 @@ export const RIS_COURTS = [
     window: 'Decisions 1990 and later; older decisions selected',
     successor: null,
     gzExample: 'Ro 2026/03/0016',
-    note: 'Official collection numbers use the VwSlg form (e.g. "VwSlg 18.000 A/2010").',
+    note: 'Official collection numbers use the VwSlg form (e.g. "VwSlg 18.000 A/2010"), where the part letter — A administrative, F finance — separates two series that reuse numbers. As a collection_number filter the whole labelled cite goes undotted: "VwSlg 18000 A/2010".',
   },
   {
     code: 'justiz',

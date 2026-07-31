@@ -1,0 +1,384 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "20",
+        "#text": "5"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JWR_2000150123_20050128X01",
+                "Applikation": "Vwgh",
+                "Organ": "Verwaltungsgerichtshof (VwGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2005-03-11",
+                "Geaendert": "2013-05-17",
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_2000150123_20050128X01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "2000/15/0123"
+                },
+                "Normen": {
+                  "item": [
+                    "AbgEO §53;",
+                    "EO §292 Abs2 idF 1991/628;"
+                  ]
+                },
+                "Entscheidungsdatum": "2005-01-28",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:2005:2000150123.X01",
+                "Vwgh": {
+                  "Rechtssatznummer": "1",
+                  "Entscheidungsart": "Erkenntnis",
+                  "DokumentnummerTyp": "X",
+                  "Stammrechtssatznummer": "JWR_2000150123_20050128X01",
+                  "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                  "Indizes": {
+                    "item": [
+                      "23/04 Exekutionsordnung",
+                      "32/01 Finanzverfahren allgemeines Abgabenrecht"
+                    ]
+                  },
+                  "Sammlungsnummer": "VwSlg 8000 F/2005",
+                  "RechtssatzketteUrl": "https://www.ris.bka.gv.at/VwghRechtssatzkette.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_2000150123_20050128X01"
+                },
+                "GesamteEntscheidungUrl": "https://www.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_2000150123_20050128X01",
+                "EntscheidungstextUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_2000150123_20050128X00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_2000150123_20050128X01/JWR_2000150123_20050128X01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_2000150123_20050128X01/JWR_2000150123_20050128X01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_2000150123_20050128X01/JWR_2000150123_20050128X01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_2000150123_20050128X01/JWR_2000150123_20050128X01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JWR_2000150123_20050128X02",
+                "Applikation": "Vwgh",
+                "Organ": "Verwaltungsgerichtshof (VwGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2005-03-11",
+                "Geaendert": "2013-05-17",
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_2000150123_20050128X02"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "2000/15/0123"
+                },
+                "Normen": {
+                  "item": [
+                    "AbgEO §53;",
+                    "EO §291 Abs1 Z2 idF 1991/628;",
+                    "EO §292 Abs2 idF 1991/628;",
+                    "VwRallg;"
+                  ]
+                },
+                "Entscheidungsdatum": "2005-01-28",
+                "Schlagworte": "Verwaltungsrecht Internationales Rechtsbeziehungen zum Ausland \r\nVwRallg12",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:2005:2000150123.X02",
+                "Vwgh": {
+                  "Rechtssatznummer": "2",
+                  "Entscheidungsart": "Erkenntnis",
+                  "DokumentnummerTyp": "X",
+                  "Stammrechtssatznummer": "JWR_2000150123_20050128X02",
+                  "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                  "Indizes": {
+                    "item": [
+                      "001  Verwaltungsrecht allgemein",
+                      "23/04 Exekutionsordnung",
+                      "32/01 Finanzverfahren allgemeines Abgabenrecht"
+                    ]
+                  },
+                  "Sammlungsnummer": "VwSlg 8000 F/2005",
+                  "RechtssatzketteUrl": "https://www.ris.bka.gv.at/VwghRechtssatzkette.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_2000150123_20050128X02"
+                },
+                "GesamteEntscheidungUrl": "https://www.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_2000150123_20050128X02",
+                "EntscheidungstextUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_2000150123_20050128X00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_2000150123_20050128X02/JWR_2000150123_20050128X02.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_2000150123_20050128X02/JWR_2000150123_20050128X02.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_2000150123_20050128X02/JWR_2000150123_20050128X02.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_2000150123_20050128X02/JWR_2000150123_20050128X02.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JWR_1970000289_19710326X01",
+                "Applikation": "Vwgh",
+                "Organ": "Verwaltungsgerichtshof (VwGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2002-07-08",
+                "Geaendert": "2011-08-30",
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1970000289_19710326X01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "0289/70"
+                },
+                "Normen": {
+                  "item": "HöfeG Tir §7 Abs1 idF 1970/035;"
+                },
+                "Entscheidungsdatum": "1971-03-26",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:1971:1970000289.X01",
+                "Vwgh": {
+                  "Rechtssatznummer": "1",
+                  "Entscheidungsart": "Erkenntnis",
+                  "DokumentnummerTyp": "X",
+                  "Stammrechtssatznummer": "JWR_1970000289_19710326X01",
+                  "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                  "Indizes": {
+                    "item": "20/04 Erbrecht einschließlich Anerbenrecht"
+                  },
+                  "Sammlungsnummer": "VwSlg 8000 A/1971",
+                  "RechtssatzketteUrl": "https://www.ris.bka.gv.at/VwghRechtssatzkette.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1970000289_19710326X01"
+                },
+                "GesamteEntscheidungUrl": "https://www.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1970000289_19710326X01",
+                "EntscheidungstextUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_1970000289_19710326X00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_1970000289_19710326X01/JWR_1970000289_19710326X01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_1970000289_19710326X01/JWR_1970000289_19710326X01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_1970000289_19710326X01/JWR_1970000289_19710326X01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_1970000289_19710326X01/JWR_1970000289_19710326X01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JWR_1970000289_19710326X02",
+                "Applikation": "Vwgh",
+                "Organ": "Verwaltungsgerichtshof (VwGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2002-07-08",
+                "Geaendert": "2011-08-30",
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1970000289_19710326X02"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "0289/70"
+                },
+                "Normen": {
+                  "item": "HöfeG Tir §7 Abs1 idF 1970/035;"
+                },
+                "Entscheidungsdatum": "1971-03-26",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:1971:1970000289.X02",
+                "Vwgh": {
+                  "Rechtssatznummer": "2",
+                  "Entscheidungsart": "Erkenntnis",
+                  "DokumentnummerTyp": "X",
+                  "Stammrechtssatznummer": "JWR_1970000289_19710326X02",
+                  "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                  "Indizes": {
+                    "item": "20/04 Erbrecht einschließlich Anerbenrecht"
+                  },
+                  "Sammlungsnummer": "VwSlg 8000 A/1971",
+                  "RechtssatzketteUrl": "https://www.ris.bka.gv.at/VwghRechtssatzkette.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1970000289_19710326X02"
+                },
+                "GesamteEntscheidungUrl": "https://www.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1970000289_19710326X02",
+                "EntscheidungstextUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_1970000289_19710326X00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_1970000289_19710326X02/JWR_1970000289_19710326X02.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_1970000289_19710326X02/JWR_1970000289_19710326X02.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_1970000289_19710326X02/JWR_1970000289_19710326X02.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_1970000289_19710326X02/JWR_1970000289_19710326X02.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JWR_1970000289_19710326X03",
+                "Applikation": "Vwgh",
+                "Organ": "Verwaltungsgerichtshof (VwGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2002-07-08",
+                "Geaendert": "2011-08-30",
+                "DokumentUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1970000289_19710326X03"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "0289/70"
+                },
+                "Normen": {
+                  "item": "HöfeG Tir §9 Abs3 idF 1970/035;"
+                },
+                "Entscheidungsdatum": "1971-03-26",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:1971:1970000289.X03",
+                "Vwgh": {
+                  "Rechtssatznummer": "3",
+                  "Entscheidungsart": "Erkenntnis",
+                  "DokumentnummerTyp": "X",
+                  "Stammrechtssatznummer": "JWR_1970000289_19710326X03",
+                  "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                  "Indizes": {
+                    "item": "20/04 Erbrecht einschließlich Anerbenrecht"
+                  },
+                  "Sammlungsnummer": "VwSlg 8000 A/1971",
+                  "RechtssatzketteUrl": "https://www.ris.bka.gv.at/VwghRechtssatzkette.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1970000289_19710326X03"
+                },
+                "GesamteEntscheidungUrl": "https://www.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1970000289_19710326X03",
+                "EntscheidungstextUrl": "https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_1970000289_19710326X00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_1970000289_19710326X03/JWR_1970000289_19710326X03.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_1970000289_19710326X03/JWR_1970000289_19710326X03.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_1970000289_19710326X03/JWR_1970000289_19710326X03.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Vwgh/JWR_1970000289_19710326X03/JWR_1970000289_19710326X03.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

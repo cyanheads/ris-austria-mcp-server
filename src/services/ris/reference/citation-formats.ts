@@ -38,7 +38,7 @@ export const RIS_CITATION_FORMATS = [
       'LGBl. Nr. 61/2026',
     ],
     resolvesVia:
-      'Year 2004+ → BgblAuth (Bgblnummer); 1945–2003 → BgblPdf (Bundesgesetzblatt); 1848–1940 and RGBl./StGBl./GBlÖ prefixes → BgblAlt (Gesetzblattnummer + Jahrgang); LGBl. + state hint → LgblAuth (Lgblnummer).',
+      'Year 2004+ → BgblAuth (Bgblnummer); 1945–2003 → BgblPdf (Bundesgesetzblatt); 1848–1940 and RGBl./StGBl./GBlÖ prefixes → BgblAlt (Gesetzblattnummer + Jahrgang); LGBl. + state hint → LgblAuth (Lgblnummer), falling back on zero hits to that Bundesland’s pre-e-Recht Lgbl series. Niederösterreich keys its legacy collection by Gliederungszahl and Wien has no legacy series, so neither is reachable by an LGBl. number before that state’s switch.',
   },
   {
     kind: 'case_number',
@@ -50,8 +50,10 @@ export const RIS_CITATION_FORMATS = [
   },
   {
     kind: 'collection_number',
-    description: 'An official collection citation of the VfGH or VwGH.',
-    examples: ['VfSlg 19.632/2012', 'VwSlg 18.000 A/2010'],
-    resolvesVia: 'Vfgh/Vwgh via the Sammlungsnummer filter.',
+    description:
+      'An official collection citation of the VfGH or VwGH. A VwSlg cite carries a part letter — A for the administrative series, F for the finance series — and the two reuse numbers, so a cite given without it names a decision in each.',
+    examples: ['VfSlg 19.632/2012', 'VwSlg 18.000 A/2010', 'VwSlg 8000 F/2005'],
+    resolvesVia:
+      'Vfgh/Vwgh via the Sammlungsnummer filter, whose accepted value differs by court: Vfgh (and Uvs) store the bare number and match it dotted or undotted, while Vwgh stores the full labelled undotted cite ("VwSlg 18000 A/2010") and matches nothing on a bare or dotted number.',
   },
 ] as const satisfies readonly CitationFormat[];

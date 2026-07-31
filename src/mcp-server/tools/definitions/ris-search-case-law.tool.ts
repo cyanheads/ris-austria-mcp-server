@@ -310,7 +310,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       .string()
       .optional()
       .describe(
-        'Official collection number (Sammlungsnummer) — VfSlg/VwSlg cites. vfgh, vwgh, and uvs only.',
+        'Official collection number (Sammlungsnummer). vfgh, vwgh, and uvs only, and the accepted form differs: vfgh and uvs store the bare number and match it dotted or undotted ("19632", "19.632"), while vwgh stores the full labelled undotted cite — pass "VwSlg 18000 A/2010", or the space-anchored prefix "VwSlg 18000 *" when the part letter or year is unknown. A bare or dotted number matches nothing under vwgh.',
       ),
     issuing_body: z
       .string()
