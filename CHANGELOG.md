@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.4.1](changelog/0.4.x/0.4.1.md) — 2026-07-31
+
+ris_get_document now outlines heading-free markdown that overflows the byte budget into retrievable byte windows, instead of returning it whole at any size; also fixes a join bug in multi-section retrieval.
+
 ## [0.4.0](changelog/0.4.x/0.4.0.md) — 2026-07-31 · ⚠️ Breaking
 
 ris_search_drafts materials collapses to one URL per companion; ris_get_document now accepts every companion filename shape RIS publishes, not only its newest one.
