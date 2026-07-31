@@ -31,22 +31,93 @@
               }
             },
             "Dokumentliste": {
-              "ContentReference": {
-                "ContentType": "MainDocument",
-                "Name": "Hauptdokument",
-                "Urls": {
-                  "ContentUrl": [
-                    {
-                      "DataType": "Html",
-                      "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/BEGUT_COO_2026_0001.html"
-                    },
-                    {
-                      "DataType": "Pdf",
-                      "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/BEGUT_COO_2026_0001.pdf"
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Html",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/BEGUT_COO_2026_0001.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/BEGUT_COO_2026_0001.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Erläuterungen",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/Materialien_0001_2716E555_EB43_4642_A87A_3CF88FFCDB08.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/Materialien_0001_2716E555_EB43_4642_A87A_3CF88FFCDB08.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/Materialien_0001_2716E555_EB43_4642_A87A_3CF88FFCDB08.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/Materialien_0001_2716E555_EB43_4642_A87A_3CF88FFCDB08.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Textgegenüberstellung",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/Materialien_0002_55843001_EEE2_4D11_AFF3_79A7A2A9D637.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/Materialien_0002_55843001_EEE2_4D11_AFF3_79A7A2A9D637.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/Materialien_0002_55843001_EEE2_4D11_AFF3_79A7A2A9D637.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Letter",
+                  "Name": "Begleitschreiben Begutachtungsentwurf",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Html",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/Schreiben_0002_C0BFE98B_E9CD_4ABB_A7C2_A339C59413FB.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/Schreiben_0002_C0BFE98B_E9CD_4ABB_A7C2_A339C59413FB.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Gif",
+                      "Url": "https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/Tempc4df2b61-a4a7-4a4e-9530-e0a3f4ec82e4.0001.gif"
                     }
-                  ]
+                  }
                 }
-              }
+              ]
             }
           }
         },

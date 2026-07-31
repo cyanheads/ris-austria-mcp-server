@@ -217,6 +217,9 @@ describe('risSearchDrafts — record mapping and format() parity', () => {
     expect(first.review_deadline).toBe('2026-07-15');
     expect(first.content_urls.html).toContain('BEGUT_COO_2026_0001.html');
     expect(first.content_urls.pdf).toContain('BEGUT_COO_2026_0001.pdf');
+    expect(first.document_url).toBe(
+      'https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Begut&Dokumentnummer=BEGUT_COO_2026_0001',
+    );
 
     // Second hit has no Begut.EinbringendeStelle — ministry falls back to the technical
     // submitter (Technisch.Einbringer), and it has no Kurztitel or Dokumentliste at all.
@@ -224,6 +227,7 @@ describe('risSearchDrafts — record mapping and format() parity', () => {
     expect(second.ministry).toBe('BMJ');
     expect(second.review_deadline).toBe('2026-07-22');
     expect(second.content_urls).toEqual({});
+    expect(second.materials).toEqual([]);
 
     const text = (risSearchDrafts.format!(result)[0] as { type: 'text'; text: string }).text;
     for (const record of result.results) {
@@ -231,6 +235,47 @@ describe('risSearchDrafts — record mapping and format() parity', () => {
       expect(text).toContain(`(${record.stage})`);
       if (record.ministry !== undefined) expect(text).toContain(record.ministry);
       if (record.review_deadline !== undefined) expect(text).toContain(record.review_deadline);
+      if (record.document_url !== undefined) {
+        expect(text).toContain(`**RIS view:** ${record.document_url}`);
+      }
+    }
+  });
+
+  // normalizeHit has always parsed these; every record mapper dropped them, and
+  // ris_get_document rejected their URLs — so a draft's Erläuterungen had no route at all.
+  it('surfaces the companion documents and drops the main document and inline images', async () => {
+    searchDrafts.mockResolvedValue(parseSearchResponse(fixture('search-begut.json')));
+    const ctx = createMockContext();
+    const input = risSearchDrafts.input.parse({ stage: 'review_drafts' });
+    const result = await risSearchDrafts.handler(input, ctx);
+    const { materials } = result.results[0]!;
+
+    expect(materials.map((material) => [material.type, material.name])).toEqual([
+      ['Material', 'Erläuterungen'],
+      ['Material', 'Textgegenüberstellung'],
+      ['Letter', 'Begleitschreiben Begutachtungsentwurf'],
+    ]);
+    // The bill's own renditions ride content_urls, and the per-record inline formula images
+    // (dozens per draft) carry nothing to read.
+    for (const material of materials) {
+      expect(Object.values(material.urls)).not.toContain(
+        'https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/BEGUT_COO_2026_0001.html',
+      );
+      expect(JSON.stringify(material.urls)).not.toContain('.gif');
+    }
+
+    const erlaeuterungen = materials[0]!;
+    expect(erlaeuterungen.urls.html).toBe(
+      'https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/Materialien_0001_2716E555_EB43_4642_A87A_3CF88FFCDB08.html',
+    );
+    expect(erlaeuterungen.urls.rtf).toContain('Materialien_0001_');
+    // RIS publishes RTF for well under half of them — absent, not fabricated.
+    expect(materials[1]!.urls.rtf).toBeUndefined();
+
+    const text = (risSearchDrafts.format!(result)[0] as { type: 'text'; text: string }).text;
+    for (const material of materials) {
+      expect(text).toContain(`${material.name} (${material.type})`);
+      for (const url of Object.values(material.urls)) expect(text).toContain(url);
     }
   });
 
@@ -245,9 +290,21 @@ describe('risSearchDrafts — record mapping and format() parity', () => {
     expect(record.ministry).toBe('BMF');
     expect(record.decided).toBe('2026-06-24');
     expect(record.review_deadline).toBeUndefined();
+    expect(record.document_url).toBe(
+      'https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=RegV&Dokumentnummer=REGV_COO_2026_0005',
+    );
+    // A bill files no covering letter and not always a Textgegenüberstellung; treaty
+    // ratifications add Attachment annexes, which the same field carries.
+    expect(record.materials.map((material) => material.type)).toEqual(['Material', 'Attachment']);
+    expect(record.materials[1]!.name).toBe('Übereinkommen in deutscher Sprache');
+    expect(record.materials[1]!.urls.pdf).toContain('Anlagen_0001_');
+
     const text = (risSearchDrafts.format!(result)[0] as { type: 'text'; text: string }).text;
     expect(text).toContain(record.document_number);
     expect(text).toContain('**Decided:** 2026-06-24');
     expect(text).not.toContain('**Review deadline:**');
+    expect(text).toContain(`**RIS view:** ${record.document_url}`);
+    expect(text).toContain('WFA (Material)');
+    expect(text).toContain('Übereinkommen in deutscher Sprache (Attachment)');
   });
 });

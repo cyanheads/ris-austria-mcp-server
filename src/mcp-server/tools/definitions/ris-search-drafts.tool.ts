@@ -4,6 +4,9 @@
  * (RegV, 2004+). `stage` routes to the owning application; the two stage-specific date filters
  * (in_review_on, decided_from/to) are guarded locally before any upstream call. Ministry inputs
  * accept an abbreviation ("BMF") — the service expands it to RIS's exact-match designation.
+ * Records carry the companion documents filed with the draft (`materials` — Erläuterungen,
+ * Textgegenüberstellung, WFA, covering letter, annexes), whose URLs are the only route to
+ * them: `ris_get_document` fetches one as `document_url`.
  * @module mcp-server/tools/definitions/ris-search-drafts
  */
 
@@ -17,7 +20,7 @@ import type {
   RisStageCode,
 } from '@/services/ris/request-builder.js';
 import { getRisService } from '@/services/ris/ris-service.js';
-import type { RisHit } from '@/services/ris/types.js';
+import type { RisHit, RisKeyedUrls } from '@/services/ris/types.js';
 
 import { failSearchError, isoDateString } from './_shared.js';
 
@@ -39,7 +42,40 @@ const ContentUrlsSchema = z
     pdf: z.string().optional().describe('PDF rendition URL.'),
     rtf: z.string().optional().describe('RTF rendition URL.'),
   })
-  .describe('Rendition URLs of the main document (attachments are excluded).');
+  .describe('Rendition URLs of the main document (companion documents ride in materials).');
+
+/**
+ * Content types of the companion documents a draft ships beside its bill text. Everything
+ * else RIS lists is either the bill itself (`MainDocument`) or one of the dozens of inline
+ * formula images per record (`EmbeddedAttachment`, ~55 per record — noise for a caller).
+ */
+const COMPANION_CONTENT_TYPES = new Set(['Material', 'Letter', 'Attachment']);
+
+const MaterialSchema = z
+  .object({
+    type: z
+      .string()
+      .describe(
+        'Content type — Material (Erläuterungen, Textgegenüberstellung, Vorblatt/WFA), Letter (the Begleitschreiben covering the review draft), or Attachment (annex texts, e.g. treaty translations). The reliable discriminator: name is free text and varies per record.',
+      ),
+    name: z
+      .string()
+      .optional()
+      .describe(
+        'RIS-supplied label, as filed. Unstable across records — the same content appears as "Vorblatt und WFA", "Vorblatt+WFA", or "WFA"; "Textgegenüberstellung" or "TGÜ". Read type, not this, to classify.',
+      ),
+    urls: z
+      .object({
+        xml: z.string().optional().describe('XML rendition URL (RIS Nutzdaten schema).'),
+        html: z.string().optional().describe('HTML rendition URL.'),
+        pdf: z.string().optional().describe('PDF rendition URL.'),
+        rtf: z.string().optional().describe('RTF rendition URL, where RIS publishes one.'),
+      })
+      .describe(
+        'Rendition URLs of this companion document. Pass one to ris_get_document as document_url — the filename is opaque and per-record, so this is the only handle to it.',
+      ),
+  })
+  .describe('One companion document filed alongside the draft.');
 
 const DraftRecordSchema = z
   .object({
@@ -69,15 +105,24 @@ const DraftRecordSchema = z
       .string()
       .optional()
       .describe('Council-of-ministers adoption date (Beschlussdatum) — government_bills only.'),
+    document_url: z
+      .string()
+      .optional()
+      .describe('RIS web view of the draft document (DokumentUrl) — for humans.'),
+    materials: z
+      .array(MaterialSchema)
+      .describe(
+        'Companion documents filed with the draft — the Erläuterungen (explanatory notes, carrying the reasoning the bill text omits), Textgegenüberstellung (redline against the current law), Vorblatt/WFA (impact assessment), the covering letter, and any annexes. Read one by passing a urls entry to ris_get_document as document_url. Empty when the ministry filed none; coverage is uneven by design.',
+      ),
     content_urls: ContentUrlsSchema,
   })
   .describe('One pipeline document — a review draft or a government bill.');
 
 type DraftRecord = z.infer<typeof DraftRecordSchema>;
 
-/** Pick the four core rendition URLs off a normalized hit. */
-function pickContentUrls(hit: RisHit): DraftRecord['content_urls'] {
-  const { html, pdf, rtf, xml } = hit.contentUrls;
+/** Pick the four core rendition URLs off a normalized URL set. */
+function pickContentUrls(urls: RisKeyedUrls): DraftRecord['content_urls'] {
+  const { html, pdf, rtf, xml } = urls;
   return {
     ...(xml !== undefined && { xml }),
     ...(html !== undefined && { html }),
@@ -86,12 +131,35 @@ function pickContentUrls(hit: RisHit): DraftRecord['content_urls'] {
   };
 }
 
+/**
+ * Pick the draft's companion documents off a normalized hit. `normalizeHit` parses every
+ * content reference; the main document's renditions are already served as `content_urls`,
+ * and the inline formula images are per-record temporary files with nothing to read.
+ */
+function pickMaterials(hit: RisHit): DraftRecord['materials'] {
+  return hit.contentReferences.flatMap((reference) => {
+    const { name, type } = reference;
+    if (type === undefined || !COMPANION_CONTENT_TYPES.has(type)) return [];
+    return [{ type, ...(name !== undefined && { name }), urls: pickContentUrls(reference.urls) }];
+  });
+}
+
+/** Render a rendition-URL set as markdown links; `''` when the set carries none. */
+function renditionLinks(urls: DraftRecord['content_urls']): string {
+  return (['html', 'pdf', 'rtf', 'xml'] as const)
+    .filter((key) => urls[key] !== undefined)
+    .map((key) => `[${key.toUpperCase()}](${urls[key]})`)
+    .join(' · ');
+}
+
 /** Map a normalized RIS hit (Begut/RegV ride the Bundesrecht controller) to the record shape. */
 function toRecord(hit: RisHit, stage: string): DraftRecord {
   const base: DraftRecord = {
-    content_urls: pickContentUrls(hit),
+    content_urls: pickContentUrls(hit.contentUrls),
     document_number: hit.documentNumber,
+    materials: pickMaterials(hit),
     stage,
+    ...(hit.documentUrl !== undefined && { document_url: hit.documentUrl }),
   };
   const md = hit.metadata;
   if (md.controller === 'Bundesrecht') {
@@ -111,7 +179,7 @@ function toRecord(hit: RisHit, stage: string): DraftRecord {
 export const risSearchDrafts = tool('ris_search_drafts', {
   title: 'Search Draft Legislation',
   description:
-    'Search Austria’s federal lawmaking pipeline BEFORE promulgation — the monitoring counterpart to ris_search_gazette (what will become law). stage selects the phase: review_drafts (Begutachtungsentwürfe — draft laws a ministry has put into public review, before any government bill exists) or government_bills (Regierungsvorlagen — bills the council of ministers adopted and submitted to parliament, 2004+). Filter by query (full text), title, ministry (accepts an abbreviation like "BMF" — expanded to RIS’s exact designation; the historical name at submission time counts), in_review_on (review_drafts only — drafts whose review window covers the date; today = "what is in Begutachtung right now"), or decided_from/to (government_bills only — council adoption date). changed_since gives coarse recency. Documents are preparatory, not binding law. Ministry codes: ris_list_reference topic ministries.',
+    'Search Austria’s federal lawmaking pipeline BEFORE promulgation — the monitoring counterpart to ris_search_gazette (what will become law). stage selects the phase: review_drafts (Begutachtungsentwürfe — draft laws a ministry has put into public review, before any government bill exists) or government_bills (Regierungsvorlagen — bills the council of ministers adopted and submitted to parliament, 2004+). Filter by query (full text), title, ministry (accepts an abbreviation like "BMF" — expanded to RIS’s exact designation; the historical name at submission time counts), in_review_on (review_drafts only — drafts whose review window covers the date; today = "what is in Begutachtung right now"), or decided_from/to (government_bills only — council adoption date). changed_since gives coarse recency. Each record carries materials — the companion documents filed with the draft (Erläuterungen, Textgegenüberstellung, Vorblatt/WFA, covering letter, annexes); the Erläuterungen carry the drafting reasoning the bill text omits, and passing a materials[].urls entry to ris_get_document as document_url is the only way to read one. Documents are preparatory, not binding law. Ministry codes: ris_list_reference topic ministries.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     stage: z
@@ -313,10 +381,18 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       if (r.review_deadline !== undefined) dates.push(`**Review deadline:** ${r.review_deadline}`);
       if (r.decided !== undefined) dates.push(`**Decided:** ${r.decided}`);
       if (dates.length > 0) lines.push(dates.join(' | '));
-      const urls = (['html', 'pdf', 'rtf', 'xml'] as const)
-        .filter((key) => r.content_urls[key] !== undefined)
-        .map((key) => `[${key.toUpperCase()}](${r.content_urls[key]})`);
-      if (urls.length > 0) lines.push(`**Text:** ${urls.join(' · ')}`);
+      if (r.document_url !== undefined) lines.push(`**RIS view:** ${r.document_url}`);
+      const urls = renditionLinks(r.content_urls);
+      if (urls !== '') lines.push(`**Text:** ${urls}`);
+      if (r.materials.length > 0) {
+        lines.push('**Materials:**');
+        for (const material of r.materials) {
+          const links = renditionLinks(material.urls);
+          lines.push(
+            `- ${material.name ?? material.type} (${material.type})${links === '' ? '' : ` — ${links}`}`,
+          );
+        }
+      }
       return lines.join('\n');
     });
     return [{ type: 'text', text: blocks.join('\n\n') }];

@@ -29,22 +29,60 @@
               }
             },
             "Dokumentliste": {
-              "ContentReference": {
-                "ContentType": "MainDocument",
-                "Name": "Hauptdokument",
-                "Urls": {
-                  "ContentUrl": [
-                    {
-                      "DataType": "Html",
-                      "Url": "https://www.ris.bka.gv.at/Dokumente/RegV/REGV_COO_2026_0005/REGV_COO_2026_0005.html"
-                    },
-                    {
-                      "DataType": "Pdf",
-                      "Url": "https://www.ris.bka.gv.at/Dokumente/RegV/REGV_COO_2026_0005/REGV_COO_2026_0005.pdf"
-                    }
-                  ]
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Html",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/RegV/REGV_COO_2026_0005/REGV_COO_2026_0005.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/RegV/REGV_COO_2026_0005/REGV_COO_2026_0005.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "WFA",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/RegV/REGV_COO_2026_0005/Materialien_0002_EDABECA3_E67E_42F5_94A5_312EDF3A0BE5.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/RegV/REGV_COO_2026_0005/Materialien_0002_EDABECA3_E67E_42F5_94A5_312EDF3A0BE5.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/RegV/REGV_COO_2026_0005/Materialien_0002_EDABECA3_E67E_42F5_94A5_312EDF3A0BE5.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "Übereinkommen in deutscher Sprache",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Html",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/RegV/REGV_COO_2026_0005/Anlagen_0001_3B3F31A7_CD7C_49D0_A5F6_D08C607C1620.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://www.ris.bka.gv.at/Dokumente/RegV/REGV_COO_2026_0005/Anlagen_0001_3B3F31A7_CD7C_49D0_A5F6_D08C607C1620.pdf"
+                      }
+                    ]
+                  }
                 }
-              }
+              ]
             }
           }
         }

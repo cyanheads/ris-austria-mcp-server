@@ -140,6 +140,12 @@ const AnnouncementRecordSchema = z
       .describe(
         'The amtssigniert authentic PDF (.pdfsig, Authentisch DataType) — the legally binding artifact — where the collection publishes one.',
       ),
+    document_url: z
+      .string()
+      .optional()
+      .describe(
+        'RIS web view of the document (DokumentUrl) — for humans. The only browsable surface for council minutes (PDF-only) and ministerial decrees.',
+      ),
     content_urls: ContentUrlsSchema,
   })
   .describe('One sectoral announcement or executive document.');
@@ -169,6 +175,7 @@ function toRecord(hit: RisHit, collection: RisCollectionCode): AnnouncementRecor
     ...(hit.contentUrls.authentic !== undefined && {
       authentic_pdf_url: hit.contentUrls.authentic,
     }),
+    ...(hit.documentUrl !== undefined && { document_url: hit.documentUrl }),
   };
   const md = hit.metadata;
   if (md.controller === 'Sonstige') {
@@ -189,7 +196,7 @@ function toRecord(hit: RisHit, collection: RisCollectionCode): AnnouncementRecor
 export const risSearchAnnouncements = tool('ris_search_announcements', {
   title: 'Search Official Announcements',
   description:
-    'Search Austria’s sectoral official gazettes and executive documents — seven collections behind one collection enum: social_insurance (Amtliche Verlautbarungen der Sozialversicherung, authentic), veterinary (Amtliche Veterinärnachrichten, authentic), court_rules (Kundmachungen der Gerichte — rules of procedure and case-allocation plans, authentic; currently LVwG Tirol and Vorarlberg only), trade_exam_rules (Prüfungsordnungen gemäß Gewerbeordnung, authentic), health_structure_plans (Strukturpläne Gesundheit — federal ÖSG and per-state RSG, authentic), ministerial_decrees (Erlässe der Bundesministerien — decrees interpreting law; bind the administration, not citizens), and council_minutes (Ministerratsprotokolle — council-of-ministers session records). Each collection accepts a different filter set: query and title are broadly available; number, published_from/to, in_force_as_of, issuer (ministry abbreviations expanded), norm ("decrees citing the DSG"), case_number, type, department, plan_type/plan_state (health plans), and session_number/legislature (council minutes) apply where the collection supports them — a filter outside its set is rejected locally. Every result carries a binding label and the authentic PDF where it exists. Per-collection parameter matrix and issuers: ris_list_reference topic collections or issuing_bodies.',
+    'Search Austria’s sectoral official gazettes and executive documents — seven collections behind one collection enum: social_insurance (Amtliche Verlautbarungen der Sozialversicherung, authentic), veterinary (Amtliche Veterinärnachrichten, authentic), court_rules (Kundmachungen der Gerichte — rules of procedure and case-allocation plans, authentic; currently LVwG Tirol and Vorarlberg only), trade_exam_rules (Prüfungsordnungen gemäß Gewerbeordnung, authentic), health_structure_plans (Strukturpläne Gesundheit — federal ÖSG and per-state RSG, authentic), ministerial_decrees (Erlässe der Bundesministerien — decrees interpreting law; bind the administration, not citizens), and council_minutes (Ministerratsprotokolle — council-of-ministers session records). Each collection accepts a different filter set: query and title are broadly available; number, published_from/to, in_force_as_of, issuer (ministry abbreviations expanded), norm ("decrees citing the DSG"), case_number, type, department, plan_type/plan_state (health plans), and session_number/legislature (council minutes) apply where the collection supports them — a filter outside its set is rejected locally. Every result carries a binding label, the authentic PDF where it exists, and the RIS web view (document_url) — the only browsable surface for the PDF-only council minutes and for ministerial decrees. Per-collection parameter matrix and issuers: ris_list_reference topic collections or issuing_bodies.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     collection: z
@@ -497,6 +504,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       if (r.norms_cited.length > 0) lines.push(`**Norms:** ${r.norms_cited.join('; ')}`);
       if (r.authentic_pdf_url !== undefined)
         lines.push(`**Authentic PDF:** ${r.authentic_pdf_url}`);
+      if (r.document_url !== undefined) lines.push(`**RIS view:** ${r.document_url}`);
       const urls = (['html', 'pdf', 'rtf', 'xml'] as const)
         .filter((key) => r.content_urls[key] !== undefined)
         .map((key) => `[${key.toUpperCase()}](${r.content_urls[key]})`);

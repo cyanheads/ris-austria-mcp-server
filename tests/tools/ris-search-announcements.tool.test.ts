@@ -343,6 +343,11 @@ describe('risSearchAnnouncements — record mapping and format() parity', () => 
     expect(second.issuers).toHaveLength(1);
     expect(first.session_date).toBe('2026-07-01');
     expect(first.authentic_pdf_url).toBeUndefined();
+    // Council minutes are PDF-only, so the RIS web view is the only surface a person can
+    // open — and it was the field this record dropped.
+    expect(first.document_url).toBe(
+      'https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Mrp&Dokumentnummer=MRP_20260701_59',
+    );
 
     const text = (risSearchAnnouncements.format!(result)[0] as { type: 'text'; text: string }).text;
     expect(text).toContain('## MRP_20260701_59');
@@ -352,6 +357,7 @@ describe('risSearchAnnouncements — record mapping and format() parity', () => 
       expect(text).toContain(record.collection);
       if (record.session_date !== undefined) expect(text).toContain(record.session_date);
       for (const issuer of record.issuers) expect(text).toContain(issuer);
+      expect(text).toContain(`**RIS view:** ${record.document_url}`);
     }
   });
 
@@ -372,6 +378,9 @@ describe('risSearchAnnouncements — record mapping and format() parity', () => 
     expect(record.content_urls.pdf).toBe(
       'https://www.ris.bka.gv.at/Dokumente/Avsv/AVSV_2026_0040/AVSV_2026_0040.pdf',
     );
+    expect(record.document_url).toBe(
+      'https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Avsv&Dokumentnummer=AVSV_2026_0040',
+    );
 
     const text = (risSearchAnnouncements.format!(result)[0] as { type: 'text'; text: string }).text;
     expect(text).toContain(record.document_number);
@@ -379,5 +388,6 @@ describe('risSearchAnnouncements — record mapping and format() parity', () => 
     expect(text).toContain(record.summary!);
     expect(text).toContain('ÖGK');
     expect(text).toContain(record.authentic_pdf_url!);
+    expect(text).toContain(`**RIS view:** ${record.document_url}`);
   });
 });
