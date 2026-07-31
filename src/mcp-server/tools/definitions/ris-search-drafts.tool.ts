@@ -5,8 +5,9 @@
  * (in_review_on, decided_from/to) are guarded locally before any upstream call. Ministry inputs
  * accept an abbreviation ("BMF") — the service expands it to RIS's exact-match designation.
  * Records carry the companion documents filed with the draft (`materials` — Erläuterungen,
- * Textgegenüberstellung, WFA, covering letter, annexes), whose URLs are the only route to
- * them: `ris_get_document` fetches one as `document_url`.
+ * Textgegenüberstellung, WFA, covering letter, annexes), each as one opaque, per-record URL —
+ * the only route to them: `ris_get_document` fetches it as `document_url`, its `format` input
+ * selecting the rendition.
  * @module mcp-server/tools/definitions/ris-search-drafts
  */
 
@@ -64,15 +65,10 @@ const MaterialSchema = z
       .describe(
         'RIS-supplied label, as filed. Unstable across records — the same content appears as "Vorblatt und WFA", "Vorblatt+WFA", or "WFA"; "Textgegenüberstellung" or "TGÜ". Read type, not this, to classify.',
       ),
-    urls: z
-      .object({
-        xml: z.string().optional().describe('XML rendition URL (RIS Nutzdaten schema).'),
-        html: z.string().optional().describe('HTML rendition URL.'),
-        pdf: z.string().optional().describe('PDF rendition URL.'),
-        rtf: z.string().optional().describe('RTF rendition URL, where RIS publishes one.'),
-      })
+    url: z
+      .string()
       .describe(
-        'Rendition URLs of this companion document. Pass one to ris_get_document as document_url — the filename is opaque and per-record, so this is the only handle to it.',
+        'One rendition URL for this companion — its HTML rendition, or its PDF where RIS files no HTML one (roughly one companion in eight, nearly all of them review-draft covering letters). Pass it to ris_get_document as document_url: the extension is discarded there and format selects what comes back (markdown, html, or the RIS Nutzdaten xml of this companion, plus the companion’s own rendition URLs under urls_only), so this one URL reaches every text rendition the companion has. A PDF-only companion has none, and the URL is a direct download. The filename is opaque and per-record, so no document number reaches it.',
       ),
   })
   .describe('One companion document filed alongside the draft.');
@@ -112,7 +108,7 @@ const DraftRecordSchema = z
     materials: z
       .array(MaterialSchema)
       .describe(
-        'Companion documents filed with the draft — the Erläuterungen (explanatory notes, carrying the reasoning the bill text omits), Textgegenüberstellung (redline against the current law), Vorblatt/WFA (impact assessment), the covering letter, and any annexes. Read one by passing a urls entry to ris_get_document as document_url. Empty when the ministry filed none; coverage is uneven by design.',
+        'Companion documents filed with the draft — the Erläuterungen (explanatory notes, carrying the reasoning the bill text omits), Textgegenüberstellung (redline against the current law), Vorblatt/WFA (impact assessment), the covering letter, and any annexes. Read one by passing its url to ris_get_document as document_url. Empty when the ministry filed none; coverage is uneven by design.',
       ),
     content_urls: ContentUrlsSchema,
   })
@@ -135,12 +131,24 @@ function pickContentUrls(urls: RisKeyedUrls): DraftRecord['content_urls'] {
  * Pick the draft's companion documents off a normalized hit. `normalizeHit` parses every
  * content reference; the main document's renditions are already served as `content_urls`,
  * and the inline formula images are per-record temporary files with nothing to read.
+ *
+ * One URL per companion, not the rendition set RIS lists: `ris_get_document` validates a
+ * companion URL's extension and then discards it, rebuilding the rendition from its own
+ * `format` input, so every spelling of the URL is the same handle. HTML is preferred — the
+ * rendition the default `markdown` format reads, and the one that opens in a browser.
+ *
+ * The fallback is not a guard against an impossible state. 2,829 of the 23,483 companions
+ * across the full live Begut + RegV corpus (12.0%) carry no HTML rendition — 2,820 Begut
+ * covering letters and 9 RegV treaty texts — and RIS 404s a rendition it does not list, so
+ * those are PDF downloads with no text rendition to render.
  */
 function pickMaterials(hit: RisHit): DraftRecord['materials'] {
   return hit.contentReferences.flatMap((reference) => {
-    const { name, type } = reference;
+    const { name, type, urls } = reference;
     if (type === undefined || !COMPANION_CONTENT_TYPES.has(type)) return [];
-    return [{ type, ...(name !== undefined && { name }), urls: pickContentUrls(reference.urls) }];
+    const url = urls.html ?? urls.pdf ?? urls.xml ?? urls.rtf;
+    if (url === undefined) return [];
+    return [{ type, ...(name !== undefined && { name }), url }];
   });
 }
 
@@ -179,7 +187,7 @@ function toRecord(hit: RisHit, stage: string): DraftRecord {
 export const risSearchDrafts = tool('ris_search_drafts', {
   title: 'Search Draft Legislation',
   description:
-    'Search Austria’s federal lawmaking pipeline BEFORE promulgation — the monitoring counterpart to ris_search_gazette (what will become law). stage selects the phase: review_drafts (Begutachtungsentwürfe — draft laws a ministry has put into public review, before any government bill exists) or government_bills (Regierungsvorlagen — bills the council of ministers adopted and submitted to parliament, 2004+). Filter by query (full text), title, ministry (accepts an abbreviation like "BMF" — expanded to RIS’s exact designation; the historical name at submission time counts), in_review_on (review_drafts only — drafts whose review window covers the date; today = "what is in Begutachtung right now"), or decided_from/to (government_bills only — council adoption date). changed_since gives coarse recency. Each record carries materials — the companion documents filed with the draft (Erläuterungen, Textgegenüberstellung, Vorblatt/WFA, covering letter, annexes); the Erläuterungen carry the drafting reasoning the bill text omits, and passing a materials[].urls entry to ris_get_document as document_url is the only way to read one. Documents are preparatory, not binding law. Ministry codes: ris_list_reference topic ministries.',
+    'Search Austria’s federal lawmaking pipeline BEFORE promulgation — the monitoring counterpart to ris_search_gazette (what will become law). stage selects the phase: review_drafts (Begutachtungsentwürfe — draft laws a ministry has put into public review, before any government bill exists) or government_bills (Regierungsvorlagen — bills the council of ministers adopted and submitted to parliament, 2004+). Filter by query (full text), title, ministry (accepts an abbreviation like "BMF" — expanded to RIS’s exact designation; the historical name at submission time counts), in_review_on (review_drafts only — drafts whose review window covers the date; today = "what is in Begutachtung right now"), or decided_from/to (government_bills only — council adoption date). changed_since gives coarse recency. Each record carries materials — the companion documents filed with the draft (Erläuterungen, Textgegenüberstellung, Vorblatt/WFA, covering letter, annexes); the Erläuterungen carry the drafting reasoning the bill text omits, and passing a materials[].url to ris_get_document as document_url is the only way to read one (format there picks the rendition returned). Documents are preparatory, not binding law. Ministry codes: ris_list_reference topic ministries.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     stage: z
@@ -387,10 +395,7 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       if (r.materials.length > 0) {
         lines.push('**Materials:**');
         for (const material of r.materials) {
-          const links = renditionLinks(material.urls);
-          lines.push(
-            `- ${material.name ?? material.type} (${material.type})${links === '' ? '' : ` — ${links}`}`,
-          );
+          lines.push(`- ${material.name ?? material.type} (${material.type}) — ${material.url}`);
         }
       }
       return lines.join('\n');

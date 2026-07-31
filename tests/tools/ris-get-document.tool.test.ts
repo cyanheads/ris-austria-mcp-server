@@ -189,12 +189,17 @@ describe('risGetDocument — addressing guards (no fetch)', () => {
     ['an unknown filename prefix', 'Beilagen_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.html'],
     ['a companion prefix with a non-UUID tail', 'Materialien_0001_not-a-uuid.html'],
     ['a companion prefix with no ordinal', 'Materialien_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.html'],
-    [
-      'a companion filename with an unrenderable extension',
-      'Materialien_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.exe',
-    ],
     ['a bare sibling filename', 'index.html'],
     ['a percent-encoded traversal out of the document folder', '..%2F..%2Fetc%2Fpasswd.html'],
+    ['a double-encoded traversal', '..%252F..%252Fetc%252Fpasswd.html'],
+    // The COO object address is accepted whole or not at all. A prefix or substring match
+    // would take every one of these — the first is the shape RIS gives the per-record inline
+    // formula images, ~55 per draft record, which must stay unaddressable.
+    ['a COO stem carrying an embedded-attachment suffix', 'Material-COO_2026_100_2_1739564.html'],
+    ['a COO stem with a trailing extra group', 'COO_2026_100_2_1739564_1739565.html'],
+    ['a COO stem with a leading extra group', 'X_COO_2026_100_2_1739564.html'],
+    ['a COO stem with a non-numeric group', 'COO_2026_100_2_17395a4.html'],
+    ['a COO stem missing a group', 'COO_2026_100_2.html'],
   ])('rejects %s as unsupported_url', async (_label, filename) => {
     const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
@@ -203,7 +208,29 @@ describe('risGetDocument — addressing guards (no fetch)', () => {
     const err = await captureError(risGetDocument.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'unsupported_url' });
-    expect(err.message).toContain('neither a main-document rendition');
+    expect(err.message).toContain('nor one of its companion documents');
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+
+  // The three refusal causes ask different things of the caller, so each names itself. The
+  // filename-shape message used to be the only one, and it told a caller holding a refused
+  // materials[].url to pass a URL exactly as a result returned it — which is what they did.
+  it.each([
+    [
+      'an unrenderable extension',
+      'Materialien_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.exe',
+      'does not end in a RIS rendition extension',
+    ],
+    ['the inline formula images', 'Temp32a40c13-0e52-4a37-929c-9a7ec2216f11.0001.gif', 'extension'],
+    ['a per-record inline image', 'ff25afc0-fb98-4fca-8fd6-af3cae338755.img1is.jpg', 'extension'],
+  ])('rejects %s naming the extension as the cause', async (_label, filename, expected) => {
+    const ctx = createMockContext({ errors: risGetDocument.errors });
+    const input = risGetDocument.input.parse({
+      document_url: `https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/${filename}`,
+    });
+    const err = await captureError(risGetDocument.handler(input, ctx));
+    expect(err.data).toMatchObject({ reason: 'unsupported_url' });
+    expect(err.message).toContain(expected);
     expect(fetchDocumentContent).not.toHaveBeenCalled();
   });
 
@@ -215,6 +242,70 @@ describe('risGetDocument — addressing guards (no fetch)', () => {
     });
     const err = await captureError(risGetDocument.handler(input, ctx));
     expect(err.data).toMatchObject({ reason: 'unsupported_url' });
+    expect(err.message).toContain('nests below the document folder');
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+
+  // Widening the filename set does not widen the host or path guard: a companion stem the
+  // tool now accepts is still only reachable on the one allowlisted origin, inside
+  // /Dokumente/. Every case here carries a filename the tool would fetch on the real host.
+  const COMPANION = 'COO_2026_100_2_1739564.html';
+  it.each([
+    ['a host suffix', `https://www.ris.bka.gv.at.evil.example/Dokumente/Begut/B/${COMPANION}`],
+    ['a host prefix', `https://evil-www.ris.bka.gv.at/Dokumente/Begut/B/${COMPANION}`],
+    [
+      'a userinfo-disguised host',
+      `https://www.ris.bka.gv.at@evil.example/Dokumente/Begut/B/${COMPANION}`,
+    ],
+    ['a non-default port', `https://www.ris.bka.gv.at:8443/Dokumente/Begut/B/${COMPANION}`],
+    ['an IDN homoglyph host', `https://www.ris.bka.gv.аt/Dokumente/Begut/B/${COMPANION}`],
+    ['plain http', `http://www.ris.bka.gv.at/Dokumente/Begut/B/${COMPANION}`],
+    ['a file: URL', `file:///Dokumente/Begut/B/${COMPANION}`],
+    ['an ftp: URL', `ftp://www.ris.bka.gv.at/Dokumente/Begut/B/${COMPANION}`],
+  ])('still rejects %s carrying an accepted companion filename', async (_label, documentUrl) => {
+    const ctx = createMockContext({ errors: risGetDocument.errors });
+    const input = risGetDocument.input.parse({ document_url: documentUrl });
+    const err = await captureError(risGetDocument.handler(input, ctx));
+    expect(err.data).toMatchObject({ reason: 'unsupported_url' });
+    expect(err.message).toContain('only https://www.ris.bka.gv.at URLs are fetchable');
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a raw traversal, normalized out of the tree by the URL parser', '../../../etc/passwd.html'],
+    ['a backslash traversal', '..\\..\\..\\etc\\passwd.html'],
+  ])('still rejects %s off the allowlisted host', async (_label, tail) => {
+    const ctx = createMockContext({ errors: risGetDocument.errors });
+    const input = risGetDocument.input.parse({
+      document_url: `https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_100_2_1907098/${tail}`,
+    });
+    const err = await captureError(risGetDocument.handler(input, ctx));
+    expect(err.data).toMatchObject({ reason: 'unsupported_url' });
+    expect(err.message).toContain('outside the /Dokumente/ tree');
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+
+  it('rejects an overlong-UTF-8 encoded separator as a malformed escape', async () => {
+    const ctx = createMockContext({ errors: risGetDocument.errors });
+    const input = risGetDocument.input.parse({
+      document_url:
+        'https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_100_2_1907098/..%c0%af..%c0%afetc%c0%afpasswd.html',
+    });
+    const err = await captureError(risGetDocument.handler(input, ctx));
+    expect(err.data).toMatchObject({ reason: 'unsupported_url' });
+    expect(err.message).toContain('malformed % escape');
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+
+  it('rejects a fullwidth-solidus traversal as a non-addressable filename', async () => {
+    const ctx = createMockContext({ errors: risGetDocument.errors });
+    const input = risGetDocument.input.parse({
+      document_url:
+        'https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_100_2_1907098/..／..／etc／passwd.html',
+    });
+    const err = await captureError(risGetDocument.handler(input, ctx));
+    expect(err.data).toMatchObject({ reason: 'unsupported_url' });
+    expect(err.message).toContain('nor one of its companion documents');
     expect(fetchDocumentContent).not.toHaveBeenCalled();
   });
 
@@ -402,9 +493,101 @@ describe('risGetDocument — companion documents (materials)', () => {
     expect(fetchDocumentContent).toHaveBeenCalledWith(`${FOLDER}/${ERLAEUTERUNGEN}.xml`, ctx);
   });
 
-  // RIS 404s the renditions it does not list for a companion: RTF is published for well
-  // under half of them and the signed .pdfsig for none, so advertising either would hand
-  // the caller a dead URL.
+  // RIS names companions two ways and the ordinal+UUID shape belongs to its 2026 records
+  // only: across the full live Begut + RegV corpus (7,185 records, 23,483 companions, drafts
+  // from 2003 through 2026) every companion filed before 2026 carries the Fabasoft object
+  // address instead — 18,719 of them, four URLs in five that ris_search_drafts hands out.
+  const LEGACY_FOLDER = 'https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_100_2_1907098';
+  const LEGACY_COMPANION = 'COO_2026_100_2_1907114';
+
+  it.each([
+    ['the Fabasoft object address', LEGACY_FOLDER, LEGACY_COMPANION],
+    [
+      'an ordinal+UUID stem with no prefix',
+      'https://www.ris.bka.gv.at/Dokumente/RegV/REGV_E4CDB2DB_B883_4091_A779_6D901258C2BB',
+      '0001_F303A247_1202_45A5_8C35_1B19542E0A7E',
+    ],
+  ])('fetches a companion named with %s', async (_label, folder, stem) => {
+    const { ctx, result } = await callWithUrl(`${folder}/${stem}.html`);
+
+    expect(fetchDocumentContent).toHaveBeenCalledWith(`${folder}/${stem}.html`, ctx);
+    expect(result.text).toContain('Erläuterungen');
+    expect(result.document_number).toBe(folder.split('/').pop());
+  });
+
+  it.each(['markdown', 'html', 'xml'] as const)(
+    'serves format: %s from a Fabasoft-named companion URL',
+    async (format) => {
+      const { ctx, result } = await callWithUrl(`${LEGACY_FOLDER}/${LEGACY_COMPANION}.pdf`, format);
+      // The extension passed in is discarded — format picks the rendition, for a legacy-named
+      // companion exactly as for a 2026-named one.
+      expect(fetchDocumentContent).toHaveBeenCalledWith(
+        `${LEGACY_FOLDER}/${LEGACY_COMPANION}.${format === 'xml' ? 'xml' : 'html'}`,
+        ctx,
+      );
+      expect(result.format).toBe(format);
+      expect(result.text).toBeDefined();
+    },
+  );
+
+  it('carries a Fabasoft-named companion’s own content_urls for urls_only', async () => {
+    const { result } = await callWithUrl(`${LEGACY_FOLDER}/${LEGACY_COMPANION}.html`, 'urls_only');
+
+    expect(result.content_urls).toEqual({
+      xml: `${LEGACY_FOLDER}/${LEGACY_COMPANION}.xml`,
+      html: `${LEGACY_FOLDER}/${LEGACY_COMPANION}.html`,
+      pdf: `${LEGACY_FOLDER}/${LEGACY_COMPANION}.pdf`,
+    });
+    expect(result.document_number).toBe('BEGUT_COO_2026_100_2_1907098');
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+
+  // 2,829 of the 23,483 live companions (12.0%) are filed as PDF, or PDF and RTF, with no
+  // html or xml twin — nearly all of them review-draft covering letters — and RIS answers 404
+  // for a rendition it does not list. The contract's own recovery is written for the
+  // document_number + application mode and would send this caller to re-copy an identifier
+  // they never passed.
+  it('recovers a companion 404 by naming the missing rendition, not the document number', async () => {
+    fetchDocumentContent.mockRejectedValue(
+      notFound('RIS content host returned 404.', { url: 'https://x' }),
+    );
+    const ctx = createMockContext({ errors: risGetDocument.errors });
+    const input = risGetDocument.input.parse({
+      document_url: `${LEGACY_FOLDER}/COO_2026_100_2_1907117.html`,
+    });
+    const err = await captureError(risGetDocument.handler(input, ctx));
+
+    expect(err.code).toBe(JsonRpcErrorCode.NotFound);
+    expect(err.data).toMatchObject({ reason: 'document_not_found' });
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('no markdown rendition'),
+    });
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('urls_only'),
+    });
+    expect(err.data?.recovery).not.toMatchObject({
+      hint: expect.stringContaining('document_number'),
+    });
+  });
+
+  it('keeps the document-number recovery for a main-document 404', async () => {
+    fetchDocumentContent.mockRejectedValue(
+      notFound('RIS content host returned 404.', { url: 'https://x' }),
+    );
+    const ctx = createMockContext({ errors: risGetDocument.errors });
+    const input = risGetDocument.input.parse({
+      document_number: 'NOR40262691',
+      application: 'BrKons',
+    });
+    const err = await captureError(risGetDocument.handler(input, ctx));
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('ris_lookup_citation'),
+    });
+  });
+
+  // RIS 404s the renditions it does not list for a companion: RTF is published for many but
+  // not all of them and the signed .pdfsig for none, so advertising either would hand the
+  // caller a dead URL.
   it('carries the companion’s own content_urls and no authentic PDF', async () => {
     const { result } = await callWithUrl(`${FOLDER}/${ERLAEUTERUNGEN}.html`, 'urls_only');
 
@@ -871,10 +1054,17 @@ describe('risGetDocument — format() parity', () => {
 describe('parseDocumentUrl (errors-as-values)', () => {
   const CONTENT_BASE = 'https://www.ris.bka.gv.at';
 
+  // Every filename shape the live corpus files a companion under. The prefixed ordinal+UUID
+  // is the 2026 shape (4,763 of 23,483 companions); the Fabasoft object address is what
+  // every record before 2026 carries (18,719); the prefix-less ordinal+UUID appears once.
   it.each([
     ['Materialien_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.html'],
     ['Anlagen_0002_1A2B3C4D_5E6F_7081_9A0B_C1D2E3F40506.pdf'],
     ['Schreiben_0002_C0BFE98B_E9CD_4ABB_A7C2_A339C59413FB.rtf'],
+    ['COO_2026_100_2_1739564.html'],
+    ['COO_2026_100_2_17395.xml'],
+    ['COO_2026_100_2_1739564.pdf'],
+    ['0001_F303A247_1202_45A5_8C35_1B19542E0A7E.html'],
   ])('parses the companion URL %s to its filename stem', (filename) => {
     const parsed = parseDocumentUrl(
       `https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/${filename}`,
@@ -887,21 +1077,58 @@ describe('parseDocumentUrl (errors-as-values)', () => {
     });
   });
 
-  // The accepted set widened by exactly three filename shapes; everything else in the
-  // folder stays unaddressable, so a caller cannot steer the fetch at an arbitrary file.
+  // Every accepted stem stays free of the characters that would let it address something
+  // other than one file inside the already-validated document folder — the second guard in
+  // `buildDocumentContentUrl` rejects them again, but nothing reaches it.
+  it('accepts no stem carrying a path, encoding, or escape character', () => {
+    for (const filename of [
+      'Materialien_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.html',
+      'COO_2026_100_2_1739564.html',
+      '0001_F303A247_1202_45A5_8C35_1B19542E0A7E.html',
+    ]) {
+      const parsed = parseDocumentUrl(
+        `https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/${filename}`,
+        CONTENT_BASE,
+      );
+      const stem = 'contentName' in parsed ? (parsed.contentName as string) : '';
+      expect(stem).not.toBe('');
+      expect(stem).toMatch(/^[0-9A-Za-z_]+$/u);
+    }
+  });
+
+  // The accepted set widens by adding whole anchored shapes, never by matching a prefix or a
+  // substring: a filename that merely contains one is still unaddressable, so a caller cannot
+  // steer the fetch at an arbitrary file in the folder. `Material-COO_…` is not hypothetical —
+  // it is what RIS names the per-record inline formula images, ~55 on every draft record.
   it.each([
     ['Beilagen_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.html'],
     ['Materialien_0001_9D11747B.html'],
-    ['Materialien_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.exe'],
     ['MaterialienX_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.html'],
     ['..%2F..%2FDokumente%2Fother.html'],
+    ['Material-COO_2026_100_2_1739564.html'],
+    ['Anlage-COO_2026_100_2_1739564.html'],
+    ['COO_2026_100_2_1739564_Temp32a40c13.html'],
+    ['COO_2026_100_2.html'],
+    ['COO_2026_100_2_1739564_9.html'],
+    ['COO_2026_100_2_173956z.html'],
+    ['COO.2026.100.2.1739564.html'],
+    ['0001_F303A247_1202_45A5_8C35.html'],
   ])('rejects the non-addressable filename %s', (filename) => {
     const parsed = parseDocumentUrl(
       `https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/${filename}`,
       CONTENT_BASE,
     );
     expect(parsed).toHaveProperty('error');
-    if ('error' in parsed) expect(parsed.error).toContain('neither a main-document rendition');
+    if ('error' in parsed) expect(parsed.error).toContain('nor one of its companion documents');
+  });
+
+  it('rejects a companion stem carrying an extension RIS does not render', () => {
+    const parsed = parseDocumentUrl(
+      'https://www.ris.bka.gv.at/Dokumente/RegV/REGV_0D93A1E0_FE0C_4A35_AC66_1A875F7B9E39/Materialien_0001_9D11747B_A91B_4FCA_BFD4_3F08E37B1D15.exe',
+      CONTENT_BASE,
+    );
+    expect(parsed).toHaveProperty('error');
+    if ('error' in parsed) expect(parsed.error).toContain('RIS rendition extension');
   });
 
   it('rejects a companion filename with a path segment below it', () => {

@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.3.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/ris-austria-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/ris-austria-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/ris-austria-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.4.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/ris-austria-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/ris-austria-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/ris-austria-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -97,7 +97,7 @@ Search federal law before it is enacted.
 - `stage: government_bills` covers bills adopted by the council of ministers (Regierungsvorlagen, 2004+), filtered by adoption date
 - `ministry` accepts the abbreviation ("BMF") and the server expands it to RIS's exact designation
 - Output includes review deadlines, council adoption dates, and the RIS web view
-- `materials` lists the companion documents filed with the draft — Erläuterungen (the drafting reasoning the bill text omits), Textgegenüberstellung, Vorblatt/WFA, covering letter, annexes. Their filenames are opaque and per-record, so passing a `materials[].urls` entry to `ris_get_document` is the only way to read one
+- `materials` lists the companion documents filed with the draft — Erläuterungen (the drafting reasoning the bill text omits), Textgegenüberstellung, Vorblatt/WFA, covering letter, annexes. Their filenames are opaque and per-record, so passing a `materials[].url` to `ris_get_document` is the only way to read one; `format` there picks the rendition, so the one URL reaches every text rendition the companion has. Where RIS files no HTML rendition — about one companion in eight, nearly all covering letters — the URL is the PDF, which is a download rather than a text rendition
 
 ---
 
@@ -128,7 +128,7 @@ Resolve a citation to its canonical document.
 
 Read and export a single document.
 
-- Addresses documents by `document_number` plus `application` (from any search or lookup result), or by a passed-through `ris.bka.gv.at` document URL (host and path allowlisted) — including a draft's companion documents from `ris_search_drafts`'s `materials`, which nothing else can reach
+- Addresses documents by `document_number` plus `application` (from any search or lookup result), or by a passed-through `ris.bka.gv.at` document URL (host and path allowlisted) — including a draft's companion documents from a `ris_search_drafts` record's `materials[].url`, which nothing else can reach. `format` selects the rendition for a companion exactly as for a main document
 - `format`: `markdown` (default, boilerplate stripped), raw `html`, RIS `xml`, or `urls_only`
 - Every response carries a binding status: `authentic` (with amtssigniert PDF URL), `consolidated_informational`, `historical_record`, `decision`, `preparatory`, `administrative_directive`, or `translation`
 - Applications that publish only the signed PDF (district and municipal promulgations, court rules) or only scans (1848–1940 gazettes, ÖNB-hosted) return a `format_unavailable` notice with the usable URLs instead of failing

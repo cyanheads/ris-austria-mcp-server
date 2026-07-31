@@ -252,9 +252,10 @@ export class RisService {
    * map (`/Dokumente/{segment}/{DOKNR}/{DOKNR}.{format}`), harvested live 2026-07-05.
    *
    * `contentName` names a file inside the document's folder other than the main rendition —
-   * the `Materialien_`/`Schreiben_`/`Anlagen_` companion documents a draft ships alongside
-   * its bill text (`/Dokumente/{segment}/{DOKNR}/{contentName}.{format}`). It is held to the
-   * same safe-character pattern as the document number, so nothing outside the folder is
+   * one of the companion documents a draft ships alongside its bill text
+   * (`/Dokumente/{segment}/{DOKNR}/{contentName}.{format}`). RIS names those opaquely and in
+   * several shapes, so the caller's URL is the only source for one. It is held to the same
+   * safe-character pattern as the document number, so nothing outside the folder is
    * constructible.
    */
   buildDocumentContentUrl(

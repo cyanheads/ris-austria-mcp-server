@@ -258,25 +258,74 @@ describe('risSearchDrafts — record mapping and format() parity', () => {
     // The bill's own renditions ride content_urls, and the per-record inline formula images
     // (dozens per draft) carry nothing to read.
     for (const material of materials) {
-      expect(Object.values(material.urls)).not.toContain(
+      expect(material.url).not.toBe(
         'https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/BEGUT_COO_2026_0001.html',
       );
-      expect(JSON.stringify(material.urls)).not.toContain('.gif');
+      expect(material.url).not.toContain('.gif');
     }
 
-    const erlaeuterungen = materials[0]!;
-    expect(erlaeuterungen.urls.html).toBe(
+    expect(materials[0]!.url).toBe(
       'https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/Materialien_0001_2716E555_EB43_4642_A87A_3CF88FFCDB08.html',
     );
-    expect(erlaeuterungen.urls.rtf).toContain('Materialien_0001_');
-    // RIS publishes RTF for well under half of them — absent, not fabricated.
-    expect(materials[1]!.urls.rtf).toBeUndefined();
 
     const text = (risSearchDrafts.format!(result)[0] as { type: 'text'; text: string }).text;
     for (const material of materials) {
-      expect(text).toContain(`${material.name} (${material.type})`);
-      for (const url of Object.values(material.urls)) expect(text).toContain(url);
+      expect(text).toContain(`${material.name} (${material.type}) — ${material.url}`);
     }
+  });
+
+  // ris_get_document validates a companion URL's extension and then discards it, rebuilding
+  // the rendition from its own format input — so every spelling of the URL is one handle, and
+  // the record carries one of them. The four-URL set it used to carry was 50-60% of the
+  // response.
+  it('carries one HTML handle per companion when RIS lists an HTML rendition', async () => {
+    searchDrafts.mockResolvedValue(parseSearchResponse(fixture('search-begut.json')));
+    const ctx = createMockContext();
+    const input = risSearchDrafts.input.parse({ stage: 'review_drafts' });
+    const result = await risSearchDrafts.handler(input, ctx);
+    const { materials } = result.results[0]!;
+
+    // Upstream lists all four renditions for the Erläuterungen, three for the
+    // Textgegenüberstellung and two for the covering letter; the record shape doesn't move.
+    for (const material of materials) {
+      expect(Object.keys(material).toSorted()).toEqual(['name', 'type', 'url']);
+      expect(material.url.endsWith('.html')).toBe(true);
+    }
+  });
+
+  // Not a hypothetical: 2,829 of the 23,483 companions across the full live Begut + RegV
+  // corpus (12.0%) carry no HTML rendition, nearly all of them Begut covering letters filed
+  // as PDF or PDF/RTF. The record still has to carry a URL for them — RIS 404s a rendition it
+  // does not list, so the PDF is a download rather than a ris_get_document text handle, but
+  // dropping the companion would lose the only reference to it the caller ever gets.
+  it('falls back to the PDF when a companion carries no HTML URL', async () => {
+    const payload = structuredClone(fixture('search-begut.json')) as {
+      OgdSearchResult: {
+        OgdDocumentResults: {
+          OgdDocumentReference: {
+            Data: {
+              Dokumentliste?: {
+                ContentReference: { Urls: { ContentUrl: { DataType: string; Url: string }[] } }[];
+              };
+            };
+          }[];
+        };
+      };
+    };
+    const erlaeuterungen =
+      payload.OgdSearchResult.OgdDocumentResults.OgdDocumentReference[0]!.Data.Dokumentliste!
+        .ContentReference[1]!;
+    erlaeuterungen.Urls.ContentUrl = erlaeuterungen.Urls.ContentUrl.filter(
+      (entry) => entry.DataType !== 'Html',
+    );
+    searchDrafts.mockResolvedValue(parseSearchResponse(payload));
+
+    const ctx = createMockContext();
+    const input = risSearchDrafts.input.parse({ stage: 'review_drafts' });
+    const result = await risSearchDrafts.handler(input, ctx);
+    expect(result.results[0]!.materials[0]!.url).toBe(
+      'https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_0001/Materialien_0001_2716E555_EB43_4642_A87A_3CF88FFCDB08.pdf',
+    );
   });
 
   it('maps a RegV (government_bills) hit — decided date surfaced, not review_deadline', async () => {
@@ -297,7 +346,7 @@ describe('risSearchDrafts — record mapping and format() parity', () => {
     // ratifications add Attachment annexes, which the same field carries.
     expect(record.materials.map((material) => material.type)).toEqual(['Material', 'Attachment']);
     expect(record.materials[1]!.name).toBe('Übereinkommen in deutscher Sprache');
-    expect(record.materials[1]!.urls.pdf).toContain('Anlagen_0001_');
+    expect(record.materials[1]!.url).toContain('Anlagen_0001_');
 
     const text = (risSearchDrafts.format!(result)[0] as { type: 'text'; text: string }).text;
     expect(text).toContain(record.document_number);
