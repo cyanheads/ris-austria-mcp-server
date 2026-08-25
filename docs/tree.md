@@ -1,6 +1,6 @@
 # ris-austria-mcp-server - Directory Structure
 
-Generated on: 2026-07-31 11:33:54
+Generated on: 2026-08-25 02:15:33
 
 ```text
 ris-austria-mcp-server/
@@ -14,6 +14,8 @@ ris-austria-mcp-server/
 │   │   ├── bug_report.yml
 │   │   ├── config.yml
 │   │   └── feature_request.yml
+│   ├── CODE_OF_CONDUCT.md
+│   ├── CONTRIBUTING.md
 │   ├── FUNDING.yml
 │   └── SECURITY.md
 ├── .vscode/

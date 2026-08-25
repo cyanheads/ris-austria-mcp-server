@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.4.1-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/ris-austria-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/ris-austria-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/ris-austria-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.4.2-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/ris-austria-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.0.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/ris-austria-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/ris-austria-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.0-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -207,22 +207,56 @@ A public instance is available at `https://ris-austria.caseyjhand.com/mcp` — n
 - [Bun v1.3](https://bun.sh/) or higher, or Node.js v24+ (needed for `npx`/`bunx`)
 - No API key — the RIS OGD API is keyless
 
-### Install from npm (recommended)
+### Self-hosted / local
 
-Add the server to your MCP client configuration:
+Add the server to your MCP client configuration with Bun:
 
 ```json
 {
   "mcpServers": {
     "ris-austria-mcp-server": {
-      "command": "npx",
-      "args": ["-y", "@cyanheads/ris-austria-mcp-server"]
+      "type": "stdio",
+      "command": "bunx",
+      "args": ["@cyanheads/ris-austria-mcp-server@latest"]
     }
   }
 }
 ```
 
-`bunx @cyanheads/ris-austria-mcp-server` works the same way if you prefer Bun. Add any [configuration](#configuration) variables under an `"env"` key.
+Or with npx (no Bun required):
+
+```json
+{
+  "mcpServers": {
+    "ris-austria-mcp-server": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@cyanheads/ris-austria-mcp-server@latest"]
+    }
+  }
+}
+```
+
+Or with Docker:
+
+```json
+{
+  "mcpServers": {
+    "ris-austria-mcp-server": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "MCP_TRANSPORT_TYPE=stdio",
+        "ghcr.io/cyanheads/ris-austria-mcp-server:latest"
+      ]
+    }
+  }
+}
+```
+
+Add any [configuration](#configuration) variables under an `"env"` key for bunx/npx, or as
+additional `-e NAME=value` arguments for Docker.
 
 ### Install from source
 
@@ -281,6 +315,7 @@ MCP_TRANSPORT_TYPE=http MCP_HTTP_PORT=3010 bun run start:http
 | `RIS_CONTACT` | Contact string appended to the User-Agent (RIS netiquette asks integrators to be identifiable). | none |
 | `MCP_TRANSPORT_TYPE` | Transport: `stdio` or `http`. | `stdio` |
 | `MCP_HTTP_PORT` | HTTP server port. | `3010` |
+| `MCP_SESSION_MODE` | HTTP session handling: `stateful`, `stateless`, or `auto`. This server pins stateless serving explicitly. | `stateless` |
 | `MCP_AUTH_MODE` | Authentication: `none`, `jwt`, or `oauth`. | `none` |
 | `MCP_LOG_LEVEL` | Log level (`debug`, `info`, `warning`, `error`, …). | `info` |
 | `STORAGE_PROVIDER_TYPE` | Storage backend. | `in-memory` |
@@ -312,13 +347,26 @@ See [`.env.example`](./.env.example) for the full list of optional overrides.
   bun run lint:mcp   # Validate MCP definitions against spec
   ```
 
+### Docker
+
+```sh
+docker build -t ris-austria-mcp-server .
+docker run --rm -p 3010:3010 ris-austria-mcp-server
+```
+
+The Dockerfile defaults to HTTP transport, stateless session mode, and logs to
+`/var/log/ris-austria-mcp-server`. OpenTelemetry peer dependencies are installed by default;
+build with `--build-arg OTEL_ENABLED=false` to omit them.
+
 ## Project structure
 
 | Directory | Purpose |
 |:---|:---|
 | `src/index.ts` | `createApp()` entry point — registers tools and resources. |
+| `src/config` | Optional RIS endpoint and contact configuration, parsed with Zod. |
 | `src/mcp-server/tools` | Tool definitions (`*.tool.ts`). |
 | `src/mcp-server/resources` | Resource definitions (`*.resource.ts`). |
+| `src/services/ris` | RIS request building, HTTP access, normalization, and static reference data. |
 | `docs/design.md` | Settled v1 design — tool surface, service spec, live-confirmed RIS API reference. |
 | `tests/` | Unit and integration tests mirroring `src/`. |
 | `skills/` | Framework skills synced from `@cyanheads/mcp-ts-core`. |
