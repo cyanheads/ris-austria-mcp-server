@@ -10,11 +10,11 @@
 import { readFileSync } from 'node:fs';
 
 import {
-  invalidParams,
   JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
   timeout,
+  validationError,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -34,8 +34,8 @@ function fixture(name: string): unknown {
 }
 
 /** Await a handler call expected to reject, and narrow the rejection to an McpError. */
-async function captureError(promise: Promise<unknown>): Promise<McpError> {
-  const err = await promise.catch((e: unknown) => e);
+async function captureError(result: unknown | Promise<unknown>): Promise<McpError> {
+  const err = await Promise.resolve(result).catch((e: unknown) => e);
   if (!(err instanceof McpError)) throw new Error('unreachable — expected an McpError');
   return err;
 }
@@ -146,11 +146,11 @@ describe('risSearchCaseLaw — local guards (no service call)', () => {
 
 describe('risSearchCaseLaw — error mapping', () => {
   // The handler's `.catch()` re-maps in-band RIS errors surfaced by the service onto this
-  // tool's declared contract: a Client error (InvalidParams) becomes invalid_query
+  // tool's declared contract: a Client error (ValidationError) becomes invalid_query
   // (ValidationError) and a transport/Server error (ServiceUnavailable) becomes
   // upstream_error — each carrying the original RIS message plus reason + recovery on the wire.
-  it('maps a service InvalidParams rejection to the invalid_query contract error', async () => {
-    const upstreamError = invalidParams("The 'Entscheidungsart' element is invalid.", {
+  it('maps a service ValidationError rejection to the invalid_query contract error', async () => {
+    const upstreamError = validationError("The 'Entscheidungsart' element is invalid.", {
       risApplication: 'Vfgh',
     });
     searchCaseLaw.mockRejectedValue(upstreamError);
@@ -221,7 +221,7 @@ describe('risSearchCaseLaw — error mapping', () => {
     // "correct the parameter named in the message" resolves to nothing and the reference
     // topics are dead ends. The page has to come first in the hint.
     searchCaseLaw.mockRejectedValue(
-      invalidParams('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
+      validationError('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
     );
     const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     const input = risSearchCaseLaw.input.parse({ court: 'vfgh', query: 'Datenschutz', page: 9999 });
@@ -244,7 +244,7 @@ describe('risSearchCaseLaw — zero-hit notices', () => {
   });
 
   it('includes the per-court base fragment', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     const input = risSearchCaseLaw.input.parse({ court: 'vfgh' });
     await risSearchCaseLaw.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -252,7 +252,7 @@ describe('risSearchCaseLaw — zero-hit notices', () => {
   });
 
   it('includes the Geschäftszahl-format guidance when case_number is set', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     const input = risSearchCaseLaw.input.parse({ court: 'vfgh', case_number: 'G 287/2022' });
     await risSearchCaseLaw.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -260,7 +260,7 @@ describe('risSearchCaseLaw — zero-hit notices', () => {
   });
 
   it('includes the norm-format guidance when norm is set', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     const input = risSearchCaseLaw.input.parse({ court: 'vfgh', norm: 'DSG §1' });
     await risSearchCaseLaw.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -268,7 +268,7 @@ describe('risSearchCaseLaw — zero-hit notices', () => {
   });
 
   it('includes the coverage-start-year guidance when decided_to predates the court window', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     const input = risSearchCaseLaw.input.parse({ court: 'bvwg', decided_to: '2010-01-01' });
     await risSearchCaseLaw.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -276,7 +276,7 @@ describe('risSearchCaseLaw — zero-hit notices', () => {
   });
 
   it('includes the historical-court successor guidance', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     const input = risSearchCaseLaw.input.parse({ court: 'uvs' });
     await risSearchCaseLaw.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -285,7 +285,7 @@ describe('risSearchCaseLaw — zero-hit notices', () => {
   });
 
   it('flags the unpopulated Fachgebiet/decision_kind tags for justiz', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     const input = risSearchCaseLaw.input.parse({
       court: 'justiz',
       decision_kind: 'Ordentliche Erledigung (Sachentscheidung)',
@@ -305,7 +305,7 @@ describe('risSearchCaseLaw — enrichment: truncation disclosure', () => {
     // Mirrors issue #3's live case: page 1 of pageSize 10 with far more matches beyond it.
     const base = parseSearchResponse(fixture('search-vfgh.json'));
     searchCaseLaw.mockResolvedValue({ ...base, total: 625, page: 1, pageSize: 10 });
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     const input = risSearchCaseLaw.input.parse({
       court: 'vwgh',
       query: 'Datenschutz',
@@ -323,7 +323,7 @@ describe('risSearchCaseLaw — enrichment: truncation disclosure', () => {
     const base = parseSearchResponse(fixture('search-vfgh.json'));
     // total equals the hits on this single page → nothing exists beyond it.
     searchCaseLaw.mockResolvedValue({ ...base, total: base.hits.length, page: 1, pageSize: 10 });
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     const input = risSearchCaseLaw.input.parse({
       court: 'vwgh',
       query: 'Datenschutz',
@@ -339,7 +339,7 @@ describe('risSearchCaseLaw — enrichment: truncation disclosure', () => {
 describe('risSearchCaseLaw — record mapping and format() parity', () => {
   it('normalizes an array Geschäftszahl into multiple case_numbers, all rendered in format()', async () => {
     searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-gz-array.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     const input = risSearchCaseLaw.input.parse({ court: 'vfgh' });
     const result = await risSearchCaseLaw.handler(input, ctx);
     const record = result.results[0]!;
@@ -351,7 +351,7 @@ describe('risSearchCaseLaw — record mapping and format() parity', () => {
 
   it('renders every populated field for a multi-hit result', async () => {
     searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-vfgh.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     const input = risSearchCaseLaw.input.parse({ court: 'vfgh' });
     const result = await risSearchCaseLaw.handler(input, ctx);
     expect(result.results).toHaveLength(2);
@@ -375,7 +375,7 @@ describe('risSearchCaseLaw — record mapping and format() parity', () => {
     // returned bare NL… numbers with empty case_numbers and empty norms_cited — nothing that
     // says which law was matched without a ris_get_document call per hit.
     searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-normenliste-dsg.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     const input = risSearchCaseLaw.input.parse({
       court: 'normenliste',
       query: 'DSG',
@@ -408,7 +408,7 @@ describe('risSearchCaseLaw — record mapping and format() parity', () => {
     // Its presence is the marker separating a norm-index record from a decision — the
     // sixteen deciding courts must never carry it.
     searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-vfgh.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     const input = risSearchCaseLaw.input.parse({ court: 'vfgh' });
     const result = await risSearchCaseLaw.handler(input, ctx);
     for (const record of result.results) expect(record.norm_index).toBeUndefined();
@@ -416,7 +416,7 @@ describe('risSearchCaseLaw — record mapping and format() parity', () => {
 
   it('surfaces indexes and state on a state administrative court, on both surfaces (#22)', async () => {
     searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-lvwg-tirol.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     const input = risSearchCaseLaw.input.parse({ court: 'lvwg', state: 'tirol' });
     const result = await risSearchCaseLaw.handler(input, ctx);
     const text = (risSearchCaseLaw.format!(result)[0] as { type: 'text'; text: string }).text;
@@ -433,7 +433,7 @@ describe('risSearchCaseLaw — record mapping and format() parity', () => {
 
   it('surfaces the guiding principle (Leitsatz) from a VfGH Rechtssatz and renders it', async () => {
     searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-vfgh.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     const input = risSearchCaseLaw.input.parse({ court: 'vfgh' });
     const result = await risSearchCaseLaw.handler(input, ctx);
     const withPrinciple = result.results.find((r) => r.guiding_principle !== undefined);

@@ -6,7 +6,7 @@
  * Error classification (observed live 2026-07-05): the handbook documents an `@type`
  * attribute on `OgdSearchResult.Error`, but production responses omit it and prefix the
  * message with `soap:Client.` / `soap:Server.` instead — both signals are checked. Client
- * errors become `InvalidParams` with RIS's message passed through (it names the invalid
+ * errors become `ValidationError` with RIS's message passed through (it names the invalid
  * element); everything else is treated as a transient upstream failure, never a
  * `SerializationError`. RIS carries the same envelope on a 500 for rejected parameters, so
  * `errorFromResponseBody` classifies an error-response body through the same path. Some
@@ -17,9 +17,9 @@
 
 import {
   type ErrorFactoryOptions,
-  invalidParams,
   type McpError,
   serviceUnavailable,
+  validationError,
 } from '@cyanheads/mcp-ts-core/errors';
 
 import type {
@@ -188,7 +188,7 @@ function inBandError(error: RawRisError, options?: ErrorFactoryOptions): McpErro
   const message = fault.replace(SOAP_PREFIX, '').trim();
   const data = prune<{ risApplication?: string }>({ risApplication: rawText(error.Applikation) });
   return classifyError(error, fault) === 'Client'
-    ? invalidParams(message, data, options)
+    ? validationError(message, data, options)
     : serviceUnavailable(message, data, options);
 }
 

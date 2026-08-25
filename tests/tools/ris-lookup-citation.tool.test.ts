@@ -13,7 +13,6 @@
 import { readFileSync } from 'node:fs';
 
 import {
-  invalidParams,
   JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
@@ -63,8 +62,8 @@ function todayInAustria(): string {
 }
 
 /** Await a handler call expected to reject, and narrow the rejection to an McpError. */
-async function captureError(promise: Promise<unknown>): Promise<McpError> {
-  const err = await promise.catch((e: unknown) => e);
+async function captureError(result: unknown | Promise<unknown>): Promise<McpError> {
+  const err = await Promise.resolve(result).catch((e: unknown) => e);
   if (!(err instanceof McpError)) throw new Error('unreachable — expected an McpError');
   return err;
 }
@@ -97,7 +96,7 @@ beforeEach(() => {
 
 describe('risLookupCitation — unclassifiable citations', () => {
   it('returns found:false, kind:"unknown" with the verbatim guidance, and calls no service method', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: '42/2020' });
     const result = await risLookupCitation.handler(input, ctx);
 
@@ -116,7 +115,7 @@ describe('risLookupCitation — unclassifiable citations', () => {
 describe('risLookupCitation — norm route', () => {
   it('classifies "§ 6 DSG", routes to searchLegislation with the parsed section, and resolves (record + resolution_note + alternatives_count + format() parity)', async () => {
     searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: '§ 6 DSG' });
     const result = await risLookupCitation.handler(input, ctx);
     const today = todayInAustria();
@@ -151,7 +150,7 @@ describe('risLookupCitation — norm route', () => {
 
   it('classifies "Art 10 B-VG" as an Artikel citation and returns found:false with normGuidance on a zero-hit resolution (#17)', async () => {
     searchLegislation.mockResolvedValue(zeroHits());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: 'Art 10 B-VG' });
     const result = await risLookupCitation.handler(input, ctx);
     const today = todayInAustria();
@@ -176,7 +175,7 @@ describe('risLookupCitation — norm route', () => {
 
   it('carries the Artikel retry recipe back into ris_search_legislation verbatim — the recipe reproduces the filter the lookup used (#17)', async () => {
     searchLegislation.mockResolvedValue(zeroHits());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const result = await risLookupCitation.handler(
       risLookupCitation.input.parse({ citation: 'Art 10 B-VG', in_force_as_of: '1910-01-01' }),
       ctx,
@@ -212,7 +211,7 @@ describe('risLookupCitation — norm route', () => {
 
   it('classifies a bare abbreviation "ABGB" with no section — the zero-hit guidance omits the section clause', async () => {
     searchLegislation.mockResolvedValue(zeroHits());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: 'ABGB' });
     const result = await risLookupCitation.handler(input, ctx);
     const today = todayInAustria();
@@ -231,7 +230,7 @@ describe('risLookupCitation — norm route', () => {
 
   it('applies a state hint by switching the application to LrKons and passing state through', async () => {
     searchLegislation.mockResolvedValue(zeroHits());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: '§ 16 ABGB', state: 'wien' });
     await risLookupCitation.handler(input, ctx);
     const today = todayInAustria();
@@ -247,9 +246,11 @@ describe('risLookupCitation — norm route', () => {
     });
   });
 
-  it('resolves to found:false (never throws) when the routed search rejects with InvalidParams', async () => {
-    searchLegislation.mockRejectedValue(invalidParams("The 'FassungVom' element is invalid.", {}));
-    const ctx = createMockContext();
+  it('resolves to found:false (never throws) when the routed search rejects with ValidationError', async () => {
+    searchLegislation.mockRejectedValue(
+      validationError("The 'FassungVom' element is invalid.", {}),
+    );
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: '§ 6 DSG' });
     const result = await risLookupCitation.handler(input, ctx);
     const today = todayInAustria();
@@ -283,8 +284,11 @@ describe('risLookupCitation — norm route', () => {
   });
 
   it.each([
-    ['InvalidParams', invalidParams("The 'FassungVom' element is invalid.", {})],
-    ['ValidationError', validationError('sortBy has no confirmed RIS mapping.', {})],
+    ['RIS semantic error', validationError("The 'FassungVom' element is invalid.", {})],
+    [
+      'local request-builder validation',
+      validationError('sortBy has no confirmed RIS mapping.', {}),
+    ],
   ])(
     'treats a routed-search %s as a failed filter — found: false, not a throw',
     async (_label, rejection) => {
@@ -314,7 +318,7 @@ describe('risLookupCitation — in_force_as_of validation (#14)', () => {
 
   it('still resolves the same citation with a real date — the control the report compares against', async () => {
     searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({
       citation: '§ 1 DSG',
       in_force_as_of: '2026-07-26',
@@ -334,7 +338,7 @@ describe('risLookupCitation — in_force_as_of validation (#14)', () => {
 
   it('keeps found:false for a valid-but-unresolvable citation — the meaning the tool description promises', async () => {
     searchLegislation.mockResolvedValue(zeroHits());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({
       citation: '§ 9999 NichtExistierendesGesetz',
       in_force_as_of: '2026-07-26',
@@ -401,7 +405,7 @@ describe('risLookupCitation — abbreviation-first norm citations (#5)', () => {
     'parses "%s" to a norm and routes to searchLegislation with { title: "%s", section: "%s" }',
     async (citation, title, section, sectionType) => {
       searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));
-      const ctx = createMockContext();
+      const ctx = createMockContext({ errors: risLookupCitation.errors });
       const input = risLookupCitation.input.parse({ citation });
       const result = await risLookupCitation.handler(input, ctx);
       const today = todayInAustria();
@@ -422,7 +426,7 @@ describe('risLookupCitation — abbreviation-first norm citations (#5)', () => {
 
   it('resolves an abbreviation-first citation under an explicit kind: "norm" (the case the live review reported as found:false)', async () => {
     searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: 'DSG §1', kind: 'norm' });
     const result = await risLookupCitation.handler(input, ctx);
 
@@ -437,7 +441,7 @@ describe('risLookupCitation — abbreviation-first norm citations (#5)', () => {
 
   it('parses order-independently — "DSG §1" and "§ 1 DSG" yield identical searchLegislation params (section-first regression intact)', async () => {
     searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
 
     await risLookupCitation.handler(risLookupCitation.input.parse({ citation: 'DSG §1' }), ctx);
     await risLookupCitation.handler(risLookupCitation.input.parse({ citation: '§ 1 DSG' }), ctx);
@@ -462,7 +466,7 @@ describe('risLookupCitation — abbreviation-first norm citations (#5)', () => {
 describe('risLookupCitation — gazette route', () => {
   it('routes a current-era federal citation to BgblAuth with the Roman-numeral part, and returns gazetteGuidance on a zero-hit resolution', async () => {
     searchGazette.mockResolvedValue(zeroHits());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: 'BGBl. I Nr. 171/2026' });
     const result = await risLookupCitation.handler(input, ctx);
 
@@ -481,7 +485,7 @@ describe('risLookupCitation — gazette route', () => {
 
   it('routes a pre-2004 federal citation to BgblPdf', async () => {
     searchGazette.mockResolvedValue(zeroHits());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: 'BGBl. I Nr. 165/1999' });
     const result = await risLookupCitation.handler(input, ctx);
 
@@ -500,7 +504,7 @@ describe('risLookupCitation — gazette route', () => {
 
   it('routes an imperial citation to BgblAlt regardless of year, and resolves (record + resolution_note + alternatives_count + format() parity)', async () => {
     searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-bgblalt.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: 'RGBl. Nr. 189/1902' });
     const result = await risLookupCitation.handler(input, ctx);
 
@@ -524,7 +528,7 @@ describe('risLookupCitation — gazette route', () => {
   });
 
   it('requires a state hint for an LGBl citation — returns found:false without calling the service when the hint is missing', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: 'LGBl. Nr. 61/2026' });
     const result = await risLookupCitation.handler(input, ctx);
 
@@ -539,7 +543,7 @@ describe('risLookupCitation — gazette route', () => {
 
   it('routes an LGBl citation with a state hint to LgblAuth, passing state through, and resolves (record + resolution_note + alternatives_count + format() parity)', async () => {
     searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-lgblauth.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({
       citation: 'LGBl. Nr. 62/2026',
       state: 'salzburg',
@@ -567,7 +571,7 @@ describe('risLookupCitation — gazette route', () => {
 
   it('keeps a stray state hint out of a federal resolution_note — only the state series ever took it', async () => {
     searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-bgblauth-2004-01.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const result = await risLookupCitation.handler(
       risLookupCitation.input.parse({ citation: 'BGBl. I Nr. 171/2026', state: 'tirol' }),
       ctx,
@@ -579,7 +583,7 @@ describe('risLookupCitation — gazette route', () => {
   });
 
   it('classifies as gazette by keyword but returns found:false when the citation has no extractable number', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: 'BGBl. ohne Nummer' });
     const result = await risLookupCitation.handler(input, ctx);
 
@@ -598,7 +602,7 @@ describe('risLookupCitation — state gazette legacy-series fallback (#27)', () 
     searchGazette
       .mockResolvedValueOnce(zeroHits())
       .mockResolvedValueOnce(parseSearchResponse(fixture('search-lgblauth.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({
       citation: 'LGBl. Nr. 158/2013',
       state: 'tirol',
@@ -648,7 +652,7 @@ describe('risLookupCitation — state gazette legacy-series fallback (#27)', () 
 
   it('stops at LgblAuth when the citation resolves there — no legacy probe for a post-switch number', async () => {
     searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-lgblauth.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const result = await risLookupCitation.handler(
       risLookupCitation.input.parse({ citation: 'LGBl. Nr. 1/2014', state: 'tirol' }),
       ctx,
@@ -662,7 +666,7 @@ describe('risLookupCitation — state gazette legacy-series fallback (#27)', () 
 
   it('does not probe a legacy series for Wien, which is carried in neither, and says so', async () => {
     searchGazette.mockResolvedValue(zeroHits());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const result = await risLookupCitation.handler(
       risLookupCitation.input.parse({ citation: 'LGBl. Nr. 12/1990', state: 'wien' }),
       ctx,
@@ -677,7 +681,7 @@ describe('risLookupCitation — state gazette legacy-series fallback (#27)', () 
 
   it('does not probe LgblNO for Niederösterreich — it carries no number param — and routes the caller to it by another key', async () => {
     searchGazette.mockResolvedValue(zeroHits());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const result = await risLookupCitation.handler(
       risLookupCitation.input.parse({
         citation: 'LGBl. Nr. 12/1990',
@@ -701,7 +705,7 @@ describe('risLookupCitation — gazette miss guidance is composed per route (#28
    */
   async function guidanceFor(input: Record<string, unknown>): Promise<string> {
     searchGazette.mockResolvedValue(zeroHits());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const result = await risLookupCitation.handler(risLookupCitation.input.parse(input), ctx);
     searchGazette.mockReset();
     expect(result.guidance).toBeDefined();
@@ -753,7 +757,7 @@ describe('risLookupCitation — gazette miss guidance is composed per route (#28
 describe('risLookupCitation — case_number route', () => {
   it('matches a VfGH-shaped Geschäftszahl and resolves (record + resolution_note + alternatives_count + format() parity)', async () => {
     searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-vfgh.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: 'G 287/2022' });
     const result = await risLookupCitation.handler(input, ctx);
 
@@ -776,7 +780,7 @@ describe('risLookupCitation — case_number route', () => {
 
   it('matches a VwGH-shaped Geschäftszahl ("Ra …") and routes to court vwgh', async () => {
     searchCaseLaw.mockResolvedValue(zeroHits());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: 'Ro 2026/03/0016' });
     const result = await risLookupCitation.handler(input, ctx);
 
@@ -794,7 +798,7 @@ describe('risLookupCitation — case_number route', () => {
 
   it('matches a Justiz-shaped Geschäftszahl ("14Os49/26a") and routes to court justiz', async () => {
     searchCaseLaw.mockResolvedValue(zeroHits());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: '14Os49/26a' });
     const result = await risLookupCitation.handler(input, ctx);
 
@@ -814,7 +818,7 @@ describe('risLookupCitation — case_number route', () => {
     searchCaseLaw
       .mockResolvedValueOnce(zeroHits())
       .mockResolvedValueOnce(parseSearchResponse(fixture('search-vfgh.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: '2025-0.934.677' });
     const result = await risLookupCitation.handler(input, ctx);
 
@@ -835,7 +839,7 @@ describe('risLookupCitation — case_number route', () => {
 
   it('honors an explicit court hint, bypassing format-based court detection entirely', async () => {
     searchCaseLaw.mockResolvedValue(zeroHits());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     // "2025-0.934.677" auto-detects to ['dsk', 'dok'] by shape alone — the court hint overrides
     // both candidates and probes only the named court.
     const input = risLookupCitation.input.parse({ citation: '2025-0.934.677', court: 'justiz' });
@@ -849,7 +853,7 @@ describe('risLookupCitation — case_number route', () => {
   });
 
   it('returns "no matching court" guidance when a forced case_number kind has no recognizable shape and no court hint', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({
       citation: 'not a case number',
       kind: 'case_number',
@@ -869,7 +873,7 @@ describe('risLookupCitation — case_number route', () => {
 describe('risLookupCitation — collection_number route', () => {
   it('parses a VfSlg citation (dot-thousands kept) and resolves (record + resolution_note + alternatives_count + format() parity)', async () => {
     searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-vfgh.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: 'VfSlg 19.632/2012' });
     const result = await risLookupCitation.handler(input, ctx);
 
@@ -890,7 +894,7 @@ describe('risLookupCitation — collection_number route', () => {
   });
 
   it('returns the parse-failure message when a forced collection_number kind does not match the VfSlg/VwSlg shape', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({
       citation: 'VfSlgXXX',
       kind: 'collection_number',
@@ -908,7 +912,7 @@ describe('risLookupCitation — collection_number route', () => {
 
   it('returns collectionGuidance when a parsed VwSlg collection number resolves to zero hits', async () => {
     searchCaseLaw.mockResolvedValue(zeroHits());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: 'VwSlg 18.000 A/2010' });
     const result = await risLookupCitation.handler(input, ctx);
 
@@ -950,7 +954,7 @@ describe('risLookupCitation — VwGH collection numbers use the labelled cite (#
     'sends "%s" to searchCaseLaw as Sammlungsnummer "%s"',
     async (citation, collectionNumber) => {
       searchCaseLaw.mockResolvedValue(zeroHits());
-      const ctx = createMockContext();
+      const ctx = createMockContext({ errors: risLookupCitation.errors });
       await risLookupCitation.handler(risLookupCitation.input.parse({ citation }), ctx);
       expect(searchCaseLaw.mock.calls[0]?.[0]).toMatchObject({ collectionNumber });
     },
@@ -958,7 +962,7 @@ describe('risLookupCitation — VwGH collection numbers use the labelled cite (#
 
   it('names the filter it sent in resolution_note, so the resolution is reproducible in ris_search_case_law', async () => {
     searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-vfgh.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const result = await risLookupCitation.handler(
       risLookupCitation.input.parse({ citation: 'VwSlg 18.000 A/2010' }),
       ctx,
@@ -972,7 +976,7 @@ describe('risLookupCitation — VwGH collection numbers use the labelled cite (#
 
   it('tells a VwGH miss the filter was already in the accepted form, rather than sending it back through the same query', async () => {
     searchCaseLaw.mockResolvedValue(zeroHits());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const vwgh = await risLookupCitation.handler(
       risLookupCitation.input.parse({ citation: 'VwSlg 18.000 A/2010' }),
       ctx,
@@ -1004,7 +1008,7 @@ describe('risLookupCitation — a VwSlg number without its part letter names two
 
   it('reports the distinct cites it matched instead of resolving to the first hit', async () => {
     searchCaseLaw.mockResolvedValue(spanned());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const result = await risLookupCitation.handler(
       risLookupCitation.input.parse({ citation: 'VwSlg 8000' }),
       ctx,
@@ -1022,7 +1026,7 @@ describe('risLookupCitation — a VwSlg number without its part letter names two
 
   it('resolves normally when the cite carries the part letter that separates the two series', async () => {
     searchCaseLaw.mockResolvedValue(spanned());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const result = await risLookupCitation.handler(
       risLookupCitation.input.parse({ citation: 'VwSlg 8000 A/1971' }),
       ctx,
@@ -1043,7 +1047,7 @@ describe('risLookupCitation — a VwSlg number without its part letter names two
           : false,
       ),
     });
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const result = await risLookupCitation.handler(
       risLookupCitation.input.parse({ citation: 'VwSlg 8000' }),
       ctx,
@@ -1056,7 +1060,7 @@ describe('risLookupCitation — a VwSlg number without its part letter names two
 
 describe('risLookupCitation — kind override', () => {
   it('honors an explicit kind: forcing norm on a case-number-shaped citation takes the norm branch instead of auto-classifying it as case_number', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: 'Ro 2026/03/0016', kind: 'norm' });
     const result = await risLookupCitation.handler(input, ctx);
     const today = todayInAustria();

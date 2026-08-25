@@ -11,11 +11,11 @@
 import { readFileSync } from 'node:fs';
 
 import {
-  invalidParams,
   JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
   timeout,
+  validationError,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -35,8 +35,8 @@ function fixture(name: string): unknown {
 }
 
 /** Await a handler call expected to reject, and narrow the rejection to an McpError. */
-async function captureError(promise: Promise<unknown>): Promise<McpError> {
-  const err = await promise.catch((e: unknown) => e);
+async function captureError(result: unknown | Promise<unknown>): Promise<McpError> {
+  const err = await Promise.resolve(result).catch((e: unknown) => e);
   if (!(err instanceof McpError)) throw new Error('unreachable — expected an McpError');
   return err;
 }
@@ -92,21 +92,21 @@ describe('risSearchDrafts — zero-hit notices', () => {
   });
 
   it('names the stage in the base fragment for review_drafts', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchDrafts.errors });
     const input = risSearchDrafts.input.parse({ stage: 'review_drafts' });
     await risSearchDrafts.handler(input, ctx);
     expect(getEnrichment(ctx).notice).toBe('0 review_drafts matched.');
   });
 
   it('names the stage in the base fragment for government_bills', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchDrafts.errors });
     const input = risSearchDrafts.input.parse({ stage: 'government_bills' });
     await risSearchDrafts.handler(input, ctx);
     expect(getEnrichment(ctx).notice).toBe('0 government_bills matched.');
   });
 
   it('includes the ministry-designation guidance when ministry is set', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchDrafts.errors });
     const input = risSearchDrafts.input.parse({ stage: 'review_drafts', ministry: 'BMF' });
     await risSearchDrafts.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -114,7 +114,7 @@ describe('risSearchDrafts — zero-hit notices', () => {
   });
 
   it('includes the in_review_on guidance when set', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchDrafts.errors });
     const input = risSearchDrafts.input.parse({
       stage: 'review_drafts',
       in_review_on: '2026-07-05',
@@ -127,11 +127,11 @@ describe('risSearchDrafts — zero-hit notices', () => {
 
 describe('risSearchDrafts — error mapping', () => {
   // The handler's `.catch()` re-maps in-band RIS errors surfaced by the service onto this
-  // tool's declared contract: a Client error (InvalidParams) becomes invalid_query
+  // tool's declared contract: a Client error (ValidationError) becomes invalid_query
   // (ValidationError) and a transport/Server error (ServiceUnavailable) becomes
   // upstream_error — each carrying the original RIS message plus reason + recovery on the wire.
-  it('maps a service InvalidParams rejection to the invalid_query contract error', async () => {
-    const upstreamError = invalidParams("The 'InBegutachtungAm' element is invalid.", {
+  it('maps a service ValidationError rejection to the invalid_query contract error', async () => {
+    const upstreamError = validationError("The 'InBegutachtungAm' element is invalid.", {
       risApplication: 'Begut',
     });
     searchDrafts.mockRejectedValue(upstreamError);
@@ -186,7 +186,7 @@ describe('risSearchDrafts — error mapping', () => {
     // "correct the parameter named in the message" resolves to nothing and the ministries
     // topic the hint used to end on is a dead end. The page has to come first.
     searchDrafts.mockRejectedValue(
-      invalidParams('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
+      validationError('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
     );
     const ctx = createMockContext({ errors: risSearchDrafts.errors });
     const input = risSearchDrafts.input.parse({ stage: 'review_drafts', page: 9999 });
@@ -204,7 +204,7 @@ describe('risSearchDrafts — error mapping', () => {
 describe('risSearchDrafts — record mapping and format() parity', () => {
   it('renders every populated field for a multi-hit Begut result, ministry fallback for a sparse hit', async () => {
     searchDrafts.mockResolvedValue(parseSearchResponse(fixture('search-begut.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchDrafts.errors });
     const input = risSearchDrafts.input.parse({ stage: 'review_drafts' });
     const result = await risSearchDrafts.handler(input, ctx);
     expect(result.results).toHaveLength(2);
@@ -245,7 +245,7 @@ describe('risSearchDrafts — record mapping and format() parity', () => {
   // ris_get_document rejected their URLs — so a draft's Erläuterungen had no route at all.
   it('surfaces the companion documents and drops the main document and inline images', async () => {
     searchDrafts.mockResolvedValue(parseSearchResponse(fixture('search-begut.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchDrafts.errors });
     const input = risSearchDrafts.input.parse({ stage: 'review_drafts' });
     const result = await risSearchDrafts.handler(input, ctx);
     const { materials } = result.results[0]!;
@@ -280,7 +280,7 @@ describe('risSearchDrafts — record mapping and format() parity', () => {
   // response.
   it('carries one HTML handle per companion when RIS lists an HTML rendition', async () => {
     searchDrafts.mockResolvedValue(parseSearchResponse(fixture('search-begut.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchDrafts.errors });
     const input = risSearchDrafts.input.parse({ stage: 'review_drafts' });
     const result = await risSearchDrafts.handler(input, ctx);
     const { materials } = result.results[0]!;
@@ -320,7 +320,7 @@ describe('risSearchDrafts — record mapping and format() parity', () => {
     );
     searchDrafts.mockResolvedValue(parseSearchResponse(payload));
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchDrafts.errors });
     const input = risSearchDrafts.input.parse({ stage: 'review_drafts' });
     const result = await risSearchDrafts.handler(input, ctx);
     expect(result.results[0]!.materials[0]!.url).toBe(
@@ -330,7 +330,7 @@ describe('risSearchDrafts — record mapping and format() parity', () => {
 
   it('maps a RegV (government_bills) hit — decided date surfaced, not review_deadline', async () => {
     searchDrafts.mockResolvedValue(parseSearchResponse(fixture('search-regv.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchDrafts.errors });
     const input = risSearchDrafts.input.parse({ stage: 'government_bills' });
     const result = await risSearchDrafts.handler(input, ctx);
     const record = result.results[0]!;

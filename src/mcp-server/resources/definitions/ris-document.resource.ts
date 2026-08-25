@@ -30,6 +30,7 @@ export const risDocumentResource = resource('ris://document/{application}/{docum
   description:
     'Markdown text of one RIS document — the injectable twin of ris_get_document (markdown format). Addressed by application code and technical document number, both copied verbatim from a ris_search_* or ris_lookup_citation result. Applications that publish no text rendition (district/municipal promulgations, court rules, party-transparency decisions, council minutes, and the 1848–1940 imperial gazettes) return a short note pointing at the authentic PDF or scan instead.',
   mimeType: 'text/markdown',
+  cacheHint: { ttlMs: 86_400_000, cacheScope: 'public' },
   params: z.object({
     application: z
       .enum(APPLICATION_CODES)

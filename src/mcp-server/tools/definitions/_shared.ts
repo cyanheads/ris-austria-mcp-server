@@ -64,7 +64,6 @@ interface SearchFailureContext {
  *
  * - `ValidationError` — a schema-valid but unsupported parameter combination the request
  *   builder rejected locally, before any upstream call.
- * - `InvalidParams` — RIS rejected a parameter value in its in-band error envelope.
  * - `ServiceUnavailable` — RIS unreachable, degraded, or serving an HTML error page.
  * - `Timeout` — the request deadline elapsed. Its own reason rather than a widened
  *   `upstream_error` guard: `ctx.fail` resolves the code from the contract entry, so folding
@@ -72,7 +71,6 @@ interface SearchFailureContext {
  */
 const REASON_BY_CODE = new Map<JsonRpcErrorCode, SearchFailureReason>([
   [JsonRpcErrorCode.ValidationError, 'invalid_query'],
-  [JsonRpcErrorCode.InvalidParams, 'invalid_query'],
   [JsonRpcErrorCode.ServiceUnavailable, 'upstream_error'],
   [JsonRpcErrorCode.Timeout, 'upstream_timeout'],
 ]);

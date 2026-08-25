@@ -8,7 +8,7 @@
  * upstream cannot multiply the deadline by the attempt count; a search deadline itself is
  * not retried. `fetchWithTimeout` maps HTTP statuses; HTML error pages and
  * non-JSON bodies classify as transient `ServiceUnavailable`, never `SerializationError`.
- * RIS Client errors surface as `InvalidParams` (non-transient — not retried) whether they
+ * RIS Client errors surface as `ValidationError` (non-transient — not retried) whether they
  * arrive in-band on a 200 or as the same envelope on a 500 error response, which
  * `fetchJson` translates rather than letting the status decide. An upstream 5xx carrying no
  * such envelope is reclassified to `ServiceUnavailable` on both the search and content paths
@@ -24,6 +24,7 @@ import {
   JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
+  timeout,
   validationError,
 } from '@cyanheads/mcp-ts-core/errors';
 import {
@@ -138,12 +139,7 @@ function reclassifyUpstreamServerError(error: unknown): unknown {
  */
 function failFastOnDeadline(error: unknown): unknown {
   if (!(error instanceof McpError) || error.data?.errorSource !== 'FetchTimeout') return error;
-  return new McpError(
-    error.code,
-    error.message,
-    { ...error.data, retryable: false },
-    { cause: error },
-  );
+  return timeout(error.message, { ...error.data, retryable: false }, { cause: error });
 }
 
 /** Rendition formats a content URL can be constructed for. */
@@ -199,13 +195,7 @@ export class RisService {
   private requestContext(operation: string, ctx: Context): RequestContext {
     return requestContextService.createRequestContext({
       operation,
-      parentContext: {
-        requestId: ctx.requestId,
-        spanId: ctx.spanId,
-        tenantId: ctx.tenantId,
-        timestamp: ctx.timestamp,
-        traceId: ctx.traceId,
-      },
+      parentContext: ctx,
     });
   }
 

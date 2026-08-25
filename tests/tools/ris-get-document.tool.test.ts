@@ -54,8 +54,8 @@ vi.mock('@/services/ris/ris-service.js', async (importOriginal) => {
 });
 
 /** Await a handler call expected to reject, and narrow the rejection to an McpError. */
-async function captureError(promise: Promise<unknown>): Promise<McpError> {
-  const err = await promise.catch((e: unknown) => e);
+async function captureError(result: unknown | Promise<unknown>): Promise<McpError> {
+  const err = await Promise.resolve(result).catch((e: unknown) => e);
   if (!(err instanceof McpError)) throw new Error('unreachable — expected an McpError');
   return err;
 }
@@ -109,15 +109,9 @@ const SR_ONLY_HTML = fixture('document-brkons-sr-only.html');
 const ARTIKEL_SECTIONS_HTML = fixture('document-regv-artikel-sections.html');
 
 /** Resolve the tool against canned rendition text. */
-async function callTool(
-  html: string,
-  input: Record<string, unknown>,
-): Promise<{
-  ctx: ReturnType<typeof createMockContext>;
-  result: Awaited<ReturnType<typeof risGetDocument.handler>>;
-}> {
+async function callTool(html: string, input: Record<string, unknown>) {
   fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
-  const ctx = createMockContext();
+  const ctx = createMockContext({ errors: risGetDocument.errors });
   const parsed = risGetDocument.input.parse({
     document_number: 'NOR40262691',
     application: 'BrKons',
@@ -362,7 +356,7 @@ describe('risGetDocument — format handling', () => {
       contentType: 'text/html',
       url: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
     });
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
       document_number: 'NOR40262691',
       application: 'BrKons',
@@ -378,7 +372,7 @@ describe('risGetDocument — format handling', () => {
   it('returns the raw HTML rendition unconverted for format: html', async () => {
     const html = '<p>Hello <b>World</b></p>';
     fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
       document_number: 'NOR40262691',
       application: 'BrKons',
@@ -392,7 +386,7 @@ describe('risGetDocument — format handling', () => {
   it('fetches the XML rendition and returns it raw for format: xml', async () => {
     const xml = '<Dokument><Titel>Test</Titel></Dokument>';
     fetchDocumentContent.mockResolvedValue({ text: xml, byteSize: xml.length, url: 'https://x' });
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
       document_number: 'NOR40262691',
       application: 'BrKons',
@@ -404,7 +398,7 @@ describe('risGetDocument — format handling', () => {
   });
 
   it('returns every rendition URL and skips the fetch for format: urls_only', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
       document_number: 'NOR40262691',
       application: 'BgblAuth',
@@ -438,7 +432,7 @@ describe('risGetDocument — format handling', () => {
       byteSize: 11,
       url: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
     });
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
       document_url: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
     });
@@ -465,7 +459,7 @@ describe('risGetDocument — companion documents (materials)', () => {
       byteSize: 40,
       url: documentUrl,
     });
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
       document_url: documentUrl,
       ...(format !== undefined && { format }),
@@ -674,7 +668,7 @@ describe('risGetDocument — screen-reader twins (markdown only)', () => {
 
 describe('risGetDocument — format_unavailable degradation (notice, not error)', () => {
   it('surfaces authentic_pdf_url and a notice for an authentic_pdf_only application', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
       document_number: 'BVB_BU_JE_20260703_9',
       application: 'Bvb',
@@ -693,7 +687,7 @@ describe('risGetDocument — format_unavailable degradation (notice, not error)'
   });
 
   it('surfaces content_urls.pdf and a notice for a pdf_only application', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
       document_number: 'UPTS_2026_1',
       application: 'Upts',
@@ -712,7 +706,7 @@ describe('risGetDocument — format_unavailable degradation (notice, not error)'
   });
 
   it('surfaces no content URLs and the ÖNB guidance for a metadata-only application', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
       document_number: 'NOR12345',
       application: 'BgblAlt',
@@ -735,7 +729,7 @@ describe('risGetDocument — overflow (outline + selective retrieval)', () => {
   it('returns a §/Artikel section outline for an oversized markdown document', async () => {
     const html = oversizedArticlesHtml();
     fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
       document_number: 'NOR40262691',
       application: 'BrKons',
@@ -767,7 +761,7 @@ describe('risGetDocument — overflow (outline + selective retrieval)', () => {
   it('returns the selected section’s text on a sections re-call', async () => {
     const html = oversizedArticlesHtml();
     fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
       document_number: 'NOR40262691',
       application: 'BrKons',
@@ -789,7 +783,7 @@ describe('risGetDocument — overflow (outline + selective retrieval)', () => {
   it('outlines a document sized between the current budget and the pre-#16 calibration', async () => {
     const html = midSizedArticlesHtml();
     fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
       document_number: 'NOR40262691',
       application: 'BrKons',
@@ -946,7 +940,7 @@ describe('risGetDocument — overflow (outline + selective retrieval)', () => {
       byteSize: 25,
       url: 'https://x',
     });
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
       document_number: 'NOR40262691',
       application: 'BrKons',
@@ -973,7 +967,7 @@ describe('risGetDocument — overflow (outline + selective retrieval)', () => {
         byteSize: bigText.length,
         url: 'https://x',
       });
-      const ctx = createMockContext();
+      const ctx = createMockContext({ errors: risGetDocument.errors });
       const input = risGetDocument.input.parse({
         document_number: 'NOR40262691',
         application: 'BrKons',
@@ -1315,7 +1309,7 @@ describe('risGetDocument — format() parity', () => {
       byteSize: 25,
       url: 'https://www.ris.bka.gv.at/Dokumente/BgblAuth/NOR1/NOR1.html',
     });
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({ document_number: 'NOR1', application: 'BgblAuth' });
     const result = await risGetDocument.handler(input, ctx);
     const text = (risGetDocument.format!(result)[0] as { type: 'text'; text: string }).text;

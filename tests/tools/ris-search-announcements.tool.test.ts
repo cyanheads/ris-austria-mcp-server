@@ -11,11 +11,11 @@
 import { readFileSync } from 'node:fs';
 
 import {
-  invalidParams,
   JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
   timeout,
+  validationError,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -38,8 +38,8 @@ function fixture(name: string): unknown {
 }
 
 /** Await a handler call expected to reject, and narrow the rejection to an McpError. */
-async function captureError(promise: Promise<unknown>): Promise<McpError> {
-  const err = await promise.catch((e: unknown) => e);
+async function captureError(result: unknown | Promise<unknown>): Promise<McpError> {
+  const err = await Promise.resolve(result).catch((e: unknown) => e);
   if (!(err instanceof McpError)) throw new Error('unreachable — expected an McpError');
   return err;
 }
@@ -144,7 +144,7 @@ describe('risSearchAnnouncements — binding label per collection', () => {
   it('labels each collection with its designated binding value', async () => {
     for (const [collection, binding] of collectionBindings) {
       searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-mrp.json')));
-      const ctx = createMockContext();
+      const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
       const input = risSearchAnnouncements.input.parse({ collection });
       const result = await risSearchAnnouncements.handler(input, ctx);
       expect(result.results[0]!.binding).toBe(binding);
@@ -161,14 +161,14 @@ describe('risSearchAnnouncements — zero-hit notices', () => {
   });
 
   it('names the collection in the base fragment', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
     const input = risSearchAnnouncements.input.parse({ collection: 'social_insurance' });
     await risSearchAnnouncements.handler(input, ctx);
     expect(getEnrichment(ctx).notice).toBe('0 documents in social_insurance.');
   });
 
   it('includes the norm-format guidance when norm is set', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
     const input = risSearchAnnouncements.input.parse({ collection: 'veterinary', norm: 'DSG §1' });
     await risSearchAnnouncements.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -176,7 +176,7 @@ describe('risSearchAnnouncements — zero-hit notices', () => {
   });
 
   it('includes the issuer-designation guidance when issuer is set', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
     const input = risSearchAnnouncements.input.parse({
       collection: 'social_insurance',
       issuer: 'ÖGK',
@@ -187,7 +187,7 @@ describe('risSearchAnnouncements — zero-hit notices', () => {
   });
 
   it('includes the KmGer coverage caveat for collection: court_rules', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
     const input = risSearchAnnouncements.input.parse({ collection: 'court_rules' });
     await risSearchAnnouncements.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -198,11 +198,11 @@ describe('risSearchAnnouncements — zero-hit notices', () => {
 
 describe('risSearchAnnouncements — error mapping', () => {
   // The handler's `.catch()` re-maps in-band RIS errors surfaced by the service onto this
-  // tool's declared contract: a Client error (InvalidParams) becomes invalid_query
+  // tool's declared contract: a Client error (ValidationError) becomes invalid_query
   // (ValidationError) and a transport/Server error (ServiceUnavailable) becomes
   // upstream_error — each carrying the original RIS message plus reason + recovery on the wire.
-  it('maps a service InvalidParams rejection to the invalid_query contract error', async () => {
-    const upstreamError = invalidParams("The 'Kundmachung.Von' element is invalid.", {
+  it('maps a service ValidationError rejection to the invalid_query contract error', async () => {
+    const upstreamError = validationError("The 'Kundmachung.Von' element is invalid.", {
       risApplication: 'Avsv',
     });
     searchAnnouncements.mockRejectedValue(upstreamError);
@@ -290,7 +290,7 @@ describe('risSearchAnnouncements — error mapping', () => {
     // "correct the parameter named in the message" resolves to nothing and the reference
     // topics are dead ends. The page has to come first in the hint.
     searchAnnouncements.mockRejectedValue(
-      invalidParams('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
+      validationError('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
     );
     const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
     const input = risSearchAnnouncements.input.parse({
@@ -328,7 +328,7 @@ describe('risSearchAnnouncements — error mapping', () => {
 describe('risSearchAnnouncements — record mapping and format() parity', () => {
   it('renders every populated field for a multi-hit council_minutes result, title falls back to document_number', async () => {
     searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-mrp.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
     const input = risSearchAnnouncements.input.parse({ collection: 'council_minutes' });
     const result = await risSearchAnnouncements.handler(input, ctx);
     expect(result.results).toHaveLength(2);
@@ -363,7 +363,7 @@ describe('risSearchAnnouncements — record mapping and format() parity', () => 
 
   it('maps an Avsv (social_insurance) hit — number, summary, and the authentic PDF surface', async () => {
     searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-avsv.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
     const input = risSearchAnnouncements.input.parse({ collection: 'social_insurance' });
     const result = await risSearchAnnouncements.handler(input, ctx);
     const record = result.results[0]!;

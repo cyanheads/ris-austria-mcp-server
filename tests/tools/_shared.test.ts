@@ -41,7 +41,7 @@ const ALL_TOOLS = [
 
 /** The advertised `pattern` `isoDateString` emits — the marker the coverage check matches on. */
 const ISO_DATE_PATTERN = (
-  z.toJSONSchema(z.object({ when: isoDateString }), { io: 'input' }) as {
+  z.toJSONSchema(z.object({ when: isoDateString }), { io: 'input' }) as unknown as {
     properties: { when: { pattern: string } };
   }
 ).properties.when.pattern;

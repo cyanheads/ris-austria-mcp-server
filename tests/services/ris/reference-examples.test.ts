@@ -63,7 +63,7 @@ describe('RIS_COURTS gzExamples — format self-routing', () => {
     'the %s example is detected as that court by ris_lookup_citation',
     async (code) => {
       const citation = gzExample(code);
-      const ctx = createMockContext();
+      const ctx = createMockContext({ errors: risLookupCitation.errors });
       await risLookupCitation.handler(risLookupCitation.input.parse({ citation }), ctx);
 
       expect(searchCaseLaw.mock.calls[0]?.[0]).toMatchObject({ caseNumber: citation, court: code });
@@ -75,7 +75,7 @@ describe('RIS_COURTS gzExamples — format self-routing', () => {
     expect(caseNumbers?.examples.length).toBeGreaterThan(0);
 
     for (const citation of caseNumbers?.examples ?? []) {
-      const ctx = createMockContext();
+      const ctx = createMockContext({ errors: risLookupCitation.errors });
       const result = await risLookupCitation.handler(
         risLookupCitation.input.parse({ citation }),
         ctx,
@@ -97,7 +97,7 @@ describe('RIS_COURTS gzExamples — prose copies stay in sync', () => {
   });
 
   it('the unclassified-citation guidance quotes the current vwgh example', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
     const result = await risLookupCitation.handler(
       risLookupCitation.input.parse({ citation: '42/2020' }),
       ctx,
@@ -107,7 +107,7 @@ describe('RIS_COURTS gzExamples — prose copies stay in sync', () => {
   });
 
   it('the case-law zero-hit notice quotes the current vfgh, vwgh, and justiz examples', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
     await risSearchCaseLaw.handler(
       risSearchCaseLaw.input.parse({ court: 'vwgh', case_number: gzExample('vwgh') }),
       ctx,

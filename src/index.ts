@@ -20,6 +20,12 @@ import { initRisService } from './services/ris/ris-service.js';
 await createApp({
   name: 'ris-austria-mcp-server',
   title: 'ris-austria-mcp-server',
+  cacheHints: {
+    'tools/list': { ttlMs: 3_600_000, cacheScope: 'public' },
+    'resources/list': { ttlMs: 3_600_000, cacheScope: 'public' },
+    'resources/templates/list': { ttlMs: 3_600_000, cacheScope: 'public' },
+    'server/discover': { ttlMs: 3_600_000, cacheScope: 'public' },
+  },
   tools: [
     risSearchLegislation,
     risSearchCaseLaw,

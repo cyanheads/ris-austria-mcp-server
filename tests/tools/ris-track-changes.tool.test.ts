@@ -10,11 +10,11 @@
 import { readFileSync } from 'node:fs';
 
 import {
-  invalidParams,
   JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
   timeout,
+  validationError,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -38,8 +38,8 @@ function rawFixture(name: string): string {
 }
 
 /** Await a handler call expected to reject, and narrow the rejection to an McpError. */
-async function captureError(promise: Promise<unknown>): Promise<McpError> {
-  const err = await promise.catch((e: unknown) => e);
+async function captureError(result: unknown | Promise<unknown>): Promise<McpError> {
+  const err = await Promise.resolve(result).catch((e: unknown) => e);
   if (!(err instanceof McpError)) throw new Error('unreachable — expected an McpError');
   return err;
 }
@@ -55,7 +55,7 @@ afterEach(() => {
 describe('risTrackChanges — deletion records', () => {
   it('surfaces deletion records with document_number and deleted_at, alongside changed documents', async () => {
     trackChanges.mockResolvedValue(parseHistoryResponse(fixture('history-with-deleted.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risTrackChanges.errors });
     const input = risTrackChanges.input.parse({ application: 'BrKons', include_deleted: true });
     const result = await risTrackChanges.handler(input, ctx);
 
@@ -75,7 +75,7 @@ describe('risTrackChanges — deletion records', () => {
 
   it('renders deleted records distinctly (with the deletion timestamp) in format()', async () => {
     trackChanges.mockResolvedValue(parseHistoryResponse(fixture('history-with-deleted.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risTrackChanges.errors });
     const input = risTrackChanges.input.parse({ application: 'BrKons', include_deleted: true });
     const result = await risTrackChanges.handler(input, ctx);
     const text = (risTrackChanges.format!(result)[0] as { type: 'text'; text: string }).text;
@@ -85,7 +85,7 @@ describe('risTrackChanges — deletion records', () => {
 
   it('renders an explicit "**Deleted:** no" line for a non-deleted changed record', async () => {
     trackChanges.mockResolvedValue(parseHistoryResponse(fixture('history-with-deleted.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risTrackChanges.errors });
     const input = risTrackChanges.input.parse({ application: 'BrKons', include_deleted: true });
     const result = await risTrackChanges.handler(input, ctx);
     const changed = result.results.find((r) => !r.deleted);
@@ -103,7 +103,7 @@ describe('risTrackChanges — deletion records', () => {
 describe('risTrackChanges — changed-document record shape', () => {
   it('maps a changed BrKons document to the cross-class record shape', async () => {
     trackChanges.mockResolvedValue(parseHistoryResponse(fixture('history-with-deleted.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risTrackChanges.errors });
     const input = risTrackChanges.input.parse({ application: 'BrKons' });
     const result = await risTrackChanges.handler(input, ctx);
     const record = result.results.find((r) => r.document_number === 'NOR40278538');
@@ -131,7 +131,7 @@ describe('risTrackChanges — changed-document record shape', () => {
 
   it('applies the same binding_status (per queried application) to every record, deleted or changed', async () => {
     trackChanges.mockResolvedValue(parseHistoryResponse(fixture('history-with-deleted.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risTrackChanges.errors });
     const input = risTrackChanges.input.parse({ application: 'BrKons', include_deleted: true });
     const result = await risTrackChanges.handler(input, ctx);
     expect(result.results.length).toBeGreaterThan(0);
@@ -144,7 +144,7 @@ describe('risTrackChanges — changed-document record shape', () => {
 describe('risTrackChanges — enrichment: totals, paging, applied window', () => {
   it('reports total, page, pageSize, application, and the applied changed_from/changed_to window', async () => {
     trackChanges.mockResolvedValue(parseHistoryResponse(fixture('history-with-deleted.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risTrackChanges.errors });
     const input = risTrackChanges.input.parse({
       application: 'BrKons',
       changed_from: '2026-06-01',
@@ -166,7 +166,7 @@ describe('risTrackChanges — enrichment: totals, paging, applied window', () =>
 
   it('omits changedFrom/changedTo from enrichment when the window is not provided', async () => {
     trackChanges.mockResolvedValue(parseHistoryResponse(fixture('history-with-deleted.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risTrackChanges.errors });
     const input = risTrackChanges.input.parse({ application: 'BrKons' });
     await risTrackChanges.handler(input, ctx);
     const enrichment = getEnrichment(ctx);
@@ -178,7 +178,7 @@ describe('risTrackChanges — enrichment: totals, paging, applied window', () =>
 describe('risTrackChanges — zero-hit notice', () => {
   it('includes the exact-date-window guidance when changed_from/changed_to are set', async () => {
     trackChanges.mockResolvedValue(parseHistoryResponse(fixture('search-zero-hits.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risTrackChanges.errors });
     const input = risTrackChanges.input.parse({
       application: 'BrKons',
       changed_from: '2020-01-01',
@@ -192,7 +192,7 @@ describe('risTrackChanges — zero-hit notice', () => {
 
   it('defaults to "the start of the feed" and "now" when the window is omitted', async () => {
     trackChanges.mockResolvedValue(parseHistoryResponse(fixture('search-zero-hits.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risTrackChanges.errors });
     const input = risTrackChanges.input.parse({ application: 'BrKons' });
     await risTrackChanges.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -202,11 +202,11 @@ describe('risTrackChanges — zero-hit notice', () => {
 
 describe('risTrackChanges — error mapping', () => {
   // The handler's `.catch()` re-maps in-band RIS errors surfaced by the service onto this
-  // tool's declared contract: a Client error (InvalidParams) becomes invalid_query
+  // tool's declared contract: a Client error (ValidationError) becomes invalid_query
   // (ValidationError) and a transport/Server error (ServiceUnavailable) becomes
   // upstream_error — each carrying the original RIS message plus reason + recovery on the wire.
-  it('maps a service InvalidParams rejection to the invalid_query contract error', async () => {
-    const upstreamError = invalidParams("The 'Anwendung' element is invalid.", {
+  it('maps a service ValidationError rejection to the invalid_query contract error', async () => {
+    const upstreamError = validationError("The 'Anwendung' element is invalid.", {
       risApplication: 'BrKons',
     });
     trackChanges.mockRejectedValue(upstreamError);
@@ -283,7 +283,7 @@ describe('risTrackChanges — error mapping', () => {
 describe('risTrackChanges — format() parity', () => {
   it('renders every populated field for both changed and deleted records', async () => {
     trackChanges.mockResolvedValue(parseHistoryResponse(fixture('history-with-deleted.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risTrackChanges.errors });
     const input = risTrackChanges.input.parse({ application: 'BrKons', include_deleted: true });
     const result = await risTrackChanges.handler(input, ctx);
     const text = (risTrackChanges.format!(result)[0] as { type: 'text'; text: string }).text;

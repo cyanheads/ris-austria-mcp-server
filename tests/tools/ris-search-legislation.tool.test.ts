@@ -10,11 +10,11 @@
 import { readFileSync } from 'node:fs';
 
 import {
-  invalidParams,
   JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
   timeout,
+  validationError,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -48,8 +48,8 @@ function todayInAustria(): string {
 }
 
 /** Await a handler call expected to reject, and narrow the rejection to an McpError. */
-async function captureError(promise: Promise<unknown>): Promise<McpError> {
-  const err = await promise.catch((e: unknown) => e);
+async function captureError(result: unknown | Promise<unknown>): Promise<McpError> {
+  const err = await Promise.resolve(result).catch((e: unknown) => e);
   if (!(err instanceof McpError)) throw new Error('unreachable — expected an McpError');
   return err;
 }
@@ -152,28 +152,28 @@ describe('risSearchLegislation — in_force_as_of defaulting', () => {
   });
 
   it('defaults to today in Austria and echoes appliedInForceAsOf when omitted', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
     const input = risSearchLegislation.input.parse({ query: 'Test' });
     await risSearchLegislation.handler(input, ctx);
     expect(getEnrichment(ctx).appliedInForceAsOf).toBe(todayInAustria());
   });
 
   it('suppresses the echo when include_all_versions is true', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
     const input = risSearchLegislation.input.parse({ include_all_versions: true });
     await risSearchLegislation.handler(input, ctx);
     expect(getEnrichment(ctx).appliedInForceAsOf).toBeUndefined();
   });
 
   it('suppresses the echo when a force-window is set', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
     const input = risSearchLegislation.input.parse({ entered_force_from: '2020-01-01' });
     await risSearchLegislation.handler(input, ctx);
     expect(getEnrichment(ctx).appliedInForceAsOf).toBeUndefined();
   });
 
   it('suppresses the echo for language: english', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
     const input = risSearchLegislation.input.parse({ language: 'english' });
     await risSearchLegislation.handler(input, ctx);
     expect(getEnrichment(ctx).appliedInForceAsOf).toBeUndefined();
@@ -182,11 +182,11 @@ describe('risSearchLegislation — in_force_as_of defaulting', () => {
 
 describe('risSearchLegislation — error mapping', () => {
   // The handler's `.catch()` re-maps in-band RIS errors surfaced by the service onto this
-  // tool's declared contract: a Client error (InvalidParams) becomes invalid_query
+  // tool's declared contract: a Client error (ValidationError) becomes invalid_query
   // (ValidationError) and a transport/Server error (ServiceUnavailable) becomes
   // upstream_error — each carrying the original RIS message plus reason + recovery on the wire.
-  it('maps a service InvalidParams rejection to the invalid_query contract error', async () => {
-    const upstreamError = invalidParams("The 'FassungVom' element is invalid.", {
+  it('maps a service ValidationError rejection to the invalid_query contract error', async () => {
+    const upstreamError = validationError("The 'FassungVom' element is invalid.", {
       risApplication: 'BrKons',
     });
     searchLegislation.mockRejectedValue(upstreamError);
@@ -281,7 +281,7 @@ describe('risSearchLegislation — zero-hit notices', () => {
   });
 
   it('includes the in-force-date and query-wildcard guidance for a plain query', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
     const input = risSearchLegislation.input.parse({ query: 'Datenschutz*' });
     await risSearchLegislation.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -291,7 +291,7 @@ describe('risSearchLegislation — zero-hit notices', () => {
   });
 
   it('includes the title guidance fragment when title is set', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
     const input = risSearchLegislation.input.parse({ title: 'DSG' });
     await risSearchLegislation.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -299,7 +299,7 @@ describe('risSearchLegislation — zero-hit notices', () => {
   });
 
   it('includes the municipal-coverage guidance when municipality is set', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
     const input = risSearchLegislation.input.parse({ municipality: 'Graz', scope: 'wien' });
     await risSearchLegislation.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -307,7 +307,7 @@ describe('risSearchLegislation — zero-hit notices', () => {
   });
 
   it('includes the Erv coverage caveat for language: english', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
     const input = risSearchLegislation.input.parse({ language: 'english' });
     await risSearchLegislation.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -315,7 +315,7 @@ describe('risSearchLegislation — zero-hit notices', () => {
   });
 
   it('includes the citation-lookup hint for a citation-shaped query', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
     const input = risSearchLegislation.input.parse({ query: '§ 6 DSG' });
     await risSearchLegislation.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -323,7 +323,7 @@ describe('risSearchLegislation — zero-hit notices', () => {
   });
 
   it('omits the in-force-date fragment when include_all_versions is set', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
     const input = risSearchLegislation.input.parse({ include_all_versions: true });
     await risSearchLegislation.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -334,7 +334,7 @@ describe('risSearchLegislation — zero-hit notices', () => {
 describe('risSearchLegislation — record mapping and format() parity', () => {
   it('parses CELEX references into celex_references, rendered in format()', async () => {
     searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
     const input = risSearchLegislation.input.parse({ query: 'Datenschutzgesetz' });
     const result = await risSearchLegislation.handler(input, ctx);
     const record = result.results[0]!;
@@ -352,7 +352,7 @@ describe('risSearchLegislation — record mapping and format() parity', () => {
     searchLegislation.mockResolvedValue(
       parseSearchResponse(fixture('search-erv-translations.json')),
     );
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
     const input = risSearchLegislation.input.parse({ language: 'english', query: 'penal' });
     const result = await risSearchLegislation.handler(input, ctx);
     const record = result.results[0]!;
@@ -374,7 +374,7 @@ describe('risSearchLegislation — record mapping and format() parity', () => {
 
   it('leaves translation absent for the German corpus', async () => {
     searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-multi.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
     const input = risSearchLegislation.input.parse({ query: 'Bundesstraßengesetz' });
     const result = await risSearchLegislation.handler(input, ctx);
     for (const record of result.results) expect(record.translation).toBeUndefined();
@@ -382,7 +382,7 @@ describe('risSearchLegislation — record mapping and format() parity', () => {
 
   it('renders every populated identity field for a multi-hit result', async () => {
     searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-multi.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
     const input = risSearchLegislation.input.parse({ query: 'Bundesstraßengesetz' });
     const result = await risSearchLegislation.handler(input, ctx);
     expect(result.results).toHaveLength(3);

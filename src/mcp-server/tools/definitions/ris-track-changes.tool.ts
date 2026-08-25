@@ -144,13 +144,13 @@ function toRecord(change: RisChange, bindingStatus: RisBindingStatus): ChangeRec
 export const risTrackChanges = tool('ris_track_changes', {
   title: 'Track RIS Changes',
   description:
-    'Track every document added or changed in one RIS application within an exact date window (changed_from/changed_to), optionally including deletions (include_deleted) — the delta-sync and monitoring primitive for mirrors and watchers, and the only surface that reports removals. Unlike the search tools’ coarse, additive-only changed_since intervals, this is exact-dated and deletion-aware. application takes any RIS application code (e.g. BrKons, Dsk, BgblAuth); the four applications with a different History-feed name are mapped automatically. Each changed document comes back in a compact cross-class record — document_number (for ris_get_document), title, dates, binding_status, and rendition URLs — plus its last-changed date; removed documents come back as deleted records with a deletion timestamp. One application per call; page explicitly for large windows. Application codes and coverage: ris_list_reference topic applications.',
+    'Track every document added or changed in one RIS application within an exact date window (changed_from/changed_to), optionally including deletions (include_deleted) — the delta-sync and monitoring primitive for mirrors and watchers, and the only surface that reports removals. Unlike the search tools’ coarse, additive-only changed_since intervals, this is exact-dated and deletion-aware. application accepts every RIS application code listed by ris_list_reference topic applications, including BrKons, LrKons, Dsk, and BgblAuth. Each changed document comes back in a compact cross-class record — document_number (for ris_get_document), title, dates, binding_status, and rendition URLs — plus its last-changed date; removed documents come back as deleted records with a deletion timestamp. One application per call; page explicitly for large windows.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     application: z
       .enum(APPLICATION_CODES)
       .describe(
-        'RIS application whose change feed to read (standard code, e.g. BrKons, LrKons, Dsk, BgblAuth). History’s four aliased names are mapped internally. Codes: ris_list_reference topic applications.',
+        'RIS application whose change feed to read, e.g. BrKons, LrKons, Dsk, or BgblAuth. All supported codes: ris_list_reference topic applications.',
       ),
     changed_from: isoDateString
       .optional()

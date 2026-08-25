@@ -210,7 +210,7 @@ describe('parseSearchResponse', () => {
     expect(bvb.metadata.controller).toBe('Bezirke');
   });
 
-  it('throws InvalidParams with the RIS message on an in-band Client error', () => {
+  it('throws ValidationError with the RIS message on an in-band Client error', () => {
     let caught: McpError | undefined;
     try {
       parseSearchResponse(fixture('error-client.json'));
@@ -218,7 +218,7 @@ describe('parseSearchResponse', () => {
       caught = error as McpError;
     }
     expect(caught).toBeInstanceOf(McpError);
-    expect(caught!.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(caught!.code).toBe(JsonRpcErrorCode.ValidationError);
     // RIS's schema-validation message passes through and names the element…
     expect(caught!.message).toContain('FassungVom');
     // …but the transport prefix is trimmed.
@@ -234,7 +234,7 @@ describe('parseSearchResponse', () => {
     } catch (error) {
       caught = error as McpError;
     }
-    expect(caught!.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(caught!.code).toBe(JsonRpcErrorCode.ValidationError);
     // The rejected value survives; only the .NET type names and stack marker are dropped.
     expect(caught!.message).toContain("'Kaernten' is not a valid value for RemotionVblBundesland");
     expect(caught!.message).not.toContain('Exception');
@@ -255,7 +255,7 @@ describe('assertNoInBandError', () => {
   it('honors the handbook @type attribute when present', () => {
     expect(() =>
       assertNoInBandError({ Error: { '@type': 'Client', Message: 'bad element' } }),
-    ).toThrowError(expect.objectContaining({ code: JsonRpcErrorCode.InvalidParams }));
+    ).toThrowError(expect.objectContaining({ code: JsonRpcErrorCode.ValidationError }));
     expect(() =>
       assertNoInBandError({ Error: { '@type': 'Server', Message: 'backend down' } }),
     ).toThrowError(expect.objectContaining({ code: JsonRpcErrorCode.ServiceUnavailable }));
@@ -276,9 +276,9 @@ describe('errorFromResponseBody', () => {
   // RIS answers a rejected parameter with HTTP 500 carrying the same OgdSearchResult.Error
   // envelope it uses in-band on a 200 — so the status alone would call a caller input error
   // a server fault. Both bodies below are verbatim captures from the live API (2026-07-15).
-  it('translates an out-of-range page 500 body to InvalidParams with RIS’s own message', () => {
+  it('translates an out-of-range page 500 body to ValidationError with RIS’s own message', () => {
     const error = errorFromResponseBody(rawFixture('error-500-page-overflow.json'));
-    expect(error?.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(error?.code).toBe(JsonRpcErrorCode.ValidationError);
     // RIS names the cause; the transport prefix is trimmed, the explanation survives.
     expect(error?.message).toBe('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten');
     expect(error?.data).toMatchObject({ risApplication: 'History' });
@@ -286,7 +286,7 @@ describe('errorFromResponseBody', () => {
 
   it('translates a non-paging 500 body the same way — the envelope drives it, not the message', () => {
     const error = errorFromResponseBody(rawFixture('error-500-unknown-application.json'));
-    expect(error?.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(error?.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(error?.message).toBe('Application NotARealApp not found');
   });
 
@@ -297,7 +297,7 @@ describe('errorFromResponseBody', () => {
 
   it('strips the SoapException scaffolding and stack marker, keeping RIS’s guidance whole', () => {
     const error = errorFromResponseBody(rawFixture('error-500-fulltext-wildcard.json'));
-    expect(error?.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(error?.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(error?.message).toBe(FULLTEXT_GUIDANCE);
   });
 
@@ -306,7 +306,7 @@ describe('errorFromResponseBody', () => {
     // off the front, so the fault fell through to the transient ServiceUnavailable bucket
     // and got retried. Same rejected input as the wildcard body above, same verdict.
     const error = errorFromResponseBody(rawFixture('error-500-fulltext-landesrecht.json'));
-    expect(error?.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(error?.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(error?.code).not.toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(error?.message).toBe(FULLTEXT_GUIDANCE);
   });

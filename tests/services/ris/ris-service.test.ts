@@ -146,7 +146,7 @@ describe('RisService — HTTP 500 carrying a RIS error envelope', () => {
     return fetchMock;
   }
 
-  it('translates an out-of-range page into InvalidParams instead of a 500-shaped InternalError', async () => {
+  it('translates an out-of-range page into ValidationError instead of a 500-shaped InternalError', async () => {
     const fetchMock = stubFetch(rawFixture('error-500-page-overflow.json'));
     const err = await service
       .trackChanges({ application: 'Dsk', changedFrom: '2026-07-01', page: 2 }, createMockContext())
@@ -155,11 +155,11 @@ describe('RisService — HTTP 500 carrying a RIS error envelope', () => {
     expect(err).toBeInstanceOf(McpError);
     // The bug: HTTP 500 mapped straight to InternalError, discarding RIS's explanation.
     expect((err as McpError).code).not.toBe(JsonRpcErrorCode.InternalError);
-    expect((err as McpError).code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.ValidationError);
     expect((err as McpError).message).toBe(
       'Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten',
     );
-    // InvalidParams is not a transient code — withRetry must not burn attempts on it.
+    // ValidationError is not a transient code — withRetry must not burn attempts on it.
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -169,7 +169,7 @@ describe('RisService — HTTP 500 carrying a RIS error envelope', () => {
       .trackChanges({ application: 'Dsk' }, createMockContext())
       .catch((e: unknown) => e);
 
-    expect((err as McpError).code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.ValidationError);
     expect((err as McpError).message).toBe('Application NotARealApp not found');
   });
 
@@ -183,7 +183,7 @@ describe('RisService — HTTP 500 carrying a RIS error envelope', () => {
       .searchLegislation({ application: 'LrKons', query: '*' }, createMockContext())
       .catch((e: unknown) => e);
 
-    expect((err as McpError).code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.ValidationError);
     expect((err as McpError).code).not.toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

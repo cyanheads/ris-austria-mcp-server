@@ -12,11 +12,11 @@
 import { readFileSync } from 'node:fs';
 
 import {
-  invalidParams,
   JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
   timeout,
+  validationError,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,8 +36,8 @@ function fixture(name: string): unknown {
 }
 
 /** Await a handler call expected to reject, and narrow the rejection to an McpError. */
-async function captureError(promise: Promise<unknown>): Promise<McpError> {
-  const err = await promise.catch((e: unknown) => e);
+async function captureError(result: unknown | Promise<unknown>): Promise<McpError> {
+  const err = await Promise.resolve(result).catch((e: unknown) => e);
   if (!(err instanceof McpError)) throw new Error('unreachable — expected an McpError');
   return err;
 }
@@ -144,7 +144,7 @@ describe('risSearchGazette — local guards (no service call)', () => {
 
 describe('risSearchGazette — Vbl non-Tirol short-circuit', () => {
   it('returns a zero-hit success without calling the service for a non-Tirol ordinance-gazette request', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ scope: 'wien', series: 'ordinance_gazette' });
     const result = await risSearchGazette.handler(input, ctx);
     expect(result.results).toEqual([]);
@@ -159,7 +159,7 @@ describe('risSearchGazette — Vbl non-Tirol short-circuit', () => {
 
   it('calls the service normally for scope: tirol (the one state Vbl covers)', async () => {
     searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ scope: 'tirol', series: 'ordinance_gazette' });
     await risSearchGazette.handler(input, ctx);
     expect(searchGazette).toHaveBeenCalledOnce();
@@ -175,14 +175,14 @@ describe('risSearchGazette — federal era-tier routing (servedApplication)', ()
   });
 
   it('routes a bare current-era number to BgblAuth', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ number: '171/2026' });
     await risSearchGazette.handler(input, ctx);
     expect(getEnrichment(ctx).servedApplication).toBe('BgblAuth');
   });
 
   it('routes a pre-2004 number to BgblPdf', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ number: '50/1998' });
     await risSearchGazette.handler(input, ctx);
     expect(getEnrichment(ctx).servedApplication).toBe('BgblPdf');
@@ -191,7 +191,7 @@ describe('risSearchGazette — federal era-tier routing (servedApplication)', ()
   // Both bounds are set: a one-sided published_from is open into every later tier and is
   // rejected as cross-tier, so it can no longer stand in for "an imperial-era range".
   it('routes a pre-1941 date range to BgblAlt', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({
       published_from: '1900-01-01',
       published_to: '1930-12-31',
@@ -201,7 +201,7 @@ describe('risSearchGazette — federal era-tier routing (servedApplication)', ()
   });
 
   it('routes a date range inside the post-war window to BgblPdf', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({
       published_from: '1961-01-01',
       published_to: '1961-12-31',
@@ -211,14 +211,14 @@ describe('risSearchGazette — federal era-tier routing (servedApplication)', ()
   });
 
   it('routes a query with no date bound at all to the current tier', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ query: 'Datenschutz' });
     await risSearchGazette.handler(input, ctx);
     expect(getEnrichment(ctx).servedApplication).toBe('BgblAuth');
   });
 
   it('forces the postwar tier for part: pre_1997 regardless of number', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ part: 'pre_1997' });
     await risSearchGazette.handler(input, ctx);
     expect(getEnrichment(ctx).servedApplication).toBe('BgblPdf');
@@ -236,28 +236,28 @@ describe('risSearchGazette — state_era series routing (servedApplication)', ()
   });
 
   it('routes an omitted state_era to the authentic LgblAuth', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ scope: 'salzburg' });
     await risSearchGazette.handler(input, ctx);
     expect(getEnrichment(ctx).servedApplication).toBe('LgblAuth');
   });
 
   it('routes state_era: current to the authentic LgblAuth', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ scope: 'salzburg', state_era: 'current' });
     await risSearchGazette.handler(input, ctx);
     expect(getEnrichment(ctx).servedApplication).toBe('LgblAuth');
   });
 
   it('routes state_era: legacy to Lgbl for a state the historical series carries', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ scope: 'salzburg', state_era: 'legacy' });
     await risSearchGazette.handler(input, ctx);
     expect(getEnrichment(ctx).servedApplication).toBe('Lgbl');
   });
 
   it('routes state_era: legacy to LgblNO for Niederösterreich', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ scope: 'niederoesterreich', state_era: 'legacy' });
     await risSearchGazette.handler(input, ctx);
     expect(getEnrichment(ctx).servedApplication).toBe('LgblNO');
@@ -265,7 +265,7 @@ describe('risSearchGazette — state_era series routing (servedApplication)', ()
 
   // Only legacy conflicts with the ordinance gazette — current must still resolve to Vbl.
   it('routes series: ordinance_gazette with state_era: current to Vbl', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({
       scope: 'tirol',
       series: 'ordinance_gazette',
@@ -307,7 +307,7 @@ describe('risSearchGazette — cross-tier federal date ranges', () => {
 
   it('serves the December-only control from BgblPdf, with December dates only', async () => {
     searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-bgblpdf-2003-12.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({
       scope: 'federal',
       published_from: '2003-12-01',
@@ -326,7 +326,7 @@ describe('risSearchGazette — cross-tier federal date ranges', () => {
 
   it('serves the January-only control from BgblAuth, with January dates only', async () => {
     searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-bgblauth-2004-01.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({
       scope: 'federal',
       published_from: '2004-01-01',
@@ -415,7 +415,7 @@ describe('risSearchGazette — cross-tier federal date ranges', () => {
 
   it('serves a range that starts in the gap and ends in one tier, noting the gap', async () => {
     searchGazette.mockResolvedValue(zeroHitsResult);
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({
       published_from: '1941-01-01',
       published_to: '1946-12-31',
@@ -430,7 +430,7 @@ describe('risSearchGazette — cross-tier federal date ranges', () => {
   // secondary filter there, so neither is refused for spanning.
   it('keeps part: pre_1997 pinned to BgblPdf despite a spanning range', async () => {
     searchGazette.mockResolvedValue(zeroHitsResult);
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({
       part: 'pre_1997',
       published_from: '2003-12-01',
@@ -443,7 +443,7 @@ describe('risSearchGazette — cross-tier federal date ranges', () => {
 
   it("keeps a number's trailing year in charge of the tier despite a spanning range", async () => {
     searchGazette.mockResolvedValue(zeroHitsResult);
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({
       number: '146/2003',
       published_from: '2003-12-01',
@@ -456,7 +456,7 @@ describe('risSearchGazette — cross-tier federal date ranges', () => {
 
   it('leaves non-federal scopes untouched by the tier check', async () => {
     searchGazette.mockResolvedValue(zeroHitsResult);
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({
       scope: 'salzburg',
       published_from: '1900-01-01',
@@ -476,14 +476,14 @@ describe('risSearchGazette — zero-hit notices', () => {
   });
 
   it('contains only the base fragment for a plain current-era query', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ query: 'Datenschutz' });
     await risSearchGazette.handler(input, ctx);
     expect(getEnrichment(ctx).notice).toBe('0 gazette entries matched.');
   });
 
   it('includes the number/citation guidance when number is set', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ number: '171/2026' });
     await risSearchGazette.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -492,7 +492,7 @@ describe('risSearchGazette — zero-hit notices', () => {
   });
 
   it('flags a number/part Roman-numeral mismatch', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ number: 'BGBl. II Nr. 171/2026', part: 'part1' });
     await risSearchGazette.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -500,7 +500,7 @@ describe('risSearchGazette — zero-hit notices', () => {
   });
 
   it('includes the issuer phrase-field guidance when issuer is set', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ issuer: 'BMF' });
     await risSearchGazette.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -513,7 +513,7 @@ describe('risSearchGazette — zero-hit notices', () => {
   // metadata-only status are not BgblPdf's — a shared string told a post-war caller its
   // results carried no content_urls when that tier is exactly the one that has them (#24).
   it('names only BgblAlt’s window and caveats for an imperial-era federal range', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({
       published_from: '1900-01-01',
       published_to: '1930-12-31',
@@ -527,7 +527,7 @@ describe('risSearchGazette — zero-hit notices', () => {
   });
 
   it('names only BgblPdf’s window and caveats for a post-war federal range', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({
       published_from: '1950-01-01',
       published_to: '1950-12-31',
@@ -547,7 +547,7 @@ describe('risSearchGazette — zero-hit notices', () => {
   });
 
   it('includes the district-coverage guidance for scope: district', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ scope: 'district' });
     await risSearchGazette.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -555,7 +555,7 @@ describe('risSearchGazette — zero-hit notices', () => {
   });
 
   it('includes the Tirol-only ordinance-gazette caveat for scope: tirol with series: ordinance_gazette', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ scope: 'tirol', series: 'ordinance_gazette' });
     await risSearchGazette.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
@@ -567,11 +567,11 @@ describe('risSearchGazette — zero-hit notices', () => {
 
 describe('risSearchGazette — error mapping', () => {
   // The handler's `.catch()` re-maps in-band RIS errors surfaced by the service onto this
-  // tool's declared contract: a Client error (InvalidParams) becomes invalid_query
+  // tool's declared contract: a Client error (ValidationError) becomes invalid_query
   // (ValidationError) and a transport/Server error (ServiceUnavailable) becomes
   // upstream_error — each carrying the original RIS message plus reason + recovery on the wire.
-  it('maps a service InvalidParams rejection to the invalid_query contract error', async () => {
-    const upstreamError = invalidParams("The 'Bgblnummer' element is invalid.", {
+  it('maps a service ValidationError rejection to the invalid_query contract error', async () => {
+    const upstreamError = validationError("The 'Bgblnummer' element is invalid.", {
       risApplication: 'BgblAuth',
     });
     searchGazette.mockRejectedValue(upstreamError);
@@ -666,7 +666,7 @@ describe('risSearchGazette — error mapping', () => {
     // "correct the parameter named in the message" resolves to nothing and the reference
     // topics are dead ends. The page has to come first in the hint.
     searchGazette.mockRejectedValue(
-      invalidParams('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
+      validationError('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
     );
     const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ query: 'Datenschutz', page: 9999 });
@@ -698,7 +698,7 @@ describe('risSearchGazette — error mapping', () => {
 describe('risSearchGazette — record mapping, binding labels, and format() parity', () => {
   it('maps a Bvb (district) hit — authentic binding, PDF surfaced only via authentic_pdf_url', async () => {
     searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-bvb.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ scope: 'district' });
     const result = await risSearchGazette.handler(input, ctx);
     const record = result.results[0]!;
@@ -720,7 +720,7 @@ describe('risSearchGazette — record mapping, binding labels, and format() pari
 
   it('maps a GrA (municipal) hit — sparse payload with no municipality field, never fabricated', async () => {
     searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-gra.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ scope: 'municipal' });
     const result = await risSearchGazette.handler(input, ctx);
     const record = result.results[0]!;
@@ -737,7 +737,7 @@ describe('risSearchGazette — record mapping, binding labels, and format() pari
 
   it('renders every populated field for a multi-hit LgblAuth result (format() parity)', async () => {
     searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-lgblauth.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ scope: 'salzburg' });
     const result = await risSearchGazette.handler(input, ctx);
     expect(result.results).toHaveLength(2);
@@ -764,7 +764,7 @@ describe('risSearchGazette — record mapping, binding labels, and format() pari
 
   it('maps BgblAlt hits — historical_record, ÖNB scan surfaced via alex_url (the metadata-only tier’s only doc path)', async () => {
     searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-bgblalt.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({
       published_from: '1940-01-01',
       published_to: '1940-12-31',
@@ -791,7 +791,7 @@ describe('risSearchGazette — record mapping, binding labels, and format() pari
 
   it('labels an LgblNO (non-authentic Niederösterreich) result as consolidated_informational', async () => {
     searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-lgblauth.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({
       scope: 'niederoesterreich',
       state_era: 'legacy',
@@ -803,7 +803,7 @@ describe('risSearchGazette — record mapping, binding labels, and format() pari
 
   it('labels a Lgbl (non-authentic, non-NÖ) result as historical_record', async () => {
     searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-lgblauth.json')));
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
     const input = risSearchGazette.input.parse({ scope: 'salzburg', state_era: 'legacy' });
     const result = await risSearchGazette.handler(input, ctx);
     expect(result.results[0]!.binding).toBe('historical_record');

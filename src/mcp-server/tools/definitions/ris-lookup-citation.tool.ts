@@ -8,9 +8,9 @@
  * RESULT, never a throw — the agent self-corrects from structured guidance better than from
  * an exception (fleet precedent: eur-lex lookup_celex, pubmed/courtlistener lookup_citation).
  * The only thrown errors are `upstream_error` (a routed search failed upstream) and
- * `upstream_timeout` (it did not answer within the deadline). A service
- * InvalidParams/ValidationError during a routed lookup is a failed deterministic filter =
- * no resolution = `found: false`, not an error.
+ * `upstream_timeout` (it did not answer within the deadline). A service `ValidationError`
+ * during a routed lookup is a failed deterministic filter = no resolution = `found: false`,
+ * not an error.
  *
  * The resolved record is produced by the corresponding search tool's own record mapper, so an
  * agent chaining a resolved citation sees exactly the shape that tool returns.
@@ -586,7 +586,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
      * Run a routed search: map an upstream failure to this tool's `upstream_error` or
      * `upstream_timeout` (separate codes since 0.10.17 split them — `ctx.fail` resolves the
      * code from the contract entry, so one reason cannot carry both), and a failed
-     * deterministic filter (InvalidParams / ValidationError) to a not-resolved `null`.
+     * deterministic filter (`ValidationError`) to a not-resolved `null`.
      */
     const runSearch = async (
       run: () => Promise<RisSearchResult>,
@@ -603,10 +603,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
             ...ctx.recoveryFor('upstream_timeout'),
           });
         }
-        if (
-          err.code === JsonRpcErrorCode.InvalidParams ||
-          err.code === JsonRpcErrorCode.ValidationError
-        ) {
+        if (err.code === JsonRpcErrorCode.ValidationError) {
           return null;
         }
         throw err;

@@ -44,8 +44,8 @@ vi.mock('@/services/ris/ris-service.js', async (importOriginal) => {
 });
 
 /** Await a handler call expected to reject, and narrow the rejection to an McpError. */
-async function captureError(promise: Promise<unknown>): Promise<McpError> {
-  const err = await promise.catch((e: unknown) => e);
+async function captureError(result: unknown | Promise<unknown>): Promise<McpError> {
+  const err = await Promise.resolve(result).catch((e: unknown) => e);
   if (!(err instanceof McpError)) throw new Error('unreachable — expected an McpError');
   return err;
 }
@@ -68,7 +68,10 @@ describe('risDocumentResource — resolves via the shared renderDocument helper'
       byteSize: 25,
       url: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
     });
-    const ctx = createMockContext({ uri: new URL('ris://document/BrKons/NOR40262691') });
+    const ctx = createMockContext({
+      errors: risDocumentResource.errors,
+      uri: new URL('ris://document/BrKons/NOR40262691'),
+    });
     const params = risDocumentResource.params!.parse({
       application: 'BrKons',
       documentNumber: 'NOR40262691',
@@ -88,7 +91,10 @@ describe('risDocumentResource — resolves via the shared renderDocument helper'
       'utf8',
     );
     fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
-    const ctx = createMockContext({ uri: new URL('ris://document/BrKons/NOR40262691') });
+    const ctx = createMockContext({
+      errors: risDocumentResource.errors,
+      uri: new URL('ris://document/BrKons/NOR40262691'),
+    });
     const params = risDocumentResource.params!.parse({
       application: 'BrKons',
       documentNumber: 'NOR40262691',
@@ -102,7 +108,10 @@ describe('risDocumentResource — resolves via the shared renderDocument helper'
   });
 
   it('falls back to the unavailable-format notice text for an authentic_pdf_only application', async () => {
-    const ctx = createMockContext({ uri: new URL('ris://document/Bvb/BVB_BU_JE_20260703_9') });
+    const ctx = createMockContext({
+      errors: risDocumentResource.errors,
+      uri: new URL('ris://document/Bvb/BVB_BU_JE_20260703_9'),
+    });
     const params = risDocumentResource.params!.parse({
       application: 'Bvb',
       documentNumber: 'BVB_BU_JE_20260703_9',
@@ -117,7 +126,10 @@ describe('risDocumentResource — overflow degradation', () => {
   it('degrades an oversized document to a section outline plus a tool-retrieval notice', async () => {
     const html = oversizedArticlesHtml();
     fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
-    const ctx = createMockContext({ uri: new URL('ris://document/BrKons/NOR40262691') });
+    const ctx = createMockContext({
+      errors: risDocumentResource.errors,
+      uri: new URL('ris://document/BrKons/NOR40262691'),
+    });
     const params = risDocumentResource.params!.parse({
       application: 'BrKons',
       documentNumber: 'NOR40262691',
@@ -143,7 +155,10 @@ describe('risDocumentResource — overflow degradation', () => {
       (_, i) => `<h2>Artikel ${i + 1}</h2>${body(i + 1)}`,
     ).join('\n');
     fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
-    const ctx = createMockContext({ uri: new URL('ris://document/BrKons/NOR40262691') });
+    const ctx = createMockContext({
+      errors: risDocumentResource.errors,
+      uri: new URL('ris://document/BrKons/NOR40262691'),
+    });
     const params = risDocumentResource.params!.parse({
       application: 'BrKons',
       documentNumber: 'NOR40262691',
@@ -161,7 +176,10 @@ describe('risDocumentResource — overflow degradation', () => {
     const body = 'Der Beschwerdeführer brachte vor. '.repeat(8);
     const html = Array.from({ length: 400 }, (_, i) => `<p>xPARAx${i}x ${body}</p>`).join('\n');
     fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
-    const ctx = createMockContext({ uri: new URL('ris://document/Bvwg/JJT_20260101_BVWG_001') });
+    const ctx = createMockContext({
+      errors: risDocumentResource.errors,
+      uri: new URL('ris://document/Bvwg/JJT_20260101_BVWG_001'),
+    });
     const params = risDocumentResource.params!.parse({
       application: 'Bvwg',
       documentNumber: 'JJT_20260101_BVWG_001',
@@ -185,7 +203,10 @@ describe('risDocumentResource — overflow degradation', () => {
       byteSize: 24,
       url: 'https://x',
     });
-    const ctx = createMockContext({ uri: new URL('ris://document/BrKons/NOR40262691') });
+    const ctx = createMockContext({
+      errors: risDocumentResource.errors,
+      uri: new URL('ris://document/BrKons/NOR40262691'),
+    });
     const params = risDocumentResource.params!.parse({
       application: 'BrKons',
       documentNumber: 'NOR40262691',
