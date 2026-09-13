@@ -369,7 +369,7 @@ build with `--build-arg OTEL_ENABLED=false` to omit them.
 | `src/services/ris` | RIS request building, HTTP access, normalization, and static reference data. |
 | `docs/design.md` | Settled v1 design — tool surface, service spec, live-confirmed RIS API reference. |
 | `tests/` | Unit and integration tests mirroring `src/`. |
-| `skills/` | Framework skills synced from `@cyanheads/mcp-ts-core`. |
+| `framework-skills/` | Development skills synced from `@cyanheads/mcp-ts-core`. |
 
 ## Development guide
 
