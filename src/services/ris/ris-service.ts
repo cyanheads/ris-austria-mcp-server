@@ -11,9 +11,8 @@
  * RIS Client errors surface as `ValidationError` (non-transient — not retried) whether they
  * arrive in-band on a 200 or as the same envelope on a 500 error response, which
  * `fetchJson` translates rather than letting the status decide. An upstream 5xx carrying no
- * such envelope is reclassified to `ServiceUnavailable` on both the search and content paths
- * — 500/501 map to `InternalError`, a code no caller contract covers and `withRetry` never
- * retries.
+ * such envelope uses the framework's `ServiceUnavailable` classification; HTTP 501 opts
+ * out of retry, and caller cancellation remains `RequestCancelled`.
  * Content fetches are allowlisted to the content host's `/Dokumente/` tree (SSRF guard).
  * @module services/ris/ris-service
  */
@@ -21,7 +20,6 @@
 import type { Context } from '@cyanheads/mcp-ts-core';
 import type { AppConfig } from '@cyanheads/mcp-ts-core/config';
 import {
-  JsonRpcErrorCode,
   McpError,
   serviceUnavailable,
   timeout,
@@ -103,27 +101,6 @@ const RETRY_BASE_DELAY_MS = 1_500;
  */
 const CONTENT_TIMEOUT_MS = 25_000;
 const CONTENT_MAX_RETRIES = 1;
-
-/**
- * Reclassify an unclassified upstream 5xx as transient. `fetchWithTimeout` maps 500/501 to
- * `InternalError` — a code no tool or resource contract declares and `withRetry` does not
- * treat as transient — so a degraded RIS reached the wire as a bare -32603 with no reason,
- * no retryable flag, and no recovery. Reads the canonical `status` field (0.10.15+), which
- * also keeps an abort-sourced `InternalError` (no status) out of the reclassification.
- *
- * Runs only after the RIS error-envelope translation has had its chance: a 500 carrying an
- * `OgdSearchResult.Error` is a rejected parameter, not a server fault.
- */
-function reclassifyUpstreamServerError(error: unknown): unknown {
-  if (!(error instanceof McpError) || error.code !== JsonRpcErrorCode.InternalError) return error;
-  const status = error.data?.status;
-  if (typeof status !== 'number' || status < 500) return error;
-  return serviceUnavailable(
-    `RIS returned HTTP ${status} with no error envelope — the upstream is degraded.`,
-    { status },
-    { cause: error },
-  );
-}
 
 /**
  * Opt a search deadline out of retry. RIS answers a search by scanning as much of the corpus
@@ -298,8 +275,6 @@ export class RisService {
           expectedStatuses: [404],
           headers: { 'User-Agent': this.userAgent() },
           signal: ctx.signal,
-        }).catch((error: unknown) => {
-          throw reclassifyUpstreamServerError(error);
         });
         const text = await response.text();
         const contentType = response.headers.get('content-type');
@@ -372,15 +347,13 @@ export class RisService {
       signal: ctx.signal,
     }).catch((error: unknown) => {
       // RIS reports a rejected parameter as HTTP 500 carrying the in-band error envelope,
-      // which fetchWithTimeout captures as data.body before the status maps to a generic
-      // InternalError. Translating it tells the caller which input RIS rejected. A 500
-      // without one is a genuine server fault — reclassify so it lands on the callers'
-      // declared upstream_error rather than an undeclared InternalError.
+      // which fetchWithTimeout captures as data.body. Translate that domain error before
+      // retrying a generic upstream failure, preserving the rejected parameter detail.
       if (error instanceof McpError) {
         const translated = errorFromResponseBody(error.data?.body, { cause: error });
         if (translated) throw translated;
       }
-      throw failFastOnDeadline(reclassifyUpstreamServerError(error));
+      throw failFastOnDeadline(error);
     });
     const text = await response.text();
     if (isHtmlErrorPage(text)) {

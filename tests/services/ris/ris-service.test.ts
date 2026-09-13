@@ -202,7 +202,7 @@ describe('RisService — HTTP 500 carrying a RIS error envelope', () => {
     // ServiceUnavailable. InternalError reached the wire bare (#15).
     expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect((err as McpError).code).not.toBe(JsonRpcErrorCode.InternalError);
-    expect((err as McpError).message).toContain('HTTP 500');
+    expect((err as McpError).data?.status).toBe(500);
   });
 });
 
@@ -214,10 +214,10 @@ describe('RisService — search retry budget', () => {
     vi.useRealTimers();
   });
 
-  it('retries a fast upstream fault across the full attempt budget', async () => {
+  it.each([500, 503])('retries HTTP %i across the full attempt budget', async (status) => {
     // A 5xx that fails fast costs only the backoff, so the search path keeps every attempt
     // for the case retrying can actually clear.
-    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 503 })));
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status })));
     vi.stubGlobal('fetch', fetchMock);
     vi.useFakeTimers();
 
@@ -229,6 +229,32 @@ describe('RisService — search retry budget', () => {
 
     expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not retry an HTTP 501', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 501 })));
+    vi.stubGlobal('fetch', fetchMock);
+    const error = await service
+      .trackChanges({ application: 'Dsk' }, createMockContext())
+      .catch((error: unknown) => error);
+    expect(error).toMatchObject({
+      code: JsonRpcErrorCode.ServiceUnavailable,
+      data: { status: 501, retryable: false },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps caller cancellation distinct from a search deadline without retrying', async () => {
+    const fetchMock = vi.fn(() => Promise.reject(new DOMException('Aborted', 'AbortError')));
+    vi.stubGlobal('fetch', fetchMock);
+    const error = await service
+      .trackChanges({ application: 'Dsk' }, createMockContext())
+      .catch((error: unknown) => error);
+    expect(error).toMatchObject({
+      code: JsonRpcErrorCode.RequestCancelled,
+      data: { errorSource: 'FetchAborted' },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not retry its own deadline — a slow search is expensive, not unlucky', async () => {
@@ -325,7 +351,7 @@ describe('RisService.fetchDocumentContent — upstream classification and retry 
     // #15 — the content path had no envelope-translation catch at all, so an unclassified
     // 5xx reached ris_get_document as a bare InternalError with no reason or recovery.
     expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
-    expect((err as McpError).message).toContain('HTTP 500');
+    expect((err as McpError).data?.status).toBe(500);
     // #21 — the raised per-attempt deadline is only affordable at two attempts; four would
     // spend ~93s and blow past the MCP SDK's 60s default request timeout.
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -343,7 +369,7 @@ describe('RisService.fetchDocumentContent — upstream classification and retry 
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves a caller abort as InternalError — it carries no status to reclassify', async () => {
+  it('classifies a caller abort as RequestCancelled without retrying', async () => {
     const fetchMock = vi.fn(() =>
       Promise.reject(new DOMException('The operation was aborted.', 'AbortError')),
     );
@@ -352,8 +378,20 @@ describe('RisService.fetchDocumentContent — upstream classification and retry 
       .fetchDocumentContent(URL_UNDER_TEST, createMockContext())
       .catch((e: unknown) => e);
 
-    expect((err as McpError).code).toBe(JsonRpcErrorCode.InternalError);
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.RequestCancelled);
     expect((err as McpError).data?.errorSource).toBe('FetchAborted');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry an HTTP 501 content response', async () => {
+    const fetchMock = stubStatus(501);
+    const error = await service
+      .fetchDocumentContent(URL_UNDER_TEST, createMockContext())
+      .catch((error: unknown) => error);
+    expect(error).toMatchObject({
+      code: JsonRpcErrorCode.ServiceUnavailable,
+      data: { status: 501, retryable: false },
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
