@@ -1,20 +1,70 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "ris-austria-mcp-server",
   "version": "0.4.2",
   "description": "Search Austrian consolidated federal & state law, court decisions, and the authentic Bundesgesetzblatt from the official RIS via MCP. Keyless. STDIO or Streamable HTTP.",
   "author": {
-    "name": "cyanheads"
+    "name": "Casey Hand",
+    "email": "casey@caseyjhand.com",
+    "url": "https://caseyjhand.com"
   },
   "homepage": "https://github.com/cyanheads/ris-austria-mcp-server#readme",
   "repository": "git+https://github.com/cyanheads/ris-austria-mcp-server.git",
   "license": "Apache-2.0",
+  "keywords": [
+    "ris",
+    "austria",
+    "austrian-law",
+    "legal-research",
+    "case-law",
+    "legislation",
+    "gazette",
+    "bundesgesetzblatt",
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "typescript",
+    "bun",
+    "stdio",
+    "streamable-http",
+    "ai-agent"
+  ],
   "mcpServers": {
     "ris-austria-mcp-server": {
       "command": "npx",
-      "args": ["-y", "@cyanheads/ris-austria-mcp-server"],
+      "args": [
+        "-y",
+        "@cyanheads/ris-austria-mcp-server"
+      ],
       "env": {
-        "MCP_TRANSPORT_TYPE": "stdio"
+        "MCP_TRANSPORT_TYPE": "stdio",
+        "RIS_CONTACT": "${user_config.ris_contact}",
+        "RIS_API_BASE_URL": "${user_config.ris_api_base_url}",
+        "RIS_CONTENT_BASE_URL": "${user_config.ris_content_base_url}"
       }
+    }
+  },
+  "userConfig": {
+    "ris_contact": {
+      "type": "string",
+      "title": "RIS Contact",
+      "description": "Optional contact string appended to the User-Agent. RIS netiquette asks integrators to be identifiable; no API key is needed.",
+      "required": false,
+      "default": ""
+    },
+    "ris_api_base_url": {
+      "type": "string",
+      "title": "RIS API Base URL",
+      "description": "RIS OGD REST API base URL. Leave blank for the official endpoint.",
+      "required": false,
+      "default": ""
+    },
+    "ris_content_base_url": {
+      "type": "string",
+      "title": "RIS Content Base URL",
+      "description": "RIS document content host and allowlist origin. Leave blank for the official host.",
+      "required": false,
+      "default": ""
     }
   }
 }

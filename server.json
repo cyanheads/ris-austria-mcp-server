@@ -43,6 +43,20 @@
           "description": "Optional contact string appended to the User-Agent (RIS netiquette asks integrators to be identifiable).",
           "format": "string",
           "isRequired": false
+        },
+        {
+          "name": "RIS_API_BASE_URL",
+          "description": "RIS OGD REST API base URL.",
+          "format": "string",
+          "isRequired": false,
+          "default": "https://data.bka.gv.at/ris/api/v2.6"
+        },
+        {
+          "name": "RIS_CONTENT_BASE_URL",
+          "description": "RIS document content host and allowlist origin.",
+          "format": "string",
+          "isRequired": false,
+          "default": "https://www.ris.bka.gv.at"
         }
       ],
       "transport": {
@@ -106,6 +120,20 @@
           "description": "Optional contact string appended to the User-Agent (RIS netiquette asks integrators to be identifiable).",
           "format": "string",
           "isRequired": false
+        },
+        {
+          "name": "RIS_API_BASE_URL",
+          "description": "RIS OGD REST API base URL.",
+          "format": "string",
+          "isRequired": false,
+          "default": "https://data.bka.gv.at/ris/api/v2.6"
+        },
+        {
+          "name": "RIS_CONTENT_BASE_URL",
+          "description": "RIS document content host and allowlist origin.",
+          "format": "string",
+          "isRequired": false,
+          "default": "https://www.ris.bka.gv.at"
         }
       ],
       "transport": {

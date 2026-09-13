@@ -3,22 +3,41 @@
   "version": "0.4.2",
   "description": "Search Austrian consolidated federal & state law, court decisions, and the authentic Bundesgesetzblatt from the official RIS via MCP. Keyless. STDIO or Streamable HTTP.",
   "author": {
-    "name": "cyanheads",
+    "name": "Casey Hand",
     "email": "casey@caseyjhand.com",
-    "url": "https://github.com/cyanheads"
+    "url": "https://caseyjhand.com"
   },
   "homepage": "https://github.com/cyanheads/ris-austria-mcp-server#readme",
   "repository": "git+https://github.com/cyanheads/ris-austria-mcp-server.git",
   "license": "Apache-2.0",
-  "keywords": ["mcp", "mcp-server", "model-context-protocol", "ris", "austria", "legal", "law"],
+  "keywords": [
+    "ris",
+    "austria",
+    "austrian-law",
+    "legal-research",
+    "case-law",
+    "legislation",
+    "gazette",
+    "bundesgesetzblatt",
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "typescript",
+    "bun",
+    "stdio",
+    "streamable-http",
+    "ai-agent"
+  ],
   "mcpServers": "./.codex-plugin/mcp.json",
   "interface": {
     "displayName": "ris-austria-mcp-server",
-    "shortDescription": "Search Austrian consolidated federal & state law, court decisions, and the authentic Bundesgesetzblatt from the official RIS; resolve legal citations.",
+    "shortDescription": "Search Austrian consolidated federal & state law, court decisions, and the authentic Bundesgesetzblatt from the official RIS via MCP. Keyless. STDIO or Streamable HTTP.",
     "longDescription": "Austrian legal research over the official RIS (Rechtsinformationssystem des Bundes) OGD API. Search consolidated federal and state law as in force on any date, case law across every Austrian court and tribunal (VfGH, VwGH, OGH/Justiz, BVwG, LVwG, Datenschutzbehörde), and the legally binding Bundesgesetzblatt. Resolve citations — '§ 6 DSG', 'BGBl. I Nr. 165/1999', a Geschäftszahl — deterministically to canonical documents, read full texts as markdown, and export the authentic amtssignierte PDF. ELI, ECLI, and CELEX identifiers surfaced for cross-referencing EU law. No API key required.",
     "developerName": "cyanheads",
     "category": "Government Data",
-    "capabilities": ["Read"],
+    "capabilities": [
+      "Read"
+    ],
     "websiteURL": "https://github.com/cyanheads/ris-austria-mcp-server#readme",
     "defaultPrompt": []
   }

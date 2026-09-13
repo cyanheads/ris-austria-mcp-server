@@ -2,8 +2,12 @@
   "manifest_version": "0.3",
   "name": "ris-austria-mcp-server",
   "version": "0.4.2",
-  "description": "Search Austrian federal and state law, court decisions, and the authentic Bundesgesetzblatt (RIS).",
-  "author": { "name": "cyanheads" },
+  "description": "Search Austrian consolidated federal & state law, court decisions, and the authentic Bundesgesetzblatt from the official RIS via MCP. Keyless. STDIO or Streamable HTTP.",
+  "author": {
+    "name": "cyanheads",
+    "email": "casey@caseyjhand.com",
+    "url": "https://caseyjhand.com"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/cyanheads/ris-austria-mcp-server"
@@ -20,12 +24,16 @@
         "MCP_TRANSPORT_TYPE": "stdio",
         "MCP_AUTH_MODE": "none",
         "NODE_ENV": "production",
-        "RIS_CONTACT": "${user_config.ris_contact}"
+        "RIS_CONTACT": "${user_config.ris_contact}",
+        "RIS_API_BASE_URL": "${user_config.ris_api_base_url}",
+        "RIS_CONTENT_BASE_URL": "${user_config.ris_content_base_url}"
       }
     }
   },
   "compatibility": {
-    "runtimes": { "node": ">=24.0.0" }
+    "runtimes": {
+      "node": ">=24.0.0"
+    }
   },
   "tools_generated": true,
   "prompts_generated": true,
@@ -34,6 +42,20 @@
       "type": "string",
       "title": "RIS Contact",
       "description": "Optional contact string appended to the User-Agent. RIS netiquette asks integrators to be identifiable; no API key is needed.",
+      "required": false,
+      "default": ""
+    },
+    "ris_api_base_url": {
+      "type": "string",
+      "title": "RIS API Base URL",
+      "description": "RIS OGD REST API base URL. Leave blank for the official endpoint.",
+      "required": false,
+      "default": ""
+    },
+    "ris_content_base_url": {
+      "type": "string",
+      "title": "RIS Content Base URL",
+      "description": "RIS document content host and allowlist origin. Leave blank for the official host.",
       "required": false,
       "default": ""
     }
