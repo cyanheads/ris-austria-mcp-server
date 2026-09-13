@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.4.3](changelog/0.4.x/0.4.3.md) — 2026-09-13
+
+Upstream 5xx classification moves to the framework, a 501 no longer retries, a caller disconnect reports RequestCancelled, and the RIS endpoint overrides are declared in the registry and install metadata.
+
 ## [0.4.2](changelog/0.4.x/0.4.2.md) — 2026-08-24
 
 Adopts MCP SDK v2 with 2026-07-28 compatibility, strict root tool inputs, cache hints, and current error envelopes.
