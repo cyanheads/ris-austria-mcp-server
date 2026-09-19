@@ -2,10 +2,10 @@
 
 **Server:** ris-austria-mcp-server
 **Version:** 0.4.3
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.0`
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.6`
 **Engines:** Bun ≥1.4.0, Node ≥24.0.0
 **MCP SDK:** `@modelcontextprotocol/server` ^2.0.0
-**Zod:** ^4.6.1
+**Zod:** ^4.6.5
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
 
@@ -146,6 +146,7 @@ The entry point pins the machine identity and immutable public catalog cache hin
 await createApp({
   name: 'ris-austria-mcp-server',
   title: 'ris-austria-mcp-server',
+  sessionMode: 'stateless',
   cacheHints: {
     'tools/list': { ttlMs: 3_600_000, cacheScope: 'public' },
     'resources/list': { ttlMs: 3_600_000, cacheScope: 'public' },
@@ -161,6 +162,23 @@ await createApp({
 ```
 
 `package.json` is the canonical description source; do not duplicate it into `createApp()`.
+
+### Session posture and shutdown
+
+`sessionMode` declares the HTTP session posture in `src/` instead of leaving it to a
+deployment's `MCP_SESSION_MODE`, which still wins whenever it carries a meaningful value (an
+empty string and an unsubstituted `${…}` placeholder read as unset and fall through to the
+option). Every RIS tool answers from the request it was given, so `stateless` is the honest
+declaration here. Add `require: 'stateful'` only if a tool ever asks the caller for input
+mid-handler via `ctx.requestInput`: startup then fails with a `ConfigurationError` rather than
+serving a mode in which a 2025-era client can never answer the prompt. Stdio is never refused.
+
+`teardown(core)` is the `setup()` counterpart — release a watcher, socket, or non-`unref()`'d
+timer there. It runs after the transport stops and before the logger closes, on every shutdown
+path, and a signal-triggered shutdown then exits the process explicitly (0, or 1 if a step
+never settles within the framework's 10 s ceiling). `RisService` holds nothing across requests
+— every fetch is bounded by the caller's signal and the retry deadline — so this server
+declares no `teardown`.
 
 ---
 
@@ -279,9 +297,9 @@ Available skills:
 | `security-pass` | Audit server for MCP-flavored security gaps: output injection, scope blast radius, input sinks, tenant isolation |
 | `code-simplifier` | Post-session cleanup against `git diff` — modernize syntax, consolidate duplication, align with the codebase |
 | `polish-docs-meta` | Finalize docs, README, metadata, and agent protocol for shipping |
-| `git-wrapup` | Version bump, changelog, verification, and commit stack; leaves tagging to release-and-publish |
-| `release-and-publish` | Tag, push, npm, MCP Registry, GitHub Release, and Docker publication after git-wrapup |
-| `release-pr-review` | Review an opt-in gated release PR before publishing |
+| `git-wrapup` | Land working-tree changes as a commit stack — version bump, changelog, verify, commit by concern, release commit on top. No tag, no push to main; opens the release PR when the project declares release PR mode |
+| `release-pr-review` | Review pass on an open release PR — simplifier + correctness review, fixes as ordinary commits on top of the stack, PR body kept in sync. Release PR mode only |
+| `release-and-publish` | Fast-forward merge (release PR mode) + tag + push + npm + MCP Registry + GH Release + Docker. Picks up from `git-wrapup` |
 | `maintenance` | Investigate changelogs, adopt upstream changes, sync skills to agent dirs |
 | `orchestrations` | Chain task skills into a gated multi-phase pipeline — build-out, QA-fix, update-ship — when you can spawn sub-agents |
 | `report-issue-framework` | File a bug or feature request against `@cyanheads/mcp-ts-core` via `gh` CLI |
@@ -316,8 +334,8 @@ When you complete a skill's checklist, check the boxes and add a completion time
 | `bun run rebuild` | Clean + build |
 | `bun run clean` | Remove build artifacts |
 | `bun run devcheck` | Lint + format + typecheck + security + changelog sync |
-| `bun run audit:fix` | Run `bun audit fix` to upgrade vulnerable packages within existing ranges. First response to a transitive advisory; then `bun update <name>`, then `bun dedupe`. |
-| `bun run audit:refresh` | Delete `bun.lock` and reinstall. Last resort after targeted fixes; every ranged dependency re-resolves. |
+| `bun run audit:fix` | `bun audit fix` — upgrade vulnerable packages to the lowest safe version within existing ranges (`--dry-run` previews, `--latest` rewrites ranges). First response when `devcheck` flags a transitive advisory; then `bun update <name>`, then `bun dedupe` |
+| `bun run audit:refresh` | Delete `bun.lock` and reinstall. Last resort after `audit:fix`, `bun update <name>`, and `bun dedupe` — re-resolves every ranged dep (the framework pin included) and rewrites the lockfile as `lockfileVersion: 2` |
 | `bun run lint:mcp` | Run the MCP definition linter standalone (rule catalog: `api-linter` skill) |
 | `bun run lint:packaging` | Packaging surface checks — `server.json`/`manifest.json` env-var parity (run by devcheck) |
 | `bun run list-skills` | Print the skill registry |
@@ -367,6 +385,12 @@ security: false                            # optional — true ONLY for a source
 **Section order:** Added, Changed, Deprecated, Removed, Fixed, Security, then Dependencies. Include only sections with entries — don't ship empty headers.
 
 **Tag annotations** render as GitHub Release bodies via `--notes-from-tag`. They must be structured markdown — never a flat comma-separated string. Subject omits the version number (GitHub prepends it). See `framework-skills/release-and-publish/SKILL.md` for the tag format.
+
+---
+
+## Publishing
+
+**Every release goes through a release PR, straight-through** — `git-wrapup`'s "Release PR mode", mode `straight-through`. One run: `git-wrapup` lands the commit stack on `release/<version>`, pushes it, and opens the PR (title = the release commit subject, body = the changelog entry plus a gates section); `release-and-publish` then fast-forwards `main` locally with `git merge --ff-only`, creates the tag on `main`'s tip, pushes `main` and the tag, deletes the branch, and publishes. A caller's brief may run a given release as `gated` instead — a `release-pr-review` pass on the open PR before `release-and-publish`. **Never merge through the GitHub UI or `gh pr merge`**: squash and rebase-merge are disabled in the repo settings because both rewrite the stack (rebase-merge also strips the SSH signatures), and a merge commit breaks the linear history.
 
 ---
 
