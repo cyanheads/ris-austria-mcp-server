@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.4.4](changelog/0.4.x/0.4.4.md) — 2026-09-19
+
+ris_list_reference escapes backslashes before table pipes, a CodeQL workflow runs on every push and PR, and the server adopts mcp-ts-core 0.13.6's session-mode and retry-budget APIs.
+
 ## [0.4.3](changelog/0.4.x/0.4.3.md) — 2026-09-13
 
 Upstream 5xx classification moves to the framework, a 501 no longer retries, a caller disconnect reports RequestCancelled, and the RIS endpoint overrides are declared in the registry and install metadata.
