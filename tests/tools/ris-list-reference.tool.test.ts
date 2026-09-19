@@ -162,4 +162,31 @@ describe('risListReference', () => {
     expect(text).toContain('| Value | Label | RIS value |');
     expect(text).toContain('| one_week | Within the last week | EinerWoche |');
   });
+
+  it('escapes backslashes before pipes so cell text survives markdown rendering', () => {
+    /**
+     * A markdown renderer consumes a backslash standing before ASCII punctuation, so an
+     * unescaped one in the source value is dropped from the rendered cell. Escaping runs
+     * backslashes first: pipes first would re-escape the backslash it had just introduced,
+     * turning the cell's own `\|` delimiter escape into a literal `\|` in the output.
+     */
+    const result = {
+      topic: 'search_syntax',
+      summary: 'Escaping fixture — values carrying backslashes and pipes.',
+      entries: [
+        {
+          value: String.raw`x\|y`,
+          label: String.raw`a\*b|c`,
+          details: [{ key: 'Example', value: String.raw`C:\dir|tail` }],
+        },
+      ],
+      notes: [],
+    };
+
+    const text = (risListReference.format!(result)[0] as { type: 'text'; text: string }).text;
+
+    expect(text).toContain(
+      `| ${String.raw`x\\\|y`} | ${String.raw`a\\*b\|c`} | ${String.raw`C:\\dir\|tail`} |`,
+    );
+  });
 });

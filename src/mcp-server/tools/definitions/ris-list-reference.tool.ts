@@ -337,9 +337,16 @@ const TOPIC_BUILDERS: Record<Topic, () => TopicPayload> = {
   }),
 };
 
-/** Escape a string for use inside a markdown table cell. */
+/**
+ * Escape a string for use inside a markdown table cell.
+ *
+ * Backslashes are doubled before pipes are escaped, so a backslash already in the value
+ * survives rendering instead of being consumed as an escape of whatever punctuation follows
+ * it. The order is load-bearing: escaping pipes first would re-escape the backslash that
+ * escape had just introduced, emitting a literal `\|` where the cell delimiter was meant.
+ */
 function cell(text: string): string {
-  return text.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+  return text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 }
 
 export const risListReference = tool('ris_list_reference', {
