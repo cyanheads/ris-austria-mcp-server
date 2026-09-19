@@ -323,7 +323,10 @@ describe('RisService — search retry budget', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect((err as McpError).code).toBe(JsonRpcErrorCode.Timeout);
     expect(startedAt[1]! - t0).toBeLessThan(35_000);
-    expect(settledAt - t0).toBeLessThan(55_000);
+    // The budget bounds the backoff too, so the call settles on expiry rather than sleeping
+    // past it, and the error names which bound it hit rather than echoing the last attempt.
+    expect(settledAt - t0).toBeLessThanOrEqual(48_000);
+    expect(err).toMatchObject({ data: { deadlineMs: 48_000, reason: 'retry_deadline_exceeded' } });
   });
 });
 

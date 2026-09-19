@@ -280,6 +280,7 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       when: 'A page past the last page of results; or a parameter value rejected locally (ministry matched no entry in the RIS ministries table, or matched more than one); or RIS rejecting a value in-band (the Client error message is passed through verbatim, in German, and it does not name the page).',
       recovery:
         'For a page past the end, request a lower page, starting from 1. Otherwise correct the parameter named in the message; the message lists the closest ministry matches when a ministry was passed. Ministry codes: ris_list_reference topic ministries.',
+      thrownBy: 'service',
     },
     {
       reason: 'upstream_error',
@@ -288,6 +289,7 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       retryable: true,
       recovery:
         'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the query.',
+      thrownBy: 'service',
     },
     {
       reason: 'upstream_timeout',
@@ -296,6 +298,7 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       retryable: true,
       recovery:
         'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size, or narrow the date range.',
+      thrownBy: 'service',
     },
   ],
 

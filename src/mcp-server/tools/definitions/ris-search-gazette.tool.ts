@@ -604,6 +604,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
       when: 'A page past the last page of results; or a parameter the resolved gazette does not carry — sort_by, number, type, part, issuer, or a state absent from the historical Lgbl series — rejected locally before any upstream call, naming the field and the gazette that rejected it (by scope/series/state_era, or for a federal era tier by its window and the input that routed there); or RIS rejecting a value in-band (the Client error message is passed through verbatim, in German, and it does not name the page).',
       recovery:
         'For a page past the end, request a lower page, starting from 1. Otherwise correct the parameter named in the message, or drop it if this gazette does not carry it. Part and type semantics: ris_list_reference topic gazette_parts or law_types.',
+      thrownBy: 'service',
     },
     {
       reason: 'upstream_error',
@@ -612,6 +613,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
       retryable: true,
       recovery:
         'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the query.',
+      thrownBy: 'service',
     },
     {
       reason: 'upstream_timeout',
@@ -620,6 +622,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
       retryable: true,
       recovery:
         'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size, or narrow the date range.',
+      thrownBy: 'service',
     },
   ],
 

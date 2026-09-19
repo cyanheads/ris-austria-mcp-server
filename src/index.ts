@@ -20,6 +20,9 @@ import { initRisService } from './services/ris/ris-service.js';
 await createApp({
   name: 'ris-austria-mcp-server',
   title: 'ris-austria-mcp-server',
+  // Every tool answers from the request it was given — no handler gates on ctx.requestInput —
+  // so HTTP sessions buy nothing here. MCP_SESSION_MODE still overrides when set.
+  sessionMode: 'stateless',
   cacheHints: {
     'tools/list': { ttlMs: 3_600_000, cacheScope: 'public' },
     'resources/list': { ttlMs: 3_600_000, cacheScope: 'public' },

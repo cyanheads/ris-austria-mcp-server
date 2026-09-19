@@ -72,10 +72,12 @@ import type { RisChangeSet, RisDocumentContent, RisSearchResult } from './types.
  * `SEARCH_TIMEOUT_MS` covers that band up to its long tail. The tail past it is out of reach
  * at any deadline that still leaves room to deliver the response, so the `upstream_timeout`
  * recovery hints name the lever that shortens the scan (a smaller page_size).
- * `SEARCH_BUDGET_MS` caps the whole retry sequence — each attempt gets whatever is left when
- * it starts — so a slow *failing* upstream cannot multiply the deadline by the attempt
- * count. Worst case is the budget plus one backoff sleep that began just inside it (≤7.5s at
- * the default three retries) ≈ 55s, still inside the client's 60s.
+ * `SEARCH_BUDGET_MS` is `withRetry`'s `deadlineMs` — one wall-clock budget across every
+ * attempt and every backoff, so a slow *failing* upstream cannot multiply the deadline by
+ * the attempt count. Each attempt bounds its own fetch at whatever is left, a backoff that
+ * would consume the remainder fails fast instead of sleeping into a certain timeout, and the
+ * expiry aborts the in-flight request rather than waiting it out — so the whole call settles
+ * within the budget, inside the client's 60s.
  */
 const SEARCH_TIMEOUT_MS = 40_000;
 const SEARCH_BUDGET_MS = 48_000;
@@ -307,9 +309,13 @@ export class RisService {
   }
 
   /**
-   * Run one API request with retry wrapping the full fetch + parse pipeline, bounded by a
-   * single wall-clock budget across every attempt: each one gets whatever is left of
-   * {@link SEARCH_BUDGET_MS}, capped at {@link SEARCH_TIMEOUT_MS}.
+   * Run one API request with retry wrapping the full fetch + parse pipeline, bounded by
+   * {@link SEARCH_BUDGET_MS} as `withRetry`'s total deadline: each attempt caps its own
+   * fetch at whatever is left of that budget, never more than {@link SEARCH_TIMEOUT_MS}.
+   *
+   * The attempt's `signal` composes the deadline clock over the caller's, so an expiry that
+   * lands mid-attempt aborts the in-flight request instead of overshooting by one. A caller
+   * cancellation keeps precedence and is never relabelled as a budget expiry.
    */
   private async request<T>(
     request: RisRequest,
@@ -318,15 +324,20 @@ export class RisService {
     ctx: Context,
   ): Promise<T> {
     const requestContext = this.requestContext(operation, ctx);
-    const budgetEndsAt = Date.now() + SEARCH_BUDGET_MS;
     return await withRetry(
-      async () => {
-        const deadline = Math.min(SEARCH_TIMEOUT_MS, budgetEndsAt - Date.now());
-        return parse(await this.fetchJson(request, requestContext, ctx, deadline));
-      },
+      async ({ remainingMs, signal }) =>
+        parse(
+          await this.fetchJson(
+            request,
+            requestContext,
+            Math.min(SEARCH_TIMEOUT_MS, remainingMs),
+            signal,
+          ),
+        ),
       {
         baseDelayMs: RETRY_BASE_DELAY_MS,
         context: requestContext,
+        deadlineMs: SEARCH_BUDGET_MS,
         operation,
         signal: ctx.signal,
       },
@@ -337,14 +348,14 @@ export class RisService {
   private async fetchJson(
     request: RisRequest,
     requestContext: RequestContext,
-    ctx: Context,
     timeoutMs: number,
+    signal: AbortSignal,
   ): Promise<unknown> {
     const query = new URLSearchParams(request.params).toString();
     const url = `${this.config.apiBaseUrl}/${request.controller}${query === '' ? '' : `?${query}`}`;
     const response = await fetchWithTimeout(url, timeoutMs, requestContext, {
       headers: { Accept: 'application/json', 'User-Agent': this.userAgent() },
-      signal: ctx.signal,
+      signal,
     }).catch((error: unknown) => {
       // RIS reports a rejected parameter as HTTP 500 carrying the in-band error envelope,
       // which fetchWithTimeout captures as data.body. Translate that domain error before

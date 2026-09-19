@@ -456,6 +456,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       retryable: true,
       recovery:
         'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the query.',
+      thrownBy: 'service',
     },
     {
       reason: 'upstream_timeout',
@@ -464,6 +465,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       retryable: true,
       recovery:
         'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size, or narrow the date range.',
+      thrownBy: 'service',
     },
   ],
 

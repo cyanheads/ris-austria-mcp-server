@@ -80,11 +80,19 @@ describe('RIS framework tool contract', () => {
           },
         })}\n`,
       );
+      /**
+       * Both surfaces are asserted by containment, not byte-exact text: the framework
+       * appends the synthesized recovery hint and the reason/retryable terms to the
+       * rejection text, so the wording moves between releases while the offending key,
+       * the code, and the reason stay put.
+       */
       expect(JSON.parse((await replies.next()).value!)).toMatchObject({
         id: 2,
         result: {
           isError: true,
-          structuredContent: { error: { code: JsonRpcErrorCode.InvalidParams } },
+          structuredContent: {
+            error: { code: JsonRpcErrorCode.InvalidParams, data: { reason: 'invalid_arguments' } },
+          },
           content: expect.arrayContaining([
             expect.objectContaining({ type: 'text', text: expect.stringContaining('extra') }),
           ]),

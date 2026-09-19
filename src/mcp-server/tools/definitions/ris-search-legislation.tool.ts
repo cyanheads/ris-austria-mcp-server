@@ -377,6 +377,7 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       when: 'A page past the last page of results, or RIS rejecting a parameter value in-band — the Client error message is passed through verbatim, in German. It names the invalid element and its valid values, except for a page past the end, which names no parameter at all. Unsupported filter combinations are caught earlier as scope_filter_mismatch.',
       recovery:
         'For a page past the end, request a lower page, starting from 1. Otherwise correct the parameter named in the message. Ground valid codes with ris_list_reference (topic: states, section_types, changed_since_intervals, or search_syntax).',
+      thrownBy: 'service',
     },
     {
       reason: 'upstream_error',
@@ -385,6 +386,7 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       retryable: true,
       recovery:
         'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the query.',
+      thrownBy: 'service',
     },
     {
       reason: 'upstream_timeout',
@@ -393,6 +395,7 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       retryable: true,
       recovery:
         'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size, or narrow the date range.',
+      thrownBy: 'service',
     },
   ],
 

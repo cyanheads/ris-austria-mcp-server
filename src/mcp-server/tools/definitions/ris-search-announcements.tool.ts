@@ -347,6 +347,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       when: 'A page past the last page of results; or a parameter value rejected locally — an unknown or ambiguous issuer, a plan_state outside regional health-structure plans, or a sort_by value this collection has no column for, in which case the message names the values it does sort by; or RIS rejecting a value in-band (the Client error message is passed through verbatim, in German, and it does not name the page).',
       recovery:
         'For a page past the end, request a lower page, starting from 1. Otherwise correct the parameter named in the message, or drop it if this collection does not carry it. Collections and their issuers: ris_list_reference topic collections or issuing_bodies.',
+      thrownBy: 'service',
     },
     {
       reason: 'upstream_error',
@@ -355,6 +356,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       retryable: true,
       recovery:
         'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the query.',
+      thrownBy: 'service',
     },
     {
       reason: 'upstream_timeout',
@@ -363,6 +365,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       retryable: true,
       recovery:
         'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size, or narrow the date range.',
+      thrownBy: 'service',
     },
   ],
 

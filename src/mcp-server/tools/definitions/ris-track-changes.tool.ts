@@ -208,6 +208,7 @@ export const risTrackChanges = tool('ris_track_changes', {
       when: 'RIS rejected a parameter value in-band — its Client error message is passed through verbatim and names the offending element (e.g. a page past the last page of the change window).',
       recovery:
         'Correct the parameter named in the message — for a page past the end, request a lower page, starting from 1.',
+      thrownBy: 'service',
     },
     {
       reason: 'upstream_error',
@@ -216,6 +217,7 @@ export const risTrackChanges = tool('ris_track_changes', {
       retryable: true,
       recovery:
         'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the window.',
+      thrownBy: 'service',
     },
     {
       reason: 'upstream_timeout',
@@ -224,6 +226,7 @@ export const risTrackChanges = tool('ris_track_changes', {
       retryable: true,
       recovery:
         'RIS did not answer in time — retry the same call shortly, or make it cheaper upstream: reduce page_size or narrow the change window.',
+      thrownBy: 'service',
     },
   ],
 
