@@ -1,7 +1,9 @@
 /**
  * @fileoverview `changed_since` interval values and their upstream `ImRisSeit` spellings
- * (request XSD `ChangeSetInterval`). The gazette-law applications lack `ImRisSeit` and use
- * `Kundmachung.Periode` with the same value set instead.
+ * (request XSD `ChangeSetInterval`). `ImRisSeit` filters on when a document last changed in
+ * RIS. Avsv and Avn accept the element but ignore it, so the announcements builder refuses
+ * `changed_since` for them; their `Kundmachung.Periode` shares this value set but filters on
+ * promulgation date, a different question that `published_from` already answers exactly.
  * @module services/ris/reference/changed-since-intervals
  */
 
@@ -11,7 +13,7 @@ export interface ChangedSinceInterval {
   readonly code: string;
   /** English meaning. */
   readonly english: string;
-  /** Upstream `ImRisSeit` / `Kundmachung.Periode` value. */
+  /** Upstream `ImRisSeit` value. */
   readonly risValue: string;
 }
 

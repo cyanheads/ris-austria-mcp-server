@@ -3,7 +3,11 @@
  * ministries. Compiled from the OGD Handbook V2.6 value lists: `EinbringendeStelle`
  * (BgblAuth/Begut/RegV — phrase match, the bare abbreviation matches), Mrp `Einbringer`
  * (exact match against the full "ABBR (Name)" composite), and Erlaesse `Bundesministerium`
- * (exact match against the full designation only).
+ * (exact match against the full designation only). The ministries in office since 2025 post-date
+ * the Handbook: their rows carry the spellings the live corpus uses (full Mrp and Erlaesse
+ * sweeps plus per-abbreviation `EinbringendeStelle` probes on Begut/RegV/BgblAuth, 2026-09-24).
+ * Both exact-match parameters are free strings upstream — an unlisted value matches nothing
+ * rather than failing validation.
  * @module services/ris/reference/ministries
  */
 
@@ -20,7 +24,7 @@ export type MinistryParamFamily =
 export interface Ministry {
   /** Official abbreviation ("BMF"); null for older Erlaesse-only designations. */
   readonly abbreviation: string | null;
-  /** Parameter families whose documented value lists carry this ministry. */
+  /** Parameter families whose value lists (documented, or live-verified for 2025+) carry it. */
   readonly acceptedBy: readonly MinistryParamFamily[];
   /** Full German designation without the abbreviation prefix. */
   readonly designation: string;
@@ -59,6 +63,13 @@ export const RIS_MINISTRIES = [
     designation: 'Bundesministerium für Arbeit, Soziales, Gesundheit und Konsumentenschutz',
     mrpComposite:
       'BMASGK (Bundesministerium für Arbeit, Soziales, Gesundheit und Konsumentenschutz)',
+    acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
+  },
+  {
+    abbreviation: 'BMASGPK',
+    designation: 'Bundesministerium für Arbeit, Soziales, Gesundheit, Pflege und Konsumentenschutz',
+    mrpComposite:
+      'BMASGPK (Bundesministerium für Arbeit, Soziales, Gesundheit, Pflege und Konsumentenschutz)',
     acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
   },
   {
@@ -116,6 +127,19 @@ export const RIS_MINISTRIES = [
     acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
   },
   {
+    abbreviation: 'BMEIF',
+    designation: 'Bundesministerin für Europa, Integration und Familie im Bundeskanzleramt',
+    mrpComposite:
+      'BMEIF (Bundesministerin für Europa, Integration und Familie im Bundeskanzleramt)',
+    acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
+  },
+  {
+    abbreviation: 'BMEIF',
+    designation: 'Bundesministerium für Europa, Integration und Familie',
+    mrpComposite: 'BMEIF (Bundesministerium für Europa, Integration und Familie)',
+    acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
+  },
+  {
     abbreviation: 'BMEUV',
     designation: 'Bundesministerin für EU und Verfassung im Bundeskanzleramt',
     mrpComposite: 'BMEUV (Bundesministerin für EU und Verfassung im Bundeskanzleramt)',
@@ -135,9 +159,28 @@ export const RIS_MINISTRIES = [
     acceptedBy: ['einbringende_stelle', 'mrp_einbringer'],
   },
   {
+    abbreviation: 'BMFFJI',
+    designation: 'Bundesministerin für Frauen, Familie, Jugend und Integration im Bundeskanzleramt',
+    mrpComposite:
+      'BMFFJI (Bundesministerin für Frauen, Familie, Jugend und Integration im Bundeskanzleramt)',
+    acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
+  },
+  {
+    abbreviation: 'BMFI',
+    designation: 'Bundesministerin für Frauen und Integration',
+    mrpComposite: 'BMFI (Bundesministerin für Frauen und Integration)',
+    acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
+  },
+  {
     abbreviation: 'BMFJ',
     designation: 'Bundesministerium für Familien und Jugend',
     mrpComposite: 'BMFJ (Bundesministerium für Familien und Jugend)',
+    acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
+  },
+  {
+    abbreviation: 'BMFWF',
+    designation: 'Bundesministerium für Frauen, Wissenschaft und Forschung',
+    mrpComposite: 'BMFWF (Bundesministerium für Frauen, Wissenschaft und Forschung)',
     acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
   },
   {
@@ -162,6 +205,12 @@ export const RIS_MINISTRIES = [
     abbreviation: 'BMI',
     designation: 'Bundesministerium für Inneres',
     mrpComposite: 'BMI (Bundesministerium für Inneres)',
+    acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
+  },
+  {
+    abbreviation: 'BMIMI',
+    designation: 'Bundesministerium für Innovation, Mobilität und Infrastruktur',
+    mrpComposite: 'BMIMI (Bundesministerium für Innovation, Mobilität und Infrastruktur)',
     acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
   },
   {
@@ -202,6 +251,14 @@ export const RIS_MINISTRIES = [
     abbreviation: 'BMLRT',
     designation: 'Bundesministerium für Landwirtschaft, Regionen und Tourismus',
     mrpComposite: 'BMLRT (Bundesministerium für Landwirtschaft, Regionen und Tourismus)',
+    acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
+  },
+  {
+    abbreviation: 'BMLUK',
+    designation:
+      'Bundesministerium für Land- und Forstwirtschaft, Klima- und Umweltschutz, Regionen und Wasserwirtschaft',
+    mrpComposite:
+      'BMLUK (Bundesministerium für Land- und Forstwirtschaft, Klima- und Umweltschutz, Regionen und Wasserwirtschaft)',
     acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
   },
   {
@@ -273,6 +330,12 @@ export const RIS_MINISTRIES = [
     acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
   },
   {
+    abbreviation: 'BMWET',
+    designation: 'Bundesministerium für Wirtschaft, Energie und Tourismus',
+    mrpComposite: 'BMWET (Bundesministerium für Wirtschaft, Energie und Tourismus)',
+    acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
+  },
+  {
     abbreviation: 'BMWF',
     designation: 'Bundesministerium für Wissenschaft und Forschung',
     mrpComposite: 'BMWF (Bundesministerium für Wissenschaft und Forschung)',
@@ -288,6 +351,12 @@ export const RIS_MINISTRIES = [
     abbreviation: 'BMWFW',
     designation: 'Bundesministerium für Wissenschaft, Forschung und Wirtschaft',
     mrpComposite: 'BMWFW (Bundesministerium für Wissenschaft, Forschung und Wirtschaft)',
+    acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
+  },
+  {
+    abbreviation: 'BMWKMS',
+    designation: 'Bundesministerium für Wohnen, Kunst, Kultur, Medien und Sport',
+    mrpComposite: 'BMWKMS (Bundesministerium für Wohnen, Kunst, Kultur, Medien und Sport)',
     acceptedBy: ['einbringende_stelle', 'erlaesse_bundesministerium', 'mrp_einbringer'],
   },
   {

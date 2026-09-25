@@ -19,7 +19,11 @@ export interface AnnouncementCollection {
   readonly germanName: string;
   /** English name. */
   readonly name: string;
-  /** Tool parameters valid for this collection (besides paging/sorting/changed_since). */
+  /**
+   * Tool parameters valid for this collection, besides paging and sorting. `changed_since` is
+   * listed only where RIS honors `ImRisSeit` — social_insurance and veterinary accept the
+   * element upstream and ignore it (probed 2026-09-24).
+   */
   readonly params: readonly string[];
 }
 
@@ -60,7 +64,15 @@ export const RIS_COLLECTIONS = [
     germanName: 'Kundmachungen der Gerichte',
     authentic: true,
     coverage: 'Currently LVwG Tirol and LVwG Vorarlberg only',
-    params: ['query', 'title', 'published_from', 'published_to', 'in_force_as_of', 'type'],
+    params: [
+      'query',
+      'title',
+      'published_from',
+      'published_to',
+      'in_force_as_of',
+      'type',
+      'changed_since',
+    ],
   },
   {
     code: 'trade_exam_rules',
@@ -69,7 +81,15 @@ export const RIS_COLLECTIONS = [
     germanName: 'Prüfungsordnungen gemäß Gewerbeordnung',
     authentic: true,
     coverage: null,
-    params: ['query', 'title', 'published_from', 'published_to', 'in_force_as_of', 'type'],
+    params: [
+      'query',
+      'title',
+      'published_from',
+      'published_to',
+      'in_force_as_of',
+      'type',
+      'changed_since',
+    ],
   },
   {
     code: 'health_structure_plans',
@@ -87,6 +107,7 @@ export const RIS_COLLECTIONS = [
       'in_force_as_of',
       'plan_type',
       'plan_state',
+      'changed_since',
     ],
   },
   {
@@ -106,6 +127,7 @@ export const RIS_COLLECTIONS = [
       'norm',
       'case_number',
       'department',
+      'changed_since',
     ],
   },
   {
@@ -115,6 +137,14 @@ export const RIS_COLLECTIONS = [
     germanName: 'Ministerratsprotokolle',
     authentic: false,
     coverage: '2004 and later',
-    params: ['query', 'published_from', 'published_to', 'issuer', 'session_number', 'legislature'],
+    params: [
+      'query',
+      'published_from',
+      'published_to',
+      'issuer',
+      'session_number',
+      'legislature',
+      'changed_since',
+    ],
   },
 ] as const satisfies readonly AnnouncementCollection[];

@@ -9,6 +9,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import {
   COURTS_WITHOUT_DECISION_KIND,
+  type IssuingBody,
   RIS_APPLICATIONS,
   RIS_CHANGED_SINCE_INTERVALS,
   RIS_CITATION_FORMATS,
@@ -160,30 +161,33 @@ const TOPIC_BUILDERS: Record<Topic, () => TopicPayload> = {
   }),
   issuing_bodies: () => ({
     summary:
-      'Issuing-body values for the issuing_body parameter (courts dsk, dok, pvak, verg) and the social-insurance issuer parameter of ris_search_announcements (collection social_insurance, upstream Urheber).',
-    entries: RIS_ISSUING_BODIES.map((b) => ({
+      'Issuing-body values for the issuing_body parameter (courts dsk, dok, pvak, verg) and the social-insurance issuer parameter of ris_search_announcements (collection social_insurance, upstream Urheber), with the carrier abbreviations that parameter accepts.',
+    entries: (RIS_ISSUING_BODIES as readonly IssuingBody[]).map((b) => ({
       value: b.value,
       label: `${b.application} ${b.parameter}`,
-      details: kv(['Note', b.note]),
+      details: kv(['Accepted abbreviation', b.abbreviation], ['Note', b.note]),
     })),
     notes: [
-      'Dsk and Pvak values are schema enums in ASCII spelling; Dok and Avsv values are exact-match strings — pass them completely, including any "(ÖGK)"-style suffix.',
-      'Live check 2026-07-05: Urheber "Österreichische Gesundheitskasse (ÖGK)" matches 78 notices; the name without the suffix matches none.',
+      'Dsk and Pvak values are schema enums in ASCII spelling; Dok and Avsv values are exact-match strings.',
+      'Avsv (social_insurance issuer): an entry’s "Accepted abbreviation" (e.g. ÖGK, DVSV) is expanded to the full value, case-insensitively. Any other issuer — a full value, a "<ABBR> Gesamtvertrag" series, or a carrier this table lacks — is matched exactly as written. RIS matches the full value only: the designation without its "(ÖGK)"-style suffix matches nothing, and wildcards are refused.',
+      '"ÖGK" means the carrier, Österreichische Gesundheitskasse (ÖGK); its framework-contract series is the separate value "ÖGK Gesamtvertrag".',
     ],
   }),
   ministries: () => ({
     summary:
-      'Ministry designations, including historical ministries, for the ministry parameter of ris_search_drafts and the issuer parameter of ris_search_announcements (ministerial_decrees, council_minutes). Three upstream formats exist — see the notes.',
+      'Ministry designations, including historical ministries, for the ministry parameter of ris_search_drafts, the federal issuer parameter of ris_search_gazette, and the issuer parameter of ris_search_announcements (ministerial_decrees, council_minutes). Three upstream formats exist — see the notes.',
     entries: RIS_MINISTRIES.map((m) => ({
       value: m.abbreviation ?? m.designation,
       label: m.designation,
       details: kv(['Accepted by', m.acceptedBy.join(', ')], ['Mrp exact value', m.mrpComposite]),
     })),
     notes: [
-      'einbringende_stelle = EinbringendeStelle on BgblAuth/Begut/RegV — a phrase field, so the bare abbreviation matches ("BMF" → 536 review drafts, live check 2026-07-05).',
+      'einbringende_stelle = EinbringendeStelle on BgblAuth/Begut/RegV — a phrase field, so the bare abbreviation matches ("BMF" → 538 review drafts, live check 2026-09-24).',
       'mrp_einbringer = Einbringer on Mrp — exact match; pass the full "ABBR (Name)" composite shown under "Mrp exact value".',
       'erlaesse_bundesministerium = Bundesministerium on Erlaesse — exact match against the full designation without any abbreviation prefix.',
       'The historical designation at submission time counts — a 2015 draft carries the 2015 ministry name, not today’s successor.',
+      'An abbreviation missing from this table is rejected locally; a full designation missing from it (any value containing a space) is passed to RIS unchanged, so a ministry newer than the table is still reachable by its full name.',
+      'BMEIA and BMEIF each carry two designations: the bare abbreviation works on einbringende_stelle, while the exact-match parameters need one of the designations.',
     ],
   }),
   collections: () => ({
@@ -202,7 +206,8 @@ const TOPIC_BUILDERS: Record<Topic, () => TopicPayload> = {
     })),
     notes: [
       'Parameters outside a collection’s supported set are rejected locally before any upstream call.',
-      'changed_since, sort_by, sort_direction, page, and page_size apply to every collection.',
+      'sort_by, sort_direction, page, and page_size apply to every collection (sort_by only where the collection has the column).',
+      'changed_since is listed only where RIS honors it. On social_insurance and veterinary RIS ignores it and returns the whole collection, so it is rejected there: use published_from for publication recency, or ris_track_changes with application Avsv or Avn for change recency.',
     ],
   }),
   stages: () => ({
@@ -232,7 +237,7 @@ const TOPIC_BUILDERS: Record<Topic, () => TopicPayload> = {
       details: kv(['RIS value', i.risValue]),
     })),
     notes: [
-      'Maps to the upstream ImRisSeit parameter; gazette-law applications use Kundmachung.Periode with the same value set.',
+      'Maps to the upstream ImRisSeit parameter on the legislation, case-law, drafts, and announcements searches. ris_search_announcements rejects it for social_insurance and veterinary, where RIS ignores it; ris_search_gazette does not take it.',
       'For exact-dated change windows and deletions, use ris_track_changes instead.',
     ],
   }),

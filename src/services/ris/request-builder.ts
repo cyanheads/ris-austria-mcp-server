@@ -1,7 +1,7 @@
 /**
  * @fileoverview Request builders for the RIS OGD API — one thin builder per document
- * class over a shared param bag, plus ministry-abbreviation expansion and the History
- * application aliasing.
+ * class over a shared param bag, plus ministry and social-insurance-carrier abbreviation
+ * expansion and the History application aliasing.
  *
  * STRICT PARAM ALLOWLIST: RIS silently ignores unknown query params (a typo returns
  * plausible but unfiltered results, never an error), so builders emit only spellings
@@ -18,12 +18,14 @@
 import { validationError } from '@cyanheads/mcp-ts-core/errors';
 
 import {
+  type IssuingBody,
   type MinistryParamFamily,
   RIS_APPLICATIONS,
   RIS_CHANGED_SINCE_INTERVALS,
   RIS_COLLECTIONS,
   RIS_COURTS,
   RIS_DECISION_KINDS,
+  RIS_ISSUING_BODIES,
   RIS_MINISTRIES,
   RIS_STAGES,
   RIS_STATES,
@@ -189,24 +191,59 @@ function stateByCode(code: RisStateCode): (typeof RIS_STATES)[number] {
 /* ------------------------------------------------------------------------------------ */
 
 /**
+ * `data.reason` on every ministry-expansion rejection. The tools that take a ministry declare it
+ * in their error contract, so the rejection reaches the caller with a recovery that points at
+ * the ministries table rather than the generic invalid-query advice.
+ */
+export const UNRESOLVED_MINISTRY_REASON = 'unresolved_ministry';
+
+/** Each issuer-param family as a rejection names it: the RIS parameter and what it serves. */
+const MINISTRY_PARAMETER: Record<MinistryParamFamily, string> = {
+  einbringende_stelle: 'EinbringendeStelle (review drafts, government bills, federal gazette)',
+  erlaesse_bundesministerium: 'Erlaesse Bundesministerium (collection ministerial_decrees)',
+  mrp_einbringer: 'Mrp Einbringer (collection council_minutes)',
+};
+
+/**
  * Resolve a ministry input (abbreviation or full designation) to the value the target
  * issuer-param family needs. Phrase-matched `EinbringendeStelle` gets the bare
  * abbreviation (matches every designation era of that abbreviation — live-confirmed equal
  * to the composite, 536 = 536); the exact-match families get the full designation
  * (Erlaesse `Bundesministerium`) or the `ABBR (Name)` composite (Mrp `Einbringer`).
- * Unknown or ambiguous inputs throw a ValidationError naming the near-misses.
+ *
+ * The input is matched against the whole table first and narrowed to the family second, so
+ * a ministry the table knows but this family does not accept is rejected as exactly that,
+ * naming the parameters that do accept it — never as an unknown ministry that is its own
+ * near-miss. `acceptedBy` is taken from the value lists RIS publishes and the live corpus, so
+ * a known designation the family lacks is rejected even when it contains whitespace.
+ *
+ * A value the table does not know passes through unchanged when it contains whitespace: it
+ * is a full designation, and a static table that lags a cabinet reshuffle must not block an
+ * issuer RIS holds documents for (a phrase or exact match cannot widen the query). An unknown
+ * abbreviation-shaped token, or an abbreviation this family cannot resolve to one value,
+ * throws a ValidationError naming the near-misses or candidates.
  */
 export function expandMinistry(input: string, family: MinistryParamFamily): string {
   const needle = input.trim();
   const lower = needle.toLowerCase();
-  const matches = RIS_MINISTRIES.filter(
+  const known = RIS_MINISTRIES.filter(
     (ministry) =>
-      ministry.acceptedBy.some((accepted) => accepted === family) &&
-      (ministry.abbreviation?.toLowerCase() === lower ||
-        ministry.designation.toLowerCase() === lower ||
-        ministry.mrpComposite?.toLowerCase() === lower),
+      ministry.abbreviation?.toLowerCase() === lower ||
+      ministry.designation.toLowerCase() === lower ||
+      ministry.mrpComposite?.toLowerCase() === lower,
   );
+  const matches = known.filter((ministry) =>
+    ministry.acceptedBy.some((accepted) => accepted === family),
+  );
+  if (known.length > 0 && matches.length === 0) {
+    const acceptedBy = [...new Set(known.flatMap((ministry) => ministry.acceptedBy))];
+    throw validationError(
+      `Ministry "${needle}" is not accepted by this issuer parameter, ${MINISTRY_PARAMETER[family]} — RIS lists it only for ${acceptedBy.map((accepted) => MINISTRY_PARAMETER[accepted]).join(' and ')}.`,
+      { acceptedBy, family, input: needle, reason: UNRESOLVED_MINISTRY_REASON },
+    );
+  }
   if (matches.length === 0) {
+    if (/\s/u.test(needle)) return needle;
     const nearMisses = RIS_MINISTRIES.filter(
       (ministry) =>
         ministry.abbreviation?.toLowerCase().startsWith(lower) ||
@@ -216,7 +253,7 @@ export function expandMinistry(input: string, family: MinistryParamFamily): stri
       .map((ministry) => ministry.abbreviation ?? ministry.designation);
     throw validationError(
       `Unknown ministry "${needle}"${nearMisses.length > 0 ? ` — closest matches: ${nearMisses.join(', ')}` : ''}. Pass an abbreviation or full designation from the RIS ministries table.`,
-      { input: needle, nearMisses },
+      { input: needle, nearMisses, reason: UNRESOLVED_MINISTRY_REASON },
     );
   }
   if (family === 'einbringende_stelle') {
@@ -231,19 +268,33 @@ export function expandMinistry(input: string, family: MinistryParamFamily): stri
       }),
     ),
   ];
-  if (values.length === 0) {
-    throw validationError(`Ministry "${needle}" is not accepted by this issuer parameter.`, {
-      family,
-      input: needle,
-    });
-  }
   if (values.length > 1) {
     throw validationError(
       `Ministry "${needle}" is ambiguous here — pass the full designation instead: ${values.join(' | ')}.`,
-      { candidates: values, input: needle },
+      { candidates: values, input: needle, reason: UNRESOLVED_MINISTRY_REASON },
     );
   }
   return values[0] as string;
+}
+
+/** Avsv carrier abbreviations, lowercased, to their exact `Urheber` value. */
+const AVSV_ISSUER_BY_ABBREVIATION = new Map(
+  (RIS_ISSUING_BODIES as readonly IssuingBody[]).flatMap((body) =>
+    body.application === 'Avsv' && body.abbreviation !== undefined
+      ? [[body.abbreviation.toLowerCase(), body.value] as const]
+      : [],
+  ),
+);
+
+/**
+ * Expand a social-insurance carrier abbreviation ("ÖGK", case-insensitive) to the exact
+ * `Urheber` value RIS matches ("Österreichische Gesundheitskasse (ÖGK)"). Every other value —
+ * a full designation, a `<ABBR> Gesamtvertrag` series, an issuer the table has not caught up
+ * with — passes through unchanged: `Urheber` is an exact, case-insensitive match that refuses
+ * wildcards, so an unexpanded value can only miss, never widen the query.
+ */
+function expandSocialInsuranceIssuer(input: string): string {
+  return AVSV_ISSUER_BY_ABBREVIATION.get(input.trim().toLowerCase()) ?? input;
 }
 
 /* ------------------------------------------------------------------------------------ */
@@ -802,6 +853,19 @@ const AVN_TYPE_FLAGS = [
 
 const NORM_APPS = new Set<AnnouncementApp>(['Avn', 'Erlaesse']);
 
+/**
+ * Collections whose backend honors `ImRisSeit` (probed 2026-09-24). Avsv and Avn accept the
+ * element — a bogus value fails schema validation — but ignore every valid one and return the
+ * whole collection, so `changedSince` is refused there rather than forwarded.
+ */
+const CHANGED_SINCE_APPS = new Set<AnnouncementApp>([
+  'Erlaesse',
+  'KmGer',
+  'Mrp',
+  'PruefGewO',
+  'Spg',
+]);
+
 /** Sort columns confirmed valid per collection (probed 2026-07-05). */
 const ANNOUNCEMENT_SORT_COLUMNS: Partial<
   Record<AnnouncementApp, Partial<Record<'number' | 'published', string>>>
@@ -853,7 +917,7 @@ export function buildAnnouncementsRequest(params: AnnouncementsSearchParams): Ri
     bag.setIf('BisInkrafttretensdatum', params.enteredForceTo);
   }
   if (params.issuer !== undefined) {
-    if (app === 'Avsv') bag.set('Urheber', params.issuer);
+    if (app === 'Avsv') bag.set('Urheber', expandSocialInsuranceIssuer(params.issuer));
     else if (app === 'Erlaesse')
       bag.set('Bundesministerium', expandMinistry(params.issuer, 'erlaesse_bundesministerium'));
     else if (app === 'Mrp') bag.set('Einbringer', expandMinistry(params.issuer, 'mrp_einbringer'));
@@ -911,6 +975,9 @@ export function buildAnnouncementsRequest(params: AnnouncementsSearchParams): Ri
   if (params.legislature !== undefined) {
     if (app !== 'Mrp') unsupported('legislature', app);
     bag.set('Gesetzgebungsperiode', params.legislature);
+  }
+  if (params.changedSince !== undefined && !CHANGED_SINCE_APPS.has(app)) {
+    unsupported('changedSince', app);
   }
   bag.changedSince(params.changedSince);
   if (params.sortBy !== undefined) {

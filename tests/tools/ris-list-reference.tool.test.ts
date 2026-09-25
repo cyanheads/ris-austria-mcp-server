@@ -7,6 +7,11 @@
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { describe, expect, it } from 'vitest';
 import { risListReference } from '@/mcp-server/tools/definitions/ris-list-reference.tool.js';
+import {
+  type IssuingBody,
+  RIS_ISSUING_BODIES,
+  RIS_MINISTRIES,
+} from '@/services/ris/reference/index.js';
 
 const TOPICS = [
   'applications',
@@ -119,6 +124,74 @@ describe('risListReference', () => {
     expect(result.entries.length).toBeGreaterThanOrEqual(120);
     const oegk = result.entries.find((e) => e.value === 'Österreichische Gesundheitskasse (ÖGK)');
     expect(oegk?.label).toBe('Avsv Urheber');
+  });
+
+  it('shows the accepted abbreviation on every suffixed Avsv row, and says it is accepted (#38)', async () => {
+    const result = await run('issuing_bodies');
+    const bodies: readonly IssuingBody[] = RIS_ISSUING_BODIES;
+    const carrying = bodies.filter((body) => body.abbreviation !== undefined);
+    expect(carrying).toHaveLength(28);
+    for (const body of carrying) {
+      const entry = result.entries.find((e) => e.value === body.value);
+      expect(entry?.details, body.value).toContainEqual({
+        key: 'Accepted abbreviation',
+        value: body.abbreviation,
+      });
+    }
+    const withDetail = result.entries.filter((e) =>
+      e.details.some((d) => d.key === 'Accepted abbreviation'),
+    );
+    expect(withDetail).toHaveLength(28);
+    const notes = result.notes.join(' ');
+    expect(notes).toContain('abbreviation');
+    expect(notes).not.toContain('pass them completely');
+    expect(notes).not.toContain('78 notices');
+    const text = (risListReference.format!(result)[0] as { type: 'text'; text: string }).text;
+    expect(text).toContain('| Österreichische Gesundheitskasse (ÖGK) | Avsv Urheber |');
+    expect(text).toContain('Accepted abbreviation');
+  });
+
+  it('lists the ministries in office since 2025 (#44)', async () => {
+    const result = await run('ministries');
+    for (const [abbreviation, composite] of [
+      ['BMWET', 'BMWET (Bundesministerium für Wirtschaft, Energie und Tourismus)'],
+      ['BMIMI', 'BMIMI (Bundesministerium für Innovation, Mobilität und Infrastruktur)'],
+      ['BMEIF', 'BMEIF (Bundesministerium für Europa, Integration und Familie)'],
+      ['BMFI', 'BMFI (Bundesministerin für Frauen und Integration)'],
+    ] as const) {
+      const entry = result.entries.find(
+        (e) => e.value === abbreviation && e.details.some((d) => d.value === composite),
+      );
+      expect(entry, composite).toBeDefined();
+    }
+    expect(result.entries).toHaveLength(RIS_MINISTRIES.length);
+    expect(result.notes.join(' ')).toContain('passed to RIS unchanged');
+  });
+
+  it('lists changed_since only under the five collections RIS honors it on (#37)', async () => {
+    const result = await run('collections');
+    const withRecency = result.entries
+      .filter((e) =>
+        (e.details.find((d) => d.key === 'Supported parameters')?.value ?? '')
+          .split(', ')
+          .includes('changed_since'),
+      )
+      .map((e) => e.value);
+    expect(withRecency.sort()).toEqual([
+      'council_minutes',
+      'court_rules',
+      'health_structure_plans',
+      'ministerial_decrees',
+      'trade_exam_rules',
+    ]);
+    const notes = result.notes.join(' ');
+    expect(notes).not.toMatch(/changed_since[^.]*every collection/u);
+    expect(notes).toContain('ris_track_changes');
+  });
+
+  it('makes no Kundmachung.Periode claim for changed_since (#37)', async () => {
+    const result = await run('changed_since_intervals');
+    expect(result.notes.join(' ')).not.toContain('Kundmachung.Periode');
   });
 
   it('maps ministry abbreviations to full designations', async () => {

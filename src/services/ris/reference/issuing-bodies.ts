@@ -2,13 +2,20 @@
  * @fileoverview Issuing-body values for the body-filtered applications: Dsk and Pvak
  * (`EntscheidendeBehoerde` schema enums), Dok (exact match, 59 documented authorities),
  * Verg (term match, 4 procurement review bodies), and Avsv (`Urheber` exact match,
- * social-insurance carriers — pass the full composite incl. the "(ÖGK)"-style suffix).
+ * case-insensitive, no wildcards — social-insurance carriers). An Avsv designation ending in a
+ * parenthesized abbreviation carries it as `abbreviation`, which the request builder expands to
+ * the full value; RIS matches only the full value, never the bare abbreviation.
  * Sources: OGD request XSDs + OGD Handbook V2.6 value lists.
  * @module services/ris/reference/issuing-bodies
  */
 
 /** One issuing-body filter value. */
 export interface IssuingBody {
+  /**
+   * Avsv only: the parenthesized abbreviation the designation ends in ("ÖGK"), accepted as an
+   * `issuer` input and expanded to `value`. Absent on every row without such a suffix.
+   */
+  readonly abbreviation?: string;
   /** RIS application the value applies to. */
   readonly application: 'Dsk' | 'Pvak' | 'Dok' | 'Verg' | 'Avsv';
   /** Usage note, when the value needs context. */
@@ -375,134 +382,161 @@ export const RIS_ISSUING_BODIES = [
   },
   {
     value: 'Österreichische Gesundheitskasse (ÖGK)',
+    abbreviation: 'ÖGK',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Current carrier (2020 and later)',
   },
   {
     value: 'Sozialversicherungsanstalt der Selbständigen (SVS)',
+    abbreviation: 'SVS',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Current carrier (2020 and later)',
   },
   {
     value: 'Versicherungsanstalt öffentlich Bediensteter, Eisenbahnen und Bergbau (BVAEB)',
+    abbreviation: 'BVAEB',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Current carrier (2020 and later)',
   },
   {
     value: 'Allgemeine Unfallversicherungsanstalt (AUVA)',
+    abbreviation: 'AUVA',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Current carrier',
   },
   {
     value: 'Pensionsversicherungsanstalt (PVA)',
+    abbreviation: 'PVA',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Current carrier',
   },
   {
     value: 'Pensionsinstitut der Linz AG (PI Linz AG)',
+    abbreviation: 'PI Linz AG',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Current carrier',
   },
   {
     value: 'Dachverband der Sozialversicherungsträger (DVSV)',
+    abbreviation: 'DVSV',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Current umbrella body (2020 and later); successor of HVSV',
   },
   { value: 'DVSV Gesamtvertrag', application: 'Avsv', parameter: 'Urheber', note: null },
   { value: 'ÖGK Gesamtvertrag', application: 'Avsv', parameter: 'Urheber', note: null },
   { value: 'SVS Gesamtvertrag', application: 'Avsv', parameter: 'Urheber', note: null },
   { value: 'BVAEB Gesamtvertrag', application: 'Avsv', parameter: 'Urheber', note: null },
-  { value: 'Bundesschiedskommission (BSK)', application: 'Avsv', parameter: 'Urheber', note: null },
   {
-    value: 'Wiener Gebietskrankenkasse (WGKK)',
+    value: 'Bundesschiedskommission (BSK)',
+    abbreviation: 'BSK',
     application: 'Avsv',
     parameter: 'Urheber',
     note: null,
+  },
+  {
+    value: 'Wiener Gebietskrankenkasse (WGKK)',
+    abbreviation: 'WGKK',
+    application: 'Avsv',
+    parameter: 'Urheber',
+    note: 'Historical — merged into ÖGK in 2020',
   },
   {
     value: 'Niederösterreichische Gebietskrankenkasse (NÖGKK)',
+    abbreviation: 'NÖGKK',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Historical — merged into ÖGK in 2020',
   },
   {
     value: 'Burgenländische Gebietskrankenkasse (BGKK)',
+    abbreviation: 'BGKK',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Historical — merged into ÖGK in 2020',
   },
   {
     value: 'Oberösterreichische Gebietskrankenkasse (OÖGKK)',
+    abbreviation: 'OÖGKK',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Historical — merged into ÖGK in 2020',
   },
   {
     value: 'Steiermärkische Gebietskrankenkasse (STGKK)',
+    abbreviation: 'STGKK',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Historical — merged into ÖGK in 2020',
   },
   {
     value: 'Kärntner Gebietskrankenkasse (KGKK)',
+    abbreviation: 'KGKK',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Historical — merged into ÖGK in 2020',
   },
   {
     value: 'Salzburger Gebietskrankenkasse (SGKK)',
+    abbreviation: 'SGKK',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Historical — merged into ÖGK in 2020',
   },
   {
     value: 'Tiroler Gebietskrankenkasse (TGKK)',
+    abbreviation: 'TGKK',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Historical — merged into ÖGK in 2020',
   },
   {
     value: 'Vorarlberger Gebietskrankenkasse (VGKK)',
+    abbreviation: 'VGKK',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Historical — merged into ÖGK in 2020',
   },
   {
     value: 'Sozialversicherungsanstalt der gewerblichen Wirtschaft (SVA)',
+    abbreviation: 'SVA',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Historical — merged into SVS in 2020',
   },
   {
     value: 'Sozialversicherungsanstalt der Bauern (SVB)',
+    abbreviation: 'SVB',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Historical — merged into SVS in 2020',
   },
   {
     value: 'Versicherungsanstalt öffentlich Bediensteter (BVA)',
+    abbreviation: 'BVA',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Historical — merged into BVAEB in 2020',
   },
   {
     value: 'Versicherungsanstalt für Eisenbahnen und Bergbau (VAEB)',
+    abbreviation: 'VAEB',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Historical — merged into BVAEB in 2020',
   },
   {
     value: 'Hauptverband der österreichischen Sozialversicherungsträger (HVSV)',
+    abbreviation: 'HVSV',
     application: 'Avsv',
     parameter: 'Urheber',
-    note: null,
+    note: 'Historical — succeeded by DVSV in 2020',
   },
   {
     value: 'Versicherungsanstalt des österreichischen Bergbaues',
@@ -530,36 +564,42 @@ export const RIS_ISSUING_BODIES = [
   },
   {
     value: 'Betriebskrankenkasse der Wiener Verkehrsbetriebe (BKK-WVB)',
+    abbreviation: 'BKK-WVB',
     application: 'Avsv',
     parameter: 'Urheber',
     note: null,
   },
   {
     value: 'Betriebskrankenkasse Mondi (BKK Mondi)',
+    abbreviation: 'BKK Mondi',
     application: 'Avsv',
     parameter: 'Urheber',
     note: null,
   },
   {
     value: 'Betriebskrankenkasse voestalpine Bahnsysteme (BKK-VA)',
+    abbreviation: 'BKK-VA',
     application: 'Avsv',
     parameter: 'Urheber',
     note: null,
   },
   {
     value: 'Betriebskrankenkasse Zeltweg (BKK-ZW)',
+    abbreviation: 'BKK-ZW',
     application: 'Avsv',
     parameter: 'Urheber',
     note: null,
   },
   {
     value: 'Betriebskrankenkasse Kapfenberg (BKK-KA)',
+    abbreviation: 'BKK-KA',
     application: 'Avsv',
     parameter: 'Urheber',
     note: null,
   },
   {
     value: 'Betriebskrankenkasse Austria Tabak (BKK-AT)',
+    abbreviation: 'BKK-AT',
     application: 'Avsv',
     parameter: 'Urheber',
     note: null,
