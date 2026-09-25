@@ -1,0 +1,229 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "1"
+      },
+      "OgdDocumentReference": {
+        "Data": {
+          "Metadaten": {
+            "Technisch": {
+              "ID": "BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A",
+              "Applikation": "Begut",
+              "Organ": "BMWKMS (Bundesministerium für Wohnen, Kunst, Kultur, Medien und Sport)",
+              "ImportTimestamp": {
+                "@xsi:nil": "true",
+                "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+              }
+            },
+            "Allgemein": {
+              "Geaendert": "2026-07-27",
+              "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Begut&Dokumentnummer=BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A"
+            },
+            "Bundesrecht": {
+              "Kurztitel": "Änderung des Audiovisuelle Mediendienste-Gesetzes und des KommAustria-Gesetzes",
+              "Titel": "Bundesgesetz, mit dem das Audiovisuelle Mediendienste-Gesetz und das KommAustria-Gesetz geändert werden",
+              "Begut": {
+                "EinbringendeStelle": "BMWKMS (Bundesministerium für Wohnen, Kunst, Kultur, Medien und Sport)",
+                "BeginnBegutachtungsfrist": "2026-07-27",
+                "EndeBegutachtungsfrist": "2026-09-21"
+              }
+            }
+          },
+          "Dokumentliste": {
+            "ContentReference": [
+              {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A.pdf"
+                    }
+                  ]
+                }
+              },
+              {
+                "ContentType": "EmbeddedAttachment",
+                "Name": "Bundesministerium für Wohnen, Kunst, Kultur, Medien und Sport",
+                "Urls": {
+                  "ContentUrl": {
+                    "DataType": "Jpg",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/ff25afc0-fb98-4fca-8fd6-af3cae338755.img1is.jpg"
+                  }
+                }
+              },
+              {
+                "ContentType": "EmbeddedAttachment",
+                "Name": "Temp32a40c13-0e52-4a37-929c-9a7ec2216f11.0001.gif",
+                "Urls": {
+                  "ContentUrl": {
+                    "DataType": "Gif",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Temp32a40c13-0e52-4a37-929c-9a7ec2216f11.0001.gif"
+                  }
+                }
+              },
+              {
+                "ContentType": "EmbeddedAttachment",
+                "Name": "Temp32a40c13-0e52-4a37-929c-9a7ec2216f11.0002.gif",
+                "Urls": {
+                  "ContentUrl": {
+                    "DataType": "Gif",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Temp32a40c13-0e52-4a37-929c-9a7ec2216f11.0002.gif"
+                  }
+                }
+              },
+              {
+                "ContentType": "EmbeddedAttachment",
+                "Name": "Temp32a40c13-0e52-4a37-929c-9a7ec2216f11.0003.gif",
+                "Urls": {
+                  "ContentUrl": {
+                    "DataType": "Gif",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Temp32a40c13-0e52-4a37-929c-9a7ec2216f11.0003.gif"
+                  }
+                }
+              },
+              {
+                "ContentType": "EmbeddedAttachment",
+                "Name": "Temp32a40c13-0e52-4a37-929c-9a7ec2216f11.0004.gif",
+                "Urls": {
+                  "ContentUrl": {
+                    "DataType": "Gif",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Temp32a40c13-0e52-4a37-929c-9a7ec2216f11.0004.gif"
+                  }
+                }
+              },
+              {
+                "ContentType": "EmbeddedAttachment",
+                "Name": "Temp32a40c13-0e52-4a37-929c-9a7ec2216f11.0005.gif",
+                "Urls": {
+                  "ContentUrl": {
+                    "DataType": "Gif",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Temp32a40c13-0e52-4a37-929c-9a7ec2216f11.0005.gif"
+                  }
+                }
+              },
+              {
+                "ContentType": "EmbeddedAttachment",
+                "Name": "Temp32a40c13-0e52-4a37-929c-9a7ec2216f11.0006.gif",
+                "Urls": {
+                  "ContentUrl": {
+                    "DataType": "Gif",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Temp32a40c13-0e52-4a37-929c-9a7ec2216f11.0006.gif"
+                  }
+                }
+              },
+              {
+                "ContentType": "Material",
+                "Name": "Erläuterungen",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Materialien_0001_71933CFE_B795_4B7C_A994_00DEC5471665.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Materialien_0001_71933CFE_B795_4B7C_A994_00DEC5471665.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Materialien_0001_71933CFE_B795_4B7C_A994_00DEC5471665.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Materialien_0001_71933CFE_B795_4B7C_A994_00DEC5471665.pdf"
+                    }
+                  ]
+                }
+              },
+              {
+                "ContentType": "Material",
+                "Name": "TGÜ",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Materialien_0002_7779EE15_595E_423A_91A3_AEABC4D812EC.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Materialien_0002_7779EE15_595E_423A_91A3_AEABC4D812EC.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Materialien_0002_7779EE15_595E_423A_91A3_AEABC4D812EC.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Materialien_0002_7779EE15_595E_423A_91A3_AEABC4D812EC.pdf"
+                    }
+                  ]
+                }
+              },
+              {
+                "ContentType": "Material",
+                "Name": "Vorblatt+WFA",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Materialien_0003_D8EF0814_40D6_4523_97B6_D0DF1A58FEEB.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Materialien_0003_D8EF0814_40D6_4523_97B6_D0DF1A58FEEB.html"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Materialien_0003_D8EF0814_40D6_4523_97B6_D0DF1A58FEEB.pdf"
+                    }
+                  ]
+                }
+              },
+              {
+                "ContentType": "Letter",
+                "Name": "Begleitschreiben Begutachtungsentwurf",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Schreiben_0002_A632003D_4F5D_4649_AD2D_46BA1775FE50.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Schreiben_0002_A632003D_4F5D_4649_AD2D_46BA1775FE50.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Schreiben_0002_A632003D_4F5D_4649_AD2D_46BA1775FE50.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/Schreiben_0002_A632003D_4F5D_4649_AD2D_46BA1775FE50.pdf"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

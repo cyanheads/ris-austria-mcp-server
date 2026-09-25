@@ -15,7 +15,9 @@ const ServerConfigSchema = z.object({
   contentBaseUrl: z
     .url()
     .default('https://www.ris.bka.gv.at')
-    .describe('RIS document content host — also the allowlist host for document_url fetches.'),
+    .describe(
+      'RIS document content host that rendition URLs are constructed on. document_url accepts its origin alongside the two RIS content origins, https://www.ris.bka.gv.at and https://ogd.ris.bka.gv.at.',
+    ),
   contact: z
     .string()
     .optional()

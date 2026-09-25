@@ -62,7 +62,7 @@
     "ris_content_base_url": {
       "type": "string",
       "title": "RIS Content Base URL",
-      "description": "RIS document content host and allowlist origin. Leave blank for the official host.",
+      "description": "RIS document content host that rendition URLs are built on. document_url also accepts www. and ogd.ris.bka.gv.at. Leave blank for the official host.",
       "required": false,
       "default": ""
     }

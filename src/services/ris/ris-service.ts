@@ -1,7 +1,9 @@
 /**
  * @fileoverview RisService — the single gateway to the RIS OGD REST API v2.6
- * (`data.bka.gv.at`) and the document content host (`www.ris.bka.gv.at`). Tool handlers
- * call the per-class search methods and never touch HTTP or the JSON-XML envelope.
+ * (`data.bka.gv.at`) and the document content hosts (`www.ris.bka.gv.at`, which this
+ * service constructs rendition URLs on, and `ogd.ris.bka.gv.at`, which search results
+ * carry). Tool handlers call the per-class search methods and never touch HTTP or the
+ * JSON-XML envelope.
  *
  * Resilience: `withRetry` (base delay 1.5s — rate-limited-API calibration) wraps the full
  * fetch + parse pipeline, under a wall-clock budget shared by every attempt so a slow
@@ -13,7 +15,8 @@
  * `fetchJson` translates rather than letting the status decide. An upstream 5xx carrying no
  * such envelope uses the framework's `ServiceUnavailable` classification; HTTP 501 opts
  * out of retry, and caller cancellation remains `RequestCancelled`.
- * Content fetches are allowlisted to the content host's `/Dokumente/` tree (SSRF guard).
+ * Content fetches are allowlisted to the `/Dokumente/` tree on exactly those two origins, plus
+ * a configured content host (SSRF guard).
  * @module services/ris/ris-service
  */
 
@@ -64,14 +67,17 @@ import type { RisChangeSet, RisDocumentContent, RisSearchResult } from './types.
  * Search latency tracks how much of the corpus RIS has to scan, not a fixed cost (measured
  * 2026-07-26 against the live Judikatur controller): a filtered search answers in 0.6–3s,
  * but an unfiltered Bvwg page costs 3.4–3.9s at page_size 10, 6.0–10.5s at 20, 14.6–18.3s at
- * 50, and 27–43s at 100. The previous 15s deadline therefore could not serve the larger page
- * sizes the search tools advertise at all, and four attempts at 15s plus ~13s of jittered
- * backoff spent ~73s reaching a verdict the MCP SDK's 60s default request timeout had
- * already taken from the caller.
+ * 50, and 27–43s at 100. The previous 15s deadline therefore could not serve the two larger
+ * page sizes at all, and four attempts at 15s plus ~13s of jittered backoff spent ~73s
+ * reaching a verdict the MCP SDK's 60s default request timeout had already taken from the
+ * caller.
  *
- * `SEARCH_TIMEOUT_MS` covers that band up to its long tail. The tail past it is out of reach
- * at any deadline that still leaves room to deliver the response, so the `upstream_timeout`
- * recovery hints name the lever that shortens the scan (a smaller page_size).
+ * `SEARCH_TIMEOUT_MS` covers that band up to its long tail. The tools accept page sizes 10
+ * and 20 only (#40), which keeps a tool-issued search in the 6–10.5s band; the deadline
+ * still sizes for 50 and 100, which `RisPageSize` keeps in the service vocabulary. The tail
+ * past it is out of reach at any deadline that still leaves room to deliver the response, so
+ * the `upstream_timeout` recovery hints name the lever that shortens the scan (a smaller
+ * page_size).
  * `SEARCH_BUDGET_MS` is `withRetry`'s `deadlineMs` — one wall-clock budget across every
  * attempt and every backoff, so a slow *failing* upstream cannot multiply the deadline by
  * the attempt count. Each attempt bounds its own fetch at whatever is left, a backoff that
@@ -133,8 +139,26 @@ const CONTENT_PATH_SEGMENTS = new Map<string, string | null>(
 );
 
 /**
- * Assert a caller-supplied document URL is fetchable: same origin as the configured
- * content host and inside its `/Dokumente/` tree. Nothing else is ever fetched.
+ * The origins RIS serves document renditions from: `www.` is the host this server constructs
+ * URLs on, and `ogd.` is the host every `content_urls` and draft `materials[].url` in the OGD
+ * API's search output now carries. Both serve the same `/Dokumente/` tree byte for byte.
+ * Matched exactly — never by suffix — so another `*.bka.gv.at` host, a lookalike, a port, or
+ * `http://` stays unfetchable.
+ */
+const RIS_CONTENT_ORIGINS = ['https://www.ris.bka.gv.at', 'https://ogd.ris.bka.gv.at'];
+
+/**
+ * Every origin a `document_url` may carry: the two RIS content origins, plus the configured
+ * content host's own, which is the default `www.` origin unless an operator repoints
+ * `RIS_CONTENT_BASE_URL` — whose constructed URLs must then pass the same check.
+ */
+export function fetchableOrigins(contentBaseUrl: string): string[] {
+  return [...new Set([...RIS_CONTENT_ORIGINS, new URL(contentBaseUrl).origin])];
+}
+
+/**
+ * Assert a caller-supplied document URL is fetchable: on one of {@link fetchableOrigins} and
+ * inside its `/Dokumente/` tree. Nothing else is ever fetched.
  */
 export function assertFetchableDocumentUrl(url: string, contentBaseUrl: string): URL {
   let parsed: URL;
@@ -143,11 +167,11 @@ export function assertFetchableDocumentUrl(url: string, contentBaseUrl: string):
   } catch (cause) {
     throw validationError(`document_url is not a valid URL: "${url}"`, { url }, { cause });
   }
-  const allowedOrigin = new URL(contentBaseUrl).origin;
-  if (parsed.origin !== allowedOrigin || !parsed.pathname.startsWith('/Dokumente/')) {
+  const allowedOrigins = fetchableOrigins(contentBaseUrl);
+  if (!allowedOrigins.includes(parsed.origin) || !parsed.pathname.startsWith('/Dokumente/')) {
     throw validationError(
-      `Only ${allowedOrigin}/Dokumente/ URLs are fetchable — pass a URL exactly as returned in content_urls.`,
-      { allowedOrigin, url },
+      `Only /Dokumente/ URLs on ${allowedOrigins.join(' or ')} are fetchable — pass a URL exactly as returned in content_urls.`,
+      { allowedOrigins, url },
     );
   }
   return parsed;
@@ -280,9 +304,10 @@ export class RisService {
         });
         const text = await response.text();
         const contentType = response.headers.get('content-type');
-        ctx.log.debug('RIS content fetched', { byteSize: text.length, url: target.href });
+        const byteSize = new TextEncoder().encode(text).length;
+        ctx.log.debug('RIS content fetched', { byteSize, url: target.href });
         return {
-          byteSize: new TextEncoder().encode(text).length,
+          byteSize,
           ...(contentType !== null && { contentType }),
           text,
           url: target.href,

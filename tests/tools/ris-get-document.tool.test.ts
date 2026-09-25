@@ -11,6 +11,7 @@
  * @module tests/tools/ris-get-document.tool.test
  */
 
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import {
@@ -20,7 +21,8 @@ import {
   serviceUnavailable,
   timeout,
 } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
+import { markdown } from '@cyanheads/mcp-ts-core/utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -31,7 +33,10 @@ import {
   selectDocumentSections,
   windowDocument,
 } from '@/mcp-server/tools/definitions/ris-get-document.tool.js';
+import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import type { RisContentFormat } from '@/services/ris/ris-service.js';
+
+import { contentText } from './_wire.js';
 
 const { buildDocumentContentUrl, fetchDocumentContent } = vi.hoisted(() => ({
   buildDocumentContentUrl: vi.fn(),
@@ -173,7 +178,9 @@ describe('risGetDocument — addressing guards (no fetch)', () => {
     const err = await captureError(risGetDocument.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'unsupported_url' });
-    expect(err.message).toContain('only https://www.ris.bka.gv.at URLs are fetchable');
+    expect(err.message).toContain(
+      'only https://www.ris.bka.gv.at or https://ogd.ris.bka.gv.at URLs are fetchable',
+    );
     expect(fetchDocumentContent).not.toHaveBeenCalled();
   });
 
@@ -274,7 +281,9 @@ describe('risGetDocument — addressing guards (no fetch)', () => {
     const input = risGetDocument.input.parse({ document_url: documentUrl });
     const err = await captureError(risGetDocument.handler(input, ctx));
     expect(err.data).toMatchObject({ reason: 'unsupported_url' });
-    expect(err.message).toContain('only https://www.ris.bka.gv.at URLs are fetchable');
+    expect(err.message).toContain(
+      'only https://www.ris.bka.gv.at or https://ogd.ris.bka.gv.at URLs are fetchable',
+    );
     expect(fetchDocumentContent).not.toHaveBeenCalled();
   });
 
@@ -344,6 +353,87 @@ describe('risGetDocument — addressing guards (no fetch)', () => {
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'unsupported_url' });
     expect(err.message).toContain('malformed % escape');
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+});
+
+describe('risGetDocument — the two RIS content origins (#43)', () => {
+  /**
+   * A live Begut search page trimmed to one record — RIS now hands out every rendition and
+   * companion URL on `ogd.ris.bka.gv.at`, so these are the URLs a caller copies verbatim.
+   */
+  const [hit] = parseSearchResponse(JSON.parse(fixture('search-begut-ogd.json')) as unknown).hits;
+  const MAIN_URL = hit?.contentUrls.html as string;
+  const MATERIAL_URL = hit?.contentReferences.find((ref) => ref.type === 'Material')?.urls
+    .html as string;
+
+  it('carries ogd.ris.bka.gv.at URLs in the fixture', () => {
+    expect(MAIN_URL).toMatch(/^https:\/\/ogd\.ris\.bka\.gv\.at\/Dokumente\/Begut\//u);
+    expect(MATERIAL_URL).toMatch(
+      /^https:\/\/ogd\.ris\.bka\.gv\.at\/Dokumente\/Begut\/.+\/Materialien_/u,
+    );
+  });
+
+  it('resolves a main-document URL copied verbatim from a result', async () => {
+    fetchDocumentContent.mockResolvedValue({ text: '<p>Body</p>', byteSize: 11, url: MAIN_URL });
+    const result = await runToolContract(risGetDocument, { document_url: MAIN_URL });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      application: 'Begut',
+      document_number: 'BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A',
+      kind: 'full',
+    });
+    expect(fetchDocumentContent).toHaveBeenCalledOnce();
+  });
+
+  it('resolves a draft companion materials[].url copied verbatim from a result', async () => {
+    fetchDocumentContent.mockResolvedValue({
+      text: '<p>Erläuterungen</p>',
+      byteSize: 20,
+      url: 'x',
+    });
+    const result = await runToolContract(risGetDocument, { document_url: MATERIAL_URL });
+
+    expect(result.isError).not.toBe(true);
+    const stem = MATERIAL_URL.split('/')
+      .pop()
+      ?.replace(/\.html$/u, '');
+    expect(fetchDocumentContent).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `/Dokumente/Begut/BEGUT_E811DCEF_7477_4213_9E06_D51ABE13740A/${stem}.html`,
+      ),
+      expect.anything(),
+    );
+  });
+
+  it('parses both origins to the same document', () => {
+    const www = MAIN_URL.replace('https://ogd.', 'https://www.');
+    expect(parseDocumentUrl(MAIN_URL, 'https://www.ris.bka.gv.at')).toEqual(
+      parseDocumentUrl(www, 'https://www.ris.bka.gv.at'),
+    );
+  });
+
+  it.each([
+    ['another bka.gv.at host', 'https://data.bka.gv.at/Dokumente/Begut/B/B.html'],
+    ['the bare ris.bka.gv.at host', 'https://ris.bka.gv.at/Dokumente/Begut/B/B.html'],
+    ['plain http on the OGD host', 'http://ogd.ris.bka.gv.at/Dokumente/Begut/B/B.html'],
+    ['an OGD-host suffix', 'https://ogd.ris.bka.gv.at.evil.example/Dokumente/Begut/B/B.html'],
+    ['an OGD-host lookalike', 'https://ogd-ris.bka.gv.at/Dokumente/Begut/B/B.html'],
+    [
+      'a non-default port on the OGD host',
+      'https://ogd.ris.bka.gv.at:8443/Dokumente/Begut/B/B.html',
+    ],
+  ])('still rejects %s as unsupported_url', async (_label, documentUrl) => {
+    const result = await runToolContract(risGetDocument, { document_url: documentUrl });
+    expect(result.isError).toBe(true);
+    const { error } = result.structuredContent as {
+      error: { data?: { reason?: string }; message: string };
+    };
+    expect(error.data?.reason).toBe('unsupported_url');
+    expect(error.message).toContain(
+      'only https://www.ris.bka.gv.at or https://ogd.ris.bka.gv.at URLs are fetchable',
+    );
     expect(fetchDocumentContent).not.toHaveBeenCalled();
   });
 });
@@ -441,6 +531,23 @@ describe('risGetDocument — format handling', () => {
     expect(result.application).toBe('BrKons');
     expect(result.document_number).toBe('NOR40262691');
     expect(fetchDocumentContent).toHaveBeenCalledWith(expect.stringContaining('.html'), ctx);
+  });
+
+  it('reads a blank document_url beside document_number + application as unset, not as a second address', async () => {
+    // Unlike the search tools' text filters, a blank addressing field never widens anything:
+    // it cannot select a document, so a form client's empty document_url stays harmless.
+    fetchDocumentContent.mockResolvedValue({ text: '<p>Body</p>', byteSize: 11, url: 'https://x' });
+    const result = await runToolContract(risGetDocument, {
+      application: 'BrKons',
+      document_number: 'NOR40262691',
+      document_url: '',
+    });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      application: 'BrKons',
+      document_number: 'NOR40262691',
+    });
+    expect(fetchDocumentContent).toHaveBeenCalledOnce();
   });
 });
 
@@ -955,35 +1062,249 @@ describe('risGetDocument — overflow (outline + selective retrieval)', () => {
   });
 
   // Windowing is markdown-only. A raw rendition is the published artifact byte for byte and a
-  // mid-document slice of either is not well-formed, so both stay whole however large — the
-  // caller who asked for one has content_urls.
+  // mid-document slice of either is not well-formed, so neither is ever cut into sections —
+  // an oversized one is handed back as a link to the whole artifact instead (#36).
   it.each(['html', 'xml'] as const)(
-    'returns an oversized raw %s rendition in full',
+    'never outlines an oversized raw %s rendition',
     async (format) => {
       const bigText =
         format === 'html' ? 'A'.repeat(500_050) : `<Dokument>${'B'.repeat(500_050)}\n`.repeat(2);
-      fetchDocumentContent.mockResolvedValue({
-        text: bigText,
-        byteSize: bigText.length,
-        url: 'https://x',
-      });
-      const ctx = createMockContext({ errors: risGetDocument.errors });
-      const input = risGetDocument.input.parse({
-        document_number: 'NOR40262691',
-        application: 'BrKons',
-        format,
-      });
-      const result = await risGetDocument.handler(input, ctx);
+      const { result } = await callTool(bigText, { format });
 
-      expect(result.kind).toBe('full');
-      expect(result.text).toBe(bigText);
-      expect(result.truncated).toBeUndefined();
+      expect(result.kind).toBe('link');
+      expect(result.text).toBeUndefined();
       expect(result.sections).toBeUndefined();
       expect(result.content_urls.html).toBe(
         'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
       );
     },
   );
+});
+
+describe('risGetDocument — raw html/xml output budget (#36)', () => {
+  const encoder = new TextEncoder();
+  const CONTENT_URLS = {
+    xml: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml',
+    html: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
+    pdf: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf',
+    rtf: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf',
+  };
+
+  /**
+   * A raw rendition of exactly `bytes` UTF-8 bytes. It carries multi-byte characters, so its
+   * UTF-16 length and its byte size differ — the budget is measured on byte_size.
+   */
+  function rawOfBytes(format: 'html' | 'xml', bytes: number): string {
+    const head =
+      format === 'html'
+        ? '<!DOCTYPE html><html><head><style>.grüße { width: 100% }</style></head><body><p>'
+        : '<?xml version="1.0" encoding="utf-8"?><risdok><p>Übergangsbestimmung ';
+    const tail = format === 'html' ? '</p></body></html>' : '</p></risdok>';
+    const pad = bytes - encoder.encode(head + tail).length;
+    const text = `${head}${'x'.repeat(pad)}${tail}`;
+    expect(encoder.encode(text).length).toBe(bytes);
+    return text;
+  }
+
+  /** Run the tool end to end, both surfaces, against canned rendition text. */
+  function call(text: string, input: Record<string, unknown>) {
+    fetchDocumentContent.mockResolvedValue({ text, byteSize: text.length, url: 'https://x' });
+    return runToolContract(risGetDocument, {
+      document_number: 'NOR40262691',
+      application: 'BrKons',
+      ...input,
+    });
+  }
+
+  it.each(['html', 'xml'] as const)(
+    'returns a %s rendition of exactly 40,000 bytes whole, fenced in content[]',
+    async (format) => {
+      const text = rawOfBytes(format, OUTLINE_BUDGET_BYTES);
+      const result = await call(text, { format });
+
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({ kind: 'full', text, byte_size: 40_000 });
+      expect(result.structuredContent).not.toHaveProperty('truncated');
+      expect(
+        contentText(result).endsWith(`\n\n${markdown().codeBlock(text, format).build()}`),
+      ).toBe(true);
+    },
+  );
+
+  it.each(['html', 'xml'] as const)(
+    'returns a %s rendition of 40,001 bytes as kind: link, with no text on either surface',
+    async (format) => {
+      const text = rawOfBytes(format, OUTLINE_BUDGET_BYTES + 1);
+      const result = await call(text, { format });
+
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toEqual({
+        application: 'BrKons',
+        binding_status: 'consolidated_informational',
+        byte_size: 40_001,
+        content_urls: CONTENT_URLS,
+        document_number: 'NOR40262691',
+        format,
+        kind: 'link',
+        notice: expect.any(String),
+        truncated: true,
+      });
+      const content = contentText(result);
+      expect(content).not.toContain('x'.repeat(64));
+      expect(content).not.toContain(text.slice(0, 30));
+      expect(content).toContain(CONTENT_URLS[format]);
+    },
+  );
+
+  it.each(['html', 'xml'] as const)(
+    'points a %s link result at the whole artifact and at format: "markdown"',
+    async (format) => {
+      const result = await call(rawOfBytes(format, 90_119), { format });
+      const { notice } = result.structuredContent as { notice: string };
+
+      expect(notice).toContain(`content_urls.${format}`);
+      expect(notice).toContain(CONTENT_URLS[format]);
+      expect(notice).toContain('format: "markdown"');
+      expect(notice).toContain('90119 bytes');
+      const content = contentText(result);
+      expect(content).toContain(notice);
+      // The Size line describes the arm it renders — there is no outline below a link.
+      const sizeLine = content.split('\n').find((line) => line.startsWith('**Size:**')) ?? '';
+      expect(sizeLine).toContain('90119 bytes');
+      expect(sizeLine).toContain(`content_urls.${format}`);
+      expect(sizeLine).not.toContain('outline');
+    },
+  );
+
+  it.each(['html', 'xml'] as const)(
+    'ignores sections:[…] on an over-budget %s rendition, says so, and never promises the document',
+    async (format) => {
+      const result = await call(rawOfBytes(format, 50_000), {
+        format,
+        sections: ['Artikel 2', 'Artikel 2'],
+      });
+
+      expect(result.structuredContent).toMatchObject({ kind: 'link', truncated: true });
+      expect(result.structuredContent).not.toHaveProperty('text');
+      const { notice } = result.structuredContent as { notice: string };
+      expect(notice).toContain('sections:[…] was ignored');
+      expect(notice).toContain('"Artikel 2"');
+      expect(notice).toContain(`content_urls.${format}`);
+      expect(notice).not.toContain('The whole document follows');
+    },
+  );
+
+  it('keeps the under-budget selector notice, which still returns the document', async () => {
+    const text = rawOfBytes('xml', 2_000);
+    const result = await call(text, { format: 'xml', sections: ['Artikel 2'] });
+
+    expect(result.structuredContent).toMatchObject({ kind: 'full', text });
+    expect((result.structuredContent as { notice: string }).notice).toContain(
+      'The whole document follows',
+    );
+  });
+
+  // The fence the framework emits is one backtick longer than the longest run in the text,
+  // so nothing inside the rendition can close it early, open a link, or run script.
+  it('fences hostile raw text so content[] carries it verbatim', async () => {
+    const hostile = [
+      '<p>`one` ``two`` ```three``` ``````six``````</p>',
+      '``````',
+      '</code></pre><script>alert(1)</script><img src=x onerror=alert(2)>',
+      '[x]: javascript:alert(3)',
+      '[x] [click](javascript:alert(4))',
+      '<!-- closed --> <!-- unclosed',
+      '~~~',
+      '    indented four',
+      '\tindented tab',
+      '        indented eight\r',
+      '```',
+    ].join('\n');
+    const result = await call(hostile, { format: 'html' });
+
+    expect(result.structuredContent).toMatchObject({ kind: 'full', text: hostile });
+    const fence = '`'.repeat(7);
+    expect(contentText(result).endsWith(`\n\n${fence}html\n${hostile}\n${fence}`)).toBe(true);
+  });
+
+  it('returns a real Nutzdaten XML rendition under the budget byte-identical to the artifact', async () => {
+    const xml = fixture('document-begut-nutzdaten.xml');
+    const result = await call(xml, { format: 'xml' });
+
+    expect(result.structuredContent).toMatchObject({
+      kind: 'full',
+      text: xml,
+      byte_size: encoder.encode(xml).length,
+    });
+    expect(contentText(result)).toContain(markdown().codeBlock(xml, 'xml').build());
+  });
+
+  it('applies the same rule to a companion document addressed by document_url', async () => {
+    const folder =
+      'https://www.ris.bka.gv.at/Dokumente/Begut/BEGUT_8E53444F_FF2D_4C7A_944B_B79785E8F290';
+    const stem = 'Materialien_0001_2716E555_EB43_4642_A87A_3CF88FFCDB08';
+    fetchDocumentContent.mockResolvedValue({
+      text: rawOfBytes('html', 255_292),
+      byteSize: 1,
+      url: 'https://x',
+    });
+    const result = await runToolContract(risGetDocument, {
+      document_url: `${folder}/${stem}.html`,
+      format: 'html',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      kind: 'link',
+      truncated: true,
+      byte_size: 255_292,
+      content_urls: { html: `${folder}/${stem}.html` },
+    });
+    expect((result.structuredContent as { notice: string }).notice).toContain(
+      `${folder}/${stem}.html`,
+    );
+  });
+});
+
+// Every markdown arm — whole, selected, selector miss, selector ignored, section outline,
+// window outline — digested on both surfaces from the output this code produced before the
+// raw-format budget existed. Any byte that moves on the markdown path fails here.
+describe('risGetDocument — markdown output unchanged by the raw-format budget (#36)', () => {
+  const digest = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 16);
+  const BASELINE: Record<string, [structured: string, content: string]> = {
+    'whole, sr-only twins': ['99cba55643aa6270', '408d3da17dbaf608'],
+    'whole, Artikel sections under budget': ['e2c5759422fce68d', '9cb81ab3f00ab3c5'],
+    'selected section': ['ab9fd627b82fa6e6', 'f2e8af106b166315'],
+    'partial selector miss': ['4c1a17af847aa14d', 'cf271c9f09689c94'],
+    'total selector miss': ['b2b5fde7cd2724d4', 'e606c8765c9d625b'],
+    'section outline': ['353a4fa79173ce10', 'c04c529f97cc110e'],
+    'window outline': ['abc2c3d56e0a8260', 'c9a32de64890a501'],
+    'selector ignored': ['78251c0ea7676a3f', '8ad18359c21c0908'],
+  };
+
+  it.each<[label: string, buildHtml: () => string, input: { sections?: string[] }]>([
+    ['whole, sr-only twins', () => SR_ONLY_HTML, {}],
+    ['whole, Artikel sections under budget', () => ARTIKEL_SECTIONS_HTML, {}],
+    ['selected section', () => ARTIKEL_SECTIONS_HTML, { sections: ['Artikel 2'] }],
+    [
+      'partial selector miss',
+      () => ARTIKEL_SECTIONS_HTML,
+      { sections: ['Artikel 2', 'Artikel 9'] },
+    ],
+    ['total selector miss', () => ARTIKEL_SECTIONS_HTML, { sections: ['Artikel 9999'] }],
+    ['section outline', midSizedArticlesHtml, {}],
+    ['window outline', () => headingFreeDecisionHtml(400), {}],
+    ['selector ignored', () => headingFreeDecisionHtml(20), { sections: ['Artikel 2'] }],
+  ])('%s', async (label, buildHtml, input) => {
+    fetchDocumentContent.mockResolvedValue({ text: buildHtml(), byteSize: 1, url: 'https://x' });
+    const result = await runToolContract(risGetDocument, {
+      document_number: 'NOR40262691',
+      application: 'BrKons',
+      ...input,
+    });
+    expect([digest(JSON.stringify(result.structuredContent)), digest(contentText(result))]).toEqual(
+      BASELINE[label],
+    );
+  });
 });
 
 describe('risGetDocument — sections selector disclosure (under budget)', () => {

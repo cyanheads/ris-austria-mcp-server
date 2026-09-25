@@ -14,7 +14,10 @@
  * retrievable outline rather than a silent truncation — its §/Artikel/Anlage sections, or
  * `Part n of N` byte windows where it carries no such headings; a follow-up call with
  * `sections:[…]` returns just the chosen entries, and a selector matching nothing gets the
- * outline back with a notice rather than the whole document. The shared
+ * outline back with a notice rather than the whole document. Raw `html` and `xml` are never
+ * sliced: over the same budget they come back as a `kind: link` result that carries no text
+ * and points at `content_urls`, which fetches the whole artifact in one GET. Raw text that
+ * does return is fenced in `content[]`, so markup never renders there as markdown. The shared
  * {@link renderDocument} helper backs both this tool and the `ris://document/…` resource.
  * @module mcp-server/tools/definitions/ris-get-document
  */
@@ -23,6 +26,7 @@ import type { Context } from '@cyanheads/mcp-ts-core';
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError, validationError } from '@cyanheads/mcp-ts-core/errors';
 import {
+  markdown,
   OUTLINE_VARIANT,
   type OutlineResult,
   outlineOnOverflow,
@@ -34,6 +38,7 @@ import { getServerConfig } from '@/config/server-config.js';
 import type { RisApplication, RisBindingStatus } from '@/services/ris/reference/index.js';
 import { RIS_APPLICATIONS } from '@/services/ris/reference/index.js';
 import {
+  fetchableOrigins,
   getRisService,
   RIS_CONTENT_FORMATS,
   type RisContentFormat,
@@ -71,6 +76,12 @@ export type DocumentFormat = 'markdown' | 'html' | 'xml' | 'urls_only';
  *
  * Handed to `outlineOnOverflow`, which measures `JSON.stringify` length (≈ UTF-8 bytes for
  * the mostly-Latin legal text); the exact `byte_size` is reported separately.
+ *
+ * The same number bounds raw `html` and `xml`, measured on `byte_size` — the figure the caller
+ * sees and the link notice cites. Those are never windowed (their bodies are typically one
+ * line, and a slice is not well-formed), so over the budget they return a `kind: link` result
+ * instead. Every HTML rendition opens with a 40–70 KB stylesheet header, so html practically
+ * never inlines; markdown is the reading format, and `content_urls.html` the authentic markup.
  */
 export const OUTLINE_BUDGET_BYTES = 40_000;
 
@@ -230,8 +241,10 @@ function decodePathSegment(segment: string): string | undefined {
 
 /**
  * Parse a caller-supplied `document_url` into `(application, documentNumber)` — errors as
- * values (no throw). Enforces the same host + `/Dokumente/` allowlist as the service's
- * fetch guard, then reverse-maps the content-path segment to its application.
+ * values (no throw). Enforces the same origin + `/Dokumente/` allowlist as the service's
+ * fetch guard, then reverse-maps the content-path segment to its application. The origin a
+ * URL arrived on is not carried forward: the rendition is fetched from the URL the service
+ * constructs, which RIS serves identically on both content origins.
  */
 export function parseDocumentUrl(url: string, contentBaseUrl: string): ParsedDocumentUrl {
   let parsed: URL;
@@ -240,8 +253,9 @@ export function parseDocumentUrl(url: string, contentBaseUrl: string): ParsedDoc
   } catch {
     return { error: `"${url}" is not a valid URL` };
   }
-  if (parsed.origin !== new URL(contentBaseUrl).origin) {
-    return { error: `only ${new URL(contentBaseUrl).origin} URLs are fetchable` };
+  const origins = fetchableOrigins(contentBaseUrl);
+  if (!origins.includes(parsed.origin)) {
+    return { error: `only ${origins.join(' or ')} URLs are fetchable` };
   }
   if (!parsed.pathname.startsWith('/Dokumente/')) {
     return { error: 'the path is outside the /Dokumente/ tree' };
@@ -538,8 +552,8 @@ export function windowDocument(text: string, budget: number): DocumentSection[] 
  * here, so every entry the outline advertises is retrievable by name.
  *
  * Markdown only. `html` and `xml` are byte-identical passthroughs of the published artifact
- * and a mid-document slice of either is not well-formed, so they stay whole at any size and
- * a caller who needs one has `content_urls`.
+ * and a mid-document slice of either is not well-formed, so they are never addressed in
+ * pieces: whole under the budget, a `kind: link` result pointing at `content_urls` over it.
  *
  * The two-entry floor matches `outlineOnOverflow`'s own short-circuit: an outline whose only
  * possible `sections` argument returns the same bytes costs a round-trip and buys nothing.
@@ -738,7 +752,7 @@ const ContentUrlsSchema = z
 export const risGetDocument = tool('ris_get_document', {
   title: 'Get RIS Document',
   description:
-    'Fetch one RIS document’s full text or its rendition URLs, with explicit binding status and the amtssigniert authentic PDF surfaced wherever it exists. Address the document exactly one of two ways: document_number plus application (both copied verbatim from a ris_search_* or ris_lookup_citation result), or a document_url from a result’s content_urls — or, for a draft’s companion documents (Erläuterungen, Textgegenüberstellung, WFA, cover letter, annexes), a ris_search_drafts record’s materials[].url, which is the only route to them. format: markdown (default — the HTML rendition converted to markdown), html (raw HTML rendition), xml (the RIS Nutzdaten XML), or urls_only (no fetch — every rendition URL, including the Authentisch PDF). Format availability varies by application and the tool degrades explicitly, never silently: consolidated law, gazettes, case law, drafts, and most sectoral collections carry full text; district and municipal promulgations and court rules (Bvb, GrA, KmGer) publish only the signed authentic PDF; party-transparency decisions and council minutes (Upts, Mrp) are PDF-only; the 1848–1940 imperial gazettes (BgblAlt) are metadata-only — for these a text-format request returns a format_unavailable notice with the usable URL, not an error. Every result carries binding_status; only authentic (amtssigniert) publications are legally binding. This tool returns content, not fresh metadata — the metadata rides the search/lookup step that produced the document number. When the markdown text overflows the 40,000-byte budget the tool returns an outline (kind: outline) instead of truncating: the document’s §/Artikel/Anlage sections where it carries at least two such headings, otherwise contiguous byte windows named Part 1 of N … Part N of N covering the whole text and listed in document order. Re-call with sections:[…] naming outline entries to retrieve just those; a name matching no entry returns the outline again with a notice rather than the whole document. Windows are cut at line breaks, not at sentence or § boundaries, so one can open mid-sentence — read them in order and pull the neighbour when a passage straddles a cut. Raw html and xml renditions are never sliced and return whole at any size. Markdown drops the screen-reader expansions RIS ships alongside each abbreviated citation, keeping the visible citation form; raw html/xml renditions are returned exactly as published.',
+    'Fetch one RIS document’s full text or its rendition URLs, with explicit binding status and the amtssigniert authentic PDF surfaced wherever it exists. Address the document exactly one of two ways: document_number plus application (both copied verbatim from a ris_search_* or ris_lookup_citation result), or a document_url from a result’s content_urls — or, for a draft’s companion documents (Erläuterungen, Textgegenüberstellung, WFA, cover letter, annexes), a ris_search_drafts record’s materials[].url, which is the only route to them. format: markdown (default — the HTML rendition converted to markdown), html (raw HTML rendition), xml (the RIS Nutzdaten XML), or urls_only (no fetch — every rendition URL, including the Authentisch PDF). Format availability varies by application and the tool degrades explicitly, never silently: consolidated law, gazettes, case law, drafts, and most sectoral collections carry full text; district and municipal promulgations and court rules (Bvb, GrA, KmGer) publish only the signed authentic PDF; party-transparency decisions and council minutes (Upts, Mrp) are PDF-only; the 1848–1940 imperial gazettes (BgblAlt) are metadata-only — for these a text-format request returns a format_unavailable notice with the usable URL, not an error. Every result carries binding_status; only authentic (amtssigniert) publications are legally binding. This tool returns content, not fresh metadata — the metadata rides the search/lookup step that produced the document number. When the markdown text overflows the 40,000-byte budget the tool returns an outline (kind: outline) instead of truncating: the document’s §/Artikel/Anlage sections where it carries at least two such headings, otherwise contiguous byte windows named Part 1 of N … Part N of N covering the whole text and listed in document order. Re-call with sections:[…] naming outline entries to retrieve just those; a name matching no entry returns the outline again with a notice rather than the whole document. Windows are cut at line breaks, not at sentence or § boundaries, so one can open mid-sentence — read them in order and pull the neighbour when a passage straddles a cut. Raw html and xml renditions are never sliced: at or under the 40,000-byte budget they return whole; over it the result is kind: link — no text, truncated: true, the full byte_size, and content_urls, whose html or xml entry fetches the whole artifact in one GET. Every HTML rendition opens with a 40–70 KB stylesheet, so html practically always returns kind: link — read with markdown, parse with xml, and fetch content_urls.html for the authentic markup. Markdown drops the screen-reader expansions RIS ships alongside each abbreviated citation, keeping the visible citation form; raw html/xml renditions are returned exactly as published.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     document_number: z
@@ -757,19 +771,19 @@ export const risGetDocument = tool('ris_get_document', {
       .string()
       .optional()
       .describe(
-        'A https://www.ris.bka.gv.at/Dokumente/… rendition URL as returned in a result’s content_urls — the alternative to document_number + application. Also the only way to read a draft’s companion documents: pass a ris_search_drafts record’s materials[].url (the Erläuterungen, Textgegenüberstellung, WFA, cover letter, or annex), whose filenames are opaque and per-record and so cannot be reached through document_number. Every companion filename RIS publishes is accepted, whichever shape it carries. The URL’s own extension is only checked against the rendition extensions RIS uses and is then discarded — format selects which rendition is returned, for a companion exactly as for a main document. A filename that is neither this document’s own rendition nor one of its companions is rejected; companion filenames cannot be composed by hand, so copy one verbatim.',
+        'A /Dokumente/… rendition URL on https://www.ris.bka.gv.at or https://ogd.ris.bka.gv.at, passed exactly as a result’s content_urls returned it — the alternative to document_number + application. Also the only way to read a draft’s companion documents: pass a ris_search_drafts record’s materials[].url (the Erläuterungen, Textgegenüberstellung, WFA, cover letter, or annex), whose filenames are opaque and per-record and so cannot be reached through document_number. Every companion filename RIS publishes is accepted, whichever shape it carries. The URL’s own extension is only checked against the rendition extensions RIS uses and is then discarded — format selects which rendition is returned, for a companion exactly as for a main document. A filename that is neither this document’s own rendition nor one of its companions is rejected; companion filenames cannot be composed by hand, so copy one verbatim.',
       ),
     format: z
       .enum(['markdown', 'html', 'xml', 'urls_only'])
       .default('markdown')
       .describe(
-        'markdown (default — the HTML rendition converted to markdown), html (raw HTML rendition), xml (RIS Nutzdaten schema), or urls_only (no fetch — all rendition URLs incl. the authentic PDF).',
+        'markdown (default — the HTML rendition converted to markdown, and the format for reading), html (raw HTML rendition), xml (RIS Nutzdaten schema), or urls_only (no fetch — all rendition URLs incl. the authentic PDF). html and xml over 40,000 bytes return kind: link with no text — nearly every html rendition does, since each carries a 40–70 KB stylesheet — so fetch content_urls.html or content_urls.xml for the whole artifact.',
       ),
     sections: z
       .array(z.string())
       .optional()
       .describe(
-        'Entry names to retrieve, each copied verbatim from a prior outline response (kind: outline) — §/Artikel/Anlage section names, or window names of the form "Part 2 of 6". Omit for the full document, which returns an outline instead when the markdown overflows the 40,000-byte budget. A name that matches no entry is never silently ignored: a total miss returns the outline (kind: outline) with a notice, a partial miss returns the matched entries with a notice naming others to pick from. Applies to markdown only — html, xml, and urls_only are never sliced and return in full.',
+        'Entry names to retrieve, each copied verbatim from a prior outline response (kind: outline) — §/Artikel/Anlage section names, or window names of the form "Part 2 of 6". Omit for the full document, which returns an outline instead when the markdown overflows the 40,000-byte budget. A name that matches no entry is never silently ignored: a total miss returns the outline (kind: outline) with a notice, a partial miss returns the matched entries with a notice naming others to pick from. Applies to markdown only. html and xml are never sliced — the selector is ignored with a notice, and they return whole under the 40,000-byte budget and as kind: link over it; urls_only carries no text to select from.',
       ),
   }),
   output: z.object({
@@ -777,7 +791,7 @@ export const risGetDocument = tool('ris_get_document', {
       .string()
       .optional()
       .describe(
-        'The document text in the requested format. Absent for urls_only and when the application carries no text rendition (see the notice).',
+        'The document text in the requested format. Absent for urls_only, when the application carries no text rendition (see the notice), for an outline (kind: outline), and for an html or xml rendition over the 40,000-byte budget (kind: link).',
       ),
     format: z
       .enum(['markdown', 'html', 'xml', 'urls_only'])
@@ -786,18 +800,18 @@ export const risGetDocument = tool('ris_get_document', {
       .number()
       .optional()
       .describe(
-        'Full UTF-8 byte size of the document text. Present when text was fetched — for an overflowed document (kind: outline) this reports the full text’s size, not the outline payload’s.',
+        'Full UTF-8 byte size of the document text. Present when text was fetched — for an overflowed document (kind: outline) or an over-budget html/xml rendition (kind: link) this reports the full text’s size, not the returned payload’s.',
       ),
     truncated: z
       .boolean()
       .optional()
       .describe(
-        'Present and true when the full text isn’t inline because an outline was returned instead (kind: outline) — either the document overflowed the byte budget, or a sections:[…] selector matched nothing. The notice names which. Retrieve entries via the sections input, or fetch content_urls for the whole artifact.',
+        'Present and true when the full text isn’t inline. kind: outline — the markdown overflowed the byte budget or a sections:[…] selector matched nothing (the notice names which); retrieve entries via the sections input. kind: link — an html or xml rendition overflowed the budget; fetch content_urls.html or content_urls.xml for the whole artifact, or re-call with format: markdown.',
       ),
     kind: z
-      .enum(['full', 'outline'])
+      .enum(['full', 'outline', 'link'])
       .describe(
-        'full — the complete response (document text, selected entries, or rendition URLs). outline — sections lists the retrievable entries instead of the text, either because the document overflowed the byte budget or because a sections:[…] selector matched nothing; re-call with sections:[…] naming entries from it.',
+        'full — the complete response (document text, selected entries, or rendition URLs). outline — sections lists the retrievable entries instead of the text, either because the markdown overflowed the byte budget or because a sections:[…] selector matched nothing; re-call with sections:[…] naming entries from it. link — an html or xml rendition over the 40,000-byte budget: no text, only byte_size and content_urls, whose entry for the requested format fetches the whole artifact in one GET; re-call with format: markdown to read it.',
       ),
     sections: z
       .array(
@@ -829,7 +843,7 @@ export const risGetDocument = tool('ris_get_document', {
       .string()
       .optional()
       .describe(
-        'Present when the requested text format is unavailable for this application (names why and the usable URL), when the document overflowed to a section outline (names how to retrieve sections), or when a sections:[…] entry matched no section (names the unmatched entries).',
+        'Present when the requested text format is unavailable for this application (names why and the usable URL), when the document overflowed to a section outline (names how to retrieve sections), when an html or xml rendition overflowed to a link (names content_urls.<format> and format: markdown), or when a sections:[…] entry matched no section or was ignored (names the unmatched entries).',
       ),
   },
   errors: [
@@ -843,9 +857,9 @@ export const risGetDocument = tool('ris_get_document', {
     {
       reason: 'unsupported_url',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'document_url fails the host + /Dokumente/ path-prefix allowlist, its path segment is not a recognized RIS application, or its trailing filename addresses neither the document’s own rendition nor one of its companion documents — thrown locally, nothing fetched.',
+      when: 'document_url fails the origin + /Dokumente/ path-prefix allowlist (exactly https://www.ris.bka.gv.at and https://ogd.ris.bka.gv.at), its path segment is not a recognized RIS application, or its trailing filename addresses neither the document’s own rendition nor one of its companion documents — thrown locally, nothing fetched.',
       recovery:
-        'Only ris.bka.gv.at /Dokumente/ URLs are fetchable, and only a document’s own rendition or a companion filed in the same folder — copy the URL verbatim from a result’s content_urls or a ris_search_drafts record’s materials, or switch to document_number + application.',
+        'Only /Dokumente/ URLs on www.ris.bka.gv.at or ogd.ris.bka.gv.at are fetchable, and only a document’s own rendition or a companion filed in the same folder — copy the URL verbatim from a result’s content_urls or a ris_search_drafts record’s materials, or switch to document_number + application.',
     },
     {
       reason: 'document_not_found',
@@ -874,9 +888,8 @@ export const risGetDocument = tool('ris_get_document', {
 
   async handler(input, ctx) {
     const documentNumber = meaningful(input.document_number);
-    const application = meaningful(input.application);
     const documentUrl = meaningful(input.document_url);
-    const { format } = input;
+    const { application, format } = input;
 
     const failAddressing = (message: string) =>
       ctx.fail('invalid_addressing', message, { ...ctx.recoveryFor('invalid_addressing') });
@@ -976,6 +989,24 @@ export const risGetDocument = tool('ris_get_document', {
     const { byteSize } = rendition;
     const requestedSections = input.sections?.filter((name) => name.trim() !== '') ?? [];
 
+    // A raw rendition over the budget. Never sliced — its body is typically one line and a
+    // slice is not well-formed — so no text returns on either surface; content_urls fetches
+    // the whole artifact in one GET, and markdown is the bounded reading path.
+    if (
+      (format === 'html' || format === 'xml') &&
+      byteSize !== undefined &&
+      byteSize > OUTLINE_BUDGET_BYTES
+    ) {
+      const ignored =
+        requestedSections.length > 0
+          ? `sections:[…] was ignored — raw html and xml are never sliced, so ${quoteNames([...new Set(requestedSections)])} could not be resolved. `
+          : '';
+      ctx.enrich.notice(
+        `${ignored}The ${format} rendition is ${byteSize} bytes, over the ${OUTLINE_BUDGET_BYTES}-byte budget for inline text, so no text is returned. Fetch the whole artifact in one GET from content_urls.${format} (${rendition.contentUrls[format]}), or re-call ris_get_document with the same addressing and format: "markdown" for readable text, which outlines a long document into retrievable sections.`,
+      );
+      return { ...base, kind: 'link' as const, truncated: true, byte_size: byteSize };
+    }
+
     // Selective retrieval — the re-call after an outline. Every outcome is disclosed: a
     // partial match names the entries that were dropped, and a total miss returns the section
     // roster (driven by the no-match, not by the byte budget) so the caller can tell "your
@@ -1055,16 +1086,23 @@ export const risGetDocument = tool('ris_get_document', {
   // format() populates content[] — the markdown twin of structuredContent. Every output
   // field renders here; the notice rides the enrichment trailer. The full-text (`text`) and
   // outline (`sections`) arms render on field presence, independently — never branch on
-  // `kind` (format-parity walks one sample with every optional field populated at once).
+  // `kind` (format-parity walks one sample with every optional field populated at once). A
+  // truncated result with no `sections` is the link arm, which has no outline to point at.
+  // Raw html/xml is fenced with a fence longer than any backtick run in it, so the markup
+  // reaches the client as literal text — never rendered, never able to close the block.
   format: (result) => {
     const lines = [`## ${result.document_number} (${result.application})`];
     lines.push(
       `**Binding:** ${result.binding_status} | **Format:** ${result.format} | **Kind:** ${result.kind}`,
     );
     if (result.byte_size !== undefined) {
-      lines.push(
-        `**Size:** ${result.byte_size} bytes${result.truncated === true ? ' (truncated — retrieve sections from the outline below)' : ''}`,
-      );
+      const suffix =
+        result.truncated !== true
+          ? ''
+          : result.sections !== undefined
+            ? ' (truncated — retrieve sections from the outline below)'
+            : ` (not inline — fetch content_urls.${result.format}, or re-call with format: markdown)`;
+      lines.push(`**Size:** ${result.byte_size} bytes${suffix}`);
     }
     if (result.authentic_pdf_url !== undefined) {
       lines.push(`**Authentic PDF:** ${result.authentic_pdf_url}`);
@@ -1074,7 +1112,14 @@ export const risGetDocument = tool('ris_get_document', {
       .map((key) => `[${key.toUpperCase()}](${result.content_urls[key]})`);
     if (urls.length > 0) lines.push(`**Renditions:** ${urls.join(' · ')}`);
     if (result.sections !== undefined) lines.push('', renderOutlineSections(result.sections));
-    if (result.text !== undefined) lines.push('', result.text);
+    if (result.text !== undefined) {
+      lines.push(
+        '',
+        result.format === 'markdown'
+          ? result.text
+          : markdown().codeBlock(result.text, result.format).build(),
+      );
+    }
     return [{ type: 'text', text: lines.join('\n') }];
   },
 });

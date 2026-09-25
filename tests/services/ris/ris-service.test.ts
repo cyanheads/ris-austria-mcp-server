@@ -12,6 +12,7 @@ import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import {
   assertFetchableDocumentUrl,
   getRisService,
@@ -61,6 +62,64 @@ describe('assertFetchableDocumentUrl', () => {
       ),
     );
     expectValidationError(() => assertFetchableDocumentUrl('not a url', CONTENT_BASE));
+  });
+});
+
+describe('assertFetchableDocumentUrl — the two RIS content origins (#43)', () => {
+  /** A live Begut search page trimmed to one record; RIS now emits every URL on the OGD host. */
+  const [hit] = parseSearchResponse(
+    JSON.parse(rawFixture('search-begut-ogd.json')) as unknown,
+  ).hits;
+
+  it('accepts the OGD-host main-document and companion URLs a search result carries', () => {
+    const urls = [
+      hit?.contentUrls.html,
+      hit?.contentUrls.xml,
+      ...(hit?.contentReferences ?? [])
+        .filter((ref) => ref.type === 'Material' || ref.type === 'Letter')
+        .map((ref) => ref.urls.html ?? ref.urls.pdf),
+    ];
+    expect(urls.length).toBeGreaterThanOrEqual(4);
+    for (const url of urls) {
+      expect(url).toMatch(/^https:\/\/ogd\.ris\.bka\.gv\.at\/Dokumente\//u);
+      expect(assertFetchableDocumentUrl(url as string, CONTENT_BASE).href).toBe(url);
+    }
+  });
+
+  it('keeps accepting the www host', () => {
+    const url = `${CONTENT_BASE}/Dokumente/Begut/B/B.html`;
+    expect(assertFetchableDocumentUrl(url, CONTENT_BASE).href).toBe(url);
+  });
+
+  it.each([
+    'https://data.bka.gv.at/Dokumente/Begut/B/B.html',
+    'https://ris.bka.gv.at/Dokumente/Begut/B/B.html',
+    'http://ogd.ris.bka.gv.at/Dokumente/Begut/B/B.html',
+    'https://ogd.ris.bka.gv.at.evil.example/Dokumente/Begut/B/B.html',
+    'https://ogd-ris.bka.gv.at/Dokumente/Begut/B/B.html',
+    'https://ogd.ris.bka.gv.at:8443/Dokumente/Begut/B/B.html',
+    'https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=Begut',
+  ])('rejects %s', (url) => {
+    expectValidationError(
+      () => assertFetchableDocumentUrl(url, CONTENT_BASE),
+      'https://www.ris.bka.gv.at or https://ogd.ris.bka.gv.at',
+    );
+  });
+
+  it('fetches an OGD-host document URL through fetchDocumentContent', async () => {
+    const url = hit?.contentUrls.html as string;
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('<p>Body</p>', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const content = await new RisService('ris-austria-mcp-server/test').fetchDocumentContent(
+        url,
+        createMockContext(),
+      );
+      expect(content).toMatchObject({ text: '<p>Body</p>', url });
+      expect(fetchMock).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
