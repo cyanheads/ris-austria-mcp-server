@@ -29,132 +29,105 @@
 
 ## Overview
 
-[RIS](https://www.ris.bka.gv.at/) is the Austrian government's official legal database: consolidated federal, state, and municipal law, case law from every Austrian court and tribunal, the authentic gazettes whose promulgated text is binding under Austrian law, the pre-parliamentary lawmaking pipeline, and ministerial decrees. This server wraps the keyless RIS OGD REST API (v2.6, CC BY 4.0), covering all 39 OGD applications and reaching back to the Reichsgesetzblatt of 1848; every response labels the document's binding status, since only the amtssignierte gazette wording is legally binding. Runs as a stdio process, a local Streamable HTTP server, or the public hosted endpoint above.
+Austrian law from [RIS](https://www.ris.bka.gv.at/), the government's official legal information system: consolidated federal, state, and municipal law, case law from Austria's courts and tribunals, the authentic gazettes back to 1848, the pre-parliamentary lawmaking pipeline, and ministerial decrees. Covers all 39 applications of the keyless RIS OGD REST API (v2.6, CC BY 4.0) and labels every document with its binding status, since only the authentic (amtssigniert) gazette text is legally binding. Runs as a stdio process, a local Streamable HTTP server, or the public hosted endpoint above.
 
 ### Tools
 
 | Tool | Description |
 |:---|:---|
-| `ris_search_legislation` | Search consolidated federal, state, and municipal law, one document per §/Artikel/Anlage, filtered to the version in force on a given date (defaults to today). Also serves English translations of selected laws. |
-| `ris_search_case_law` | Search Austrian case law (Judikatur), one court or tribunal per call: VfGH, VwGH, ordinary courts, BVwG, LVwG, DSB, the party-transparency senate, and ten more. |
-| `ris_search_gazette` | Browse the promulgation record at every level of government: federal (three era tiers back to 1848, auto-routed), state law and ordinance gazettes, district, and municipal. |
-| `ris_search_drafts` | Search the federal lawmaking pipeline: ministerial drafts in public review (Begutachtungsentwürfe) and government bills (Regierungsvorlagen). |
-| `ris_search_announcements` | Search sectoral official gazettes and executive documents: social-insurance notices, veterinary notices, court rules, trade-exam regulations, health structure plans, ministerial decrees, council-of-ministers minutes. |
-| `ris_lookup_citation` | Resolve one Austrian legal citation ("§ 6 DSG", "BGBl. I Nr. 165/1999", "RGBl. Nr. 189/1902", a Geschäftszahl, "VfSlg 19.632/2012") to its canonical document. |
-| `ris_get_document` | Fetch one document's full text as markdown/HTML/XML, or its export URLs, with binding-status labeling and the authentic PDF wherever one exists. |
-| `ris_track_changes` | Per-application change feed: every document added or changed in a date window, deletions included. |
-| `ris_list_reference` | Ground the domain vocabulary offline: applications and coverage windows, court codes, Bundesländer, decision kinds, ministries, district authorities, gazette eras and parts, citation formats, search syntax. |
+| `ris_search_legislation` | Search consolidated federal, state, and municipal law as in force on a date (default today), plus English translations of selected laws |
+| `ris_search_case_law` | Search case law in one court or tribunal per call, across 17 court codes |
+| `ris_search_gazette` | Browse the federal, state, district, and municipal gazettes, with federal history auto-routed back to 1848 |
+| `ris_search_drafts` | Search ministerial review drafts (Begutachtungsentwürfe) and government bills (Regierungsvorlagen) |
+| `ris_search_announcements` | Search seven sectoral collections, from social-insurance notices to ministerial decrees and council-of-ministers minutes |
+| `ris_lookup_citation` | Resolve one Austrian legal citation ("§ 6 DSG", "BGBl. I Nr. 165/1999", a Geschäftszahl) to its document |
+| `ris_get_document` | Fetch one document as markdown, HTML, or XML, or just its rendition URLs, with its binding status |
+| `ris_track_changes` | List every document added, changed, or deleted in one application within a date window |
+| `ris_list_reference` | Look up RIS vocabularies offline: applications, courts, states, ministries, gazette parts, citation formats, search syntax |
 
 ### Resources
 
 | Resource | Description |
 |:---|:---|
-| `ris://document/{application}/{documentNumber}` | Markdown text of one RIS document — injectable twin of `ris_get_document` |
+| `ris://document/{application}/{documentNumber}` | Markdown text of one RIS document |
 
-All resource data is also reachable via tools — clients without resource support use `ris_get_document`.
+The resource mirrors `ris_get_document`, so tool-only clients lose nothing.
 
 ## Capability reference
 
 ### `ris_search_legislation` <sub>tool</sub>
 
-- Full-text `query` using RIS boolean grammar: `UND`/`ODER`/`NICHT` or `AND`/`OR`/`NOT`, parentheses, quoted phrases
-- `title` matches the title, short title, or abbreviation ("DSG", "ABGB")
-- `scope` routes to one of three applications — BrKons (federal), LrKons (state), Gr (municipal); `municipality` narrows a state scope to municipal law (selected norms, six Bundesländer)
-- `language: english` serves the Erv collection of selected English translations
-- `in_force_as_of` defaults to today. Omitting the date upstream silently searches all historical versions, so `include_all_versions` is the explicit opt-in and the applied date is echoed in every response
-- Force-window filters (`entered_force_from/to`, `left_force_from/to`) track provisions entering or leaving force in a date range
-- Section-range filtering via `section_from`/`section_to`/`section_type` (§, Artikel, Anlage)
-- Law-level grouping via `law_id` (Gesetzesnummer), plus Systematik `index` and `changed_since` windows
-- Output per document: section label, in-force date, ELI, parsed CELEX references, and export URLs (XML/HTML/PDF/RTF)
+- `query` (full text) and `title` (title, short title, or abbreviation such as "DSG"); `scope` is `federal` (default) or a Bundesland, `municipality` switches a state scope to municipal law, and `language: english` searches the ~138 English translations
+- `in_force_as_of` defaults to today in Austria and is echoed as `appliedInForceAsOf`; `include_all_versions` and the `entered_force_*` / `left_force_*` windows are mutually exclusive alternatives
+- Records carry `law_id` (filter on it to get every section of a law), `section_label`, in-force dates, `eli`, `celex_references`, and `content_urls`; `section_from`/`section_to`, `index`, and `sort_by` narrow further
 
 ---
 
 ### `ris_search_case_law` <sub>tool</sub>
 
-- `court` is required and takes one application per call: `vfgh`, `vwgh`, `justiz`, `bvwg`, `lvwg`, `dsk`, `upts` (party-transparency senate), plus ten historical and specialized tribunals. Cross-court research fans out one call per court
-- Filter by cited provision (`norm`, e.g. "DSG §1", "DSGVO Art32"), exact case number (`case_number`, Geschäftszahl), decision date range, decision kind (Erkenntnis/Beschluss/…), and full-text query
-- `decision_type` targets headnotes (Rechtssätze), full decision texts, or both
-- Court-conditional filters: `issuing_body` (dsk/dok/pvak/verg), `court_name`, `legal_area`, `subject_area` (justiz, e.g. "Datenschutzrecht"), `state` (lvwg/uvs), `collection_number` (VfSlg/VwSlg cites), `party` (upts), commission/senate/discrimination ground (gbk), media statute (bks)
-- Output per decision: case numbers, decision date, ECLI, cited norms, keywords, the guiding principle (Leitsatz) on headnote documents, and headnote/decision URLs
+- `court` is required, one code per call; filter by `query`, cited `norm` ("DSG §1"), `case_number`, `decided_from`/`decided_to`, `decision_type` (`headnote`, `full_text`, `all`), and court-conditional filters such as `court_name` (justiz), `state` (lvwg/uvs), or `collection_number` (vfgh/vwgh/uvs)
+- Records carry `case_numbers`, `decision_date`, `ecli`, `norms_cited`, and `guiding_principle` on headnotes; `court: normenliste` returns indexed laws under `norm_index` instead of decisions
+- A conditional filter sent to the wrong court fails as `court_filter_mismatch` before any upstream call
 
 ---
 
 ### `ris_search_gazette` <sub>tool</sub>
 
-- `scope`: federal, one of the nine Bundesländer, `district` (Bezirksverwaltungsbehörden), or `municipal` (authentic municipal promulgations)
-- Federal history is one logical series auto-routed across three era tiers: BgblAuth (2004+, authentic), BgblPdf (Staats- und Bundesgesetzblatt 1945–2003), and BgblAlt (Reichs-, Staats- und Bundesgesetzblatt 1848–1940, metadata plus ÖNB-hosted scans). Each response names the tier that served it
-- One call serves one tier, so a date range crossing 2004-01-01 or 1945-01-01 is rejected with the boundary to split at rather than answered from one side of it. RIS carries no federal gazette for 1941–1944
-- Filter by publication date range, gazette `part` (BGBl. I/II/III, or `pre_1997` for the partless era), document `type`, issuing ministry, district authority, or municipality
-- State scopes serve the authentic Landesgesetzblätter by default. `series: ordinance_gazette` switches to the Verordnungsblätter; `state_era: legacy` selects the state's earlier non-authentic series (Niederösterreich's systematic LgblNO, or the historical Lgbl elsewhere)
-- Point lookup by gazette number ("BGBl. II Nr. 171/2026" or "171/2026")
-- Every record carries a binding label (`authentic`, `historical_record`, or `consolidated_informational`) and the amtssigniert PDF URL when present. The metadata-only 1848–1940 gazettes link to their ÖNB ALEX scan
-- For a single known gazette number, `ris_lookup_citation` is the more direct route
+- `scope` is `federal` (default), a Bundesland, `district`, or `municipal`; filter by `number`, `part`, `type`, `published_from`/`published_to`, `issuer`, `district_authority`, or `municipality`. State scopes also take `series` (`law_gazette` / `ordinance_gazette`) and `state_era` (`current` / `legacy`)
+- Federal queries route to one era tier (BgblAuth 2004+, BgblPdf 1945–2003, BgblAlt 1848–1940), echoed as `servedApplication`; a date range crossing a tier boundary fails as `cross_tier_range` with the dates to split at
+- Records carry `binding` (`authentic`, `historical_record`, `consolidated_informational`), `authentic_pdf_url` where one exists, and `alex_url` (the ÖNB scan) for 1848–1940 entries
 
 ---
 
 ### `ris_search_drafts` <sub>tool</sub>
 
-- `stage: review_drafts` covers ministerial drafts in public review (Begutachtungsentwürfe). `in_review_on` answers what is in review on a given date
-- `stage: government_bills` covers bills adopted by the council of ministers (Regierungsvorlagen, 2004+), filtered by adoption date
-- `ministry` accepts the abbreviation ("BMF") and the server expands it to RIS's exact designation
-- Output includes review deadlines, council adoption dates, and the RIS web view
-- `materials` lists the companion documents filed with the draft — Erläuterungen (the drafting reasoning the bill text omits), Textgegenüberstellung, Vorblatt/WFA, covering letter, annexes. Their filenames are opaque and per-record, so passing a `materials[].url` to `ris_get_document` is the only way to read one; `format` there picks the rendition, so the one URL reaches every text rendition the companion has. Where RIS files no HTML rendition — about one companion in eight, nearly all covering letters — the URL is the PDF, which is a download rather than a text rendition
+- `stage` is required: `review_drafts` (with `in_review_on` for drafts in review on a date) or `government_bills` (2004+, with `decided_from`/`decided_to`); `ministry` accepts an abbreviation such as "BMF" or a full designation
+- Records carry `review_deadline` or `decided`, plus `materials[]`: the Erläuterungen, Textgegenüberstellung, Vorblatt/WFA, covering letter, and annexes, classified by `type`. Pass a `materials[].url` to `ris_get_document` to read one
 
 ---
 
 ### `ris_search_announcements` <sub>tool</sub>
 
-- `collection`: `social_insurance` (Avsv), `veterinary` (Avn), `court_rules` (KmGer), `trade_exam_rules` (PruefGewO), `health_structure_plans` (Spg, ÖSG/RSG), `ministerial_decrees` (Erlässe), `council_minutes` (Ministerratsprotokolle) — five of the seven are authentic publications
-- Collection-aware filters: issue numbers, issuers (insurance carriers, ministries), cited norm ("decrees citing the DSG"), in-force date for the consolidated collections, plan type and state for health plans, session number and legislature for council minutes
-- Binding labels per collection: `authentic`, `administrative_directive` (decrees bind the administration, not citizens), or `preparatory` (council minutes)
-- Every record carries the RIS web view — the only browsable surface for the PDF-only council minutes and for ministerial decrees
+- `collection` is required: `social_insurance`, `veterinary`, `court_rules`, `trade_exam_rules`, `health_structure_plans`, `ministerial_decrees`, or `council_minutes`. Each accepts its own filter set, and a filter outside it fails as `collection_filter_mismatch`. That includes `changed_since` on `social_insurance` and `veterinary`, where RIS ignores it
+- `issuer` expands ministry abbreviations ("BMF") and social-insurance carrier abbreviations ("ÖGK")
+- Records carry `binding` (`authentic` for five collections, `administrative_directive` for decrees, `preparatory` for council minutes), `authentic_pdf_url`, and `document_url`, the only browsable view of council minutes and decrees
 
 ---
 
 ### `ris_lookup_citation` <sub>tool</sub>
 
-- Parses and routes four citation kinds: norm cites ("§ 6 DSG", "Art 10 B-VG"), gazette numbers across all three federal eras plus LGBl ("BGBl. I Nr. 165/1999", "BGBl. Nr. 194/1961", "RGBl. Nr. 189/1902"), case numbers ("Ro 2026/03/0016", "2025-0.934.677", "14Os49/26a"), and collection numbers ("VfSlg 19.632/2012")
-- Routes to deterministic upstream filters (section plus title, per-era number params, Geschäftszahl, Sammlungsnummer) rather than keyword search
-- A state gazette number predating that Bundesland's e-Recht switch falls back to its earlier non-authentic series; a VwSlg number cited without its part letter comes back as ambiguous, naming both decisions, rather than resolved to one of them
-- Returns `found: false` with structured guidance instead of throwing when nothing resolves
-- `court` and `state` hints short-circuit ambiguous formats
+- One `citation` per call, auto-classified as a norm ("§ 6 DSG", "DSG §1"), gazette number ("BGBl. I Nr. 165/1999", "RGBl. Nr. 189/1902"), case number ("Ro 2026/03/0016"), or collection number ("VfSlg 19.632/2012"). `kind` forces a route, `court` and `state` hints narrow it, and `in_force_as_of` pins a norm's version (default today)
+- Returns `found`, `kind`, and a `record` in the matching search tool's shape, with `alternatives_count` when more than one document matched. A miss returns `found: false` with `guidance` instead of an error
 
 ---
 
 ### `ris_get_document` <sub>tool</sub>
 
-- Addresses documents by `document_number` plus `application` (from any search or lookup result), or by a passed-through `ris.bka.gv.at` document URL (host and path allowlisted) — including a draft's companion documents from a `ris_search_drafts` record's `materials[].url`, which nothing else can reach. `format` selects the rendition for a companion exactly as for a main document
-- `format`: `markdown` (default, boilerplate stripped), raw `html`, RIS `xml`, or `urls_only`
-- Every response carries a binding status: `authentic` (with amtssigniert PDF URL), `consolidated_informational`, `historical_record`, `decision`, `preparatory`, `administrative_directive`, or `translation`
-- Applications that publish only the signed PDF (district and municipal promulgations, court rules) or only scans (1848–1940 gazettes, ÖNB-hosted) return a `format_unavailable` notice with the usable URLs instead of failing
-- Markdown over 40,000 bytes returns an outline (`kind: outline`) instead of truncating. Re-call with `sections:[…]` to pull the entries you need
-- Outline entries are the document's §/Artikel/Anlage sections, or — for the court decisions, gazette bodies and announcements that carry no such headings — contiguous byte windows named `Part 1 of N` … `Part N of N`, cut at line breaks and covering the text with nothing dropped. Raw `html`/`xml` are never sliced and return whole at any size
-- Returns content, not fresh metadata. The upstream API has no document-by-number search, so document numbers come from a prior search or lookup result
+- Address by `document_number` + `application`, or by a `document_url` from `content_urls` or a draft's `materials[].url`, on `www.ris.bka.gv.at` or `ogd.ris.bka.gv.at`; `format` is `markdown` (default), `html`, `xml`, or `urls_only`
+- Every result carries `binding_status` (seven values, from `authentic` to `translation`) and `authentic_pdf_url` where one exists. Applications with no text rendition (district and municipal promulgations, court rules, party-transparency decisions, council minutes, 1848–1940 gazettes) return a notice with the usable URL instead of failing
+- Markdown over 40,000 bytes comes back as `kind: outline`, listing §/Artikel/Anlage sections or `Part n of N` windows; re-call with `sections` to fetch entries
+- `html` and `xml` are never sliced. Over 40,000 bytes they come back as `kind: link` with no text, only `byte_size` and `content_urls`, which fetches the whole artifact in one request. Nearly every HTML rendition carries a 40–70 KB stylesheet and lands here, so read with `markdown`
 
 ---
 
 ### `ris_track_changes` <sub>tool</sub>
 
-- `application` plus `changed_from`/`changed_to` returns every document added or changed in the window. A typical two-week federal-law window carries 1,400+ changes
-- `include_deleted` surfaces removals, which no other RIS surface exposes
-- The search tools' `changed_since` interval filters are the coarser alternative
+- `application` (any of the 39 codes) plus `changed_from`/`changed_to`; `include_deleted` adds removals, which no other tool reports
+- Records carry `changed`, `published`, and `binding_status`; deletion records set `deleted: true` with `deleted_at`
 
 ---
 
 ### `ris_list_reference` <sub>tool</sub>
 
-- Returns one static RIS vocabulary table per call — no upstream request, no network dependency
-- `topic` selects the table: applications, courts, states, decision types/kinds, issuing bodies, ministries, collections, stages, changed-since intervals, section types, gazette parts, law types, district authorities, justiz subject areas, search syntax, or citation formats
-- The other `ris_*` tools' recovery hints and zero-hit notices route callers back here by topic
+- `topic` selects one of 17 static tables: applications, courts, states, decision types and kinds, issuing bodies, ministries, collections, stages, changed-since intervals, section types, gazette parts, law types, district authorities, justiz subject areas, search syntax, and citation formats
+- Returns `summary` and `entries` (`value`, `label`, `details`) with no upstream call; recovery hints across the other tools name the topic to read
 
 ---
 
 ### `ris://document/{application}/{documentNumber}` <sub>resource</sub>
 
-- Markdown only (`text/markdown`) — the injectable twin of `ris_get_document` with `format: markdown`
-- Addressed by `application` + `documentNumber`, copied verbatim from a search or `ris_lookup_citation` result
-- Applications with no text rendition (district/municipal promulgations, court rules, party-transparency decisions, council minutes, the 1848–1940 imperial gazettes) return a short note pointing at the authentic PDF or scan instead
-- Oversized text degrades to the same section/window outline as `ris_get_document`, but carries no `sections` selector — re-fetch via the tool to pull a specific one
+- `text/markdown` of one document, addressed by `application` + `documentNumber` copied from a search or lookup result; same content as `ris_get_document` with `format: markdown`
+- Applications with no text rendition return a note pointing at the PDF or scan. Oversized text returns the outline without a `sections` selector, so use the tool to fetch an entry
 
 ## Features
 
@@ -162,22 +135,18 @@ Built on [`@cyanheads/mcp-ts-core`](https://github.com/cyanheads/mcp-ts-core): s
 
 RIS-specific:
 
-- All 39 OGD applications across every controller, from consolidated law and the four levels of authentic gazette to the 17 court and tribunal collections
-- Citation engine parses and routes four Austrian citation kinds (norm, gazette number, case number, collection number) to deterministic upstream filters rather than keyword search
-- Strict parameter allowlist and JSON-serialized-XML normalizer — RIS silently ignores unknown params, so only live-confirmed spellings are sent upstream; the normalizer handles object-or-array coercion, in-band error detection, six per-controller metadata classes, CELEX reference parsing, and ministry-abbreviation expansion
-- Retries with a 1.5s base delay calibrated for RIS's rate-limited API; an HTML response in place of JSON is treated as a throttle/degradation signal
-- English tool surface over RIS's German API — Austrian legal terms (Geschäftszahl, Rechtssatz, Bundesgesetzblatt) stay as domain vocabulary and are glossed in the descriptions
+- All 39 OGD applications: consolidated law, the federal, state, district, and municipal gazettes, 17 court and tribunal collections, the lawmaking pipeline, and sectoral announcements
+- Citations route to deterministic upstream filters (section plus title, gazette number, Geschäftszahl, Sammlungsnummer) rather than keyword search
+- Strict parameter allowlist: RIS silently ignores unknown parameters, so conditional filters are checked locally and only live-confirmed spellings go upstream
+- Retries use a 1.5 s base delay for the rate-limited API, and an HTML page in place of JSON counts as a throttle signal
+- Shared conventions: dates are `YYYY-MM-DD`; search tools page with `page` and `page_size` (10 or 20; default 20); a text filter must be non-blank, so omit it to leave the search unfiltered; court, application, state, and ministry codes come from `ris_list_reference`
+- Tool descriptions are English, while titles, field values, and in-band RIS error messages stay German; legal terms such as Geschäftszahl and Rechtssatz are glossed in the descriptions
 
 Agent-friendly output:
 
-- Discriminated output contracts — every document carries a typed binding status (`authentic`, `historical_record`, `consolidated_informational`, `decision`, `preparatory`, `administrative_directive`, `translation`) so callers branch on data, not string parsing
-- Provenance — responses echo applied filters (e.g. the resolved `in_force_as_of` date) and, for gazettes, which era tier served the result
-- Actionable recovery — typed error reasons (`court_filter_mismatch`, `invalid_query`, `document_not_found`, …) and zero-hit notices each name the concrete next call: a `ris_list_reference` topic, the right search tool, or `ris_lookup_citation`
-- Response shaping — court- and collection-conditional filter misuse is rejected locally before any upstream call, since RIS silently ignores unknown parameters rather than erroring
-
-## Localization
-
-Tool and parameter descriptions are English-only today. German (`de-AT`) descriptions are planned, pending opt-in localization support in the framework ([cyanheads/mcp-ts-core#259](https://github.com/cyanheads/mcp-ts-core/issues/259)); the English surface stays the default and fallback.
+- Discriminated binding status: every record carries a typed label (`authentic`, `consolidated_informational`, `historical_record`, `decision`, `preparatory`, `administrative_directive`, `translation`), so callers branch on data, not string parsing
+- Provenance: paged results report `totalCount` and `truncated` and echo what the server applied: `appliedInForceAsOf`, the gazette tier in `servedApplication`, and the `changedFrom`/`changedTo` window of a change feed
+- Actionable recovery: typed error reasons (`court_filter_mismatch`, `cross_tier_range`, `invalid_query`, `document_not_found`, …) and zero-hit notices name the next call, whether a `ris_list_reference` topic, another search tool, or `ris_lookup_citation`
 
 ## Getting started
 
@@ -244,8 +213,7 @@ Or with Docker:
 }
 ```
 
-Add any [configuration](#configuration) variables under an `"env"` key for bunx/npx, or as
-additional `-e NAME=value` arguments for Docker.
+Add any [configuration](#configuration) variables under an `"env"` key for bunx/npx, or as additional `-e NAME=value` arguments for Docker.
 
 For Streamable HTTP, set the transport and start the server:
 
@@ -256,12 +224,10 @@ MCP_TRANSPORT_TYPE=http MCP_HTTP_PORT=3010 bun run start:http
 
 ### Prerequisites
 
-- [Bun v1.3](https://bun.sh/) or higher, or Node.js v24+ (needed for `npx`/`bunx`)
-- No API key — the RIS OGD API is keyless
+- [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+).
+- No API key: the RIS OGD API is keyless.
 
 ### Installation
-
-For local development or to run a pinned build:
 
 1. **Clone the repository:**
 
@@ -305,15 +271,14 @@ bun run rebuild
 | Variable | Description | Default |
 |:---|:---|:---|
 | `RIS_API_BASE_URL` | RIS OGD REST API base URL. | `https://data.bka.gv.at/ris/api/v2.6` |
-| `RIS_CONTENT_BASE_URL` | Document content host (also the allowlist host for `document_url` input). | `https://www.ris.bka.gv.at` |
+| `RIS_CONTENT_BASE_URL` | Document content host that rendition URLs are built on. `document_url` accepts its origin alongside `https://www.ris.bka.gv.at` and `https://ogd.ris.bka.gv.at`. | `https://www.ris.bka.gv.at` |
 | `RIS_CONTACT` | Contact string appended to the User-Agent (RIS netiquette asks integrators to be identifiable). | none |
 | `MCP_TRANSPORT_TYPE` | Transport: `stdio` or `http`. | `stdio` |
 | `MCP_HTTP_PORT` | HTTP server port. | `3010` |
-| `MCP_SESSION_MODE` | HTTP session handling: `stateful`, `stateless`, or `auto`. This server pins stateless serving explicitly. | `stateless` |
+| `MCP_SESSION_MODE` | HTTP session mode: `stateless`, `stateful`, or `auto`. Overrides the server's own `stateless` declaration. | `stateless` |
 | `MCP_AUTH_MODE` | Authentication: `none`, `jwt`, or `oauth`. | `none` |
-| `MCP_LOG_LEVEL` | Log level (`debug`, `info`, `warning`, `error`, …). | `info` |
-| `STORAGE_PROVIDER_TYPE` | Storage backend. | `in-memory` |
-| `OTEL_ENABLED` | Enable OpenTelemetry instrumentation. | `false` |
+| `MCP_LOG_LEVEL` | Log level (`debug`, `info`, `warning`, `error`, etc.). | `info` |
+| `OTEL_ENABLED` | Enable [OpenTelemetry](https://github.com/cyanheads/mcp-ts-core/tree/main/docs/telemetry). | `false` |
 
 See [`.env.example`](./.env.example) for the full list of optional overrides.
 
@@ -348,9 +313,7 @@ docker build -t ris-austria-mcp-server .
 docker run --rm -p 3010:3010 ris-austria-mcp-server
 ```
 
-The Dockerfile defaults to HTTP transport, stateless session mode, and logs to
-`/var/log/ris-austria-mcp-server`. OpenTelemetry peer dependencies are installed by default;
-build with `--build-arg OTEL_ENABLED=false` to omit them.
+The Dockerfile defaults to HTTP transport, stateless session mode, and logs to `/var/log/ris-austria-mcp-server`. OpenTelemetry peer dependencies are installed by default; build with `--build-arg OTEL_ENABLED=false` to omit them.
 
 ## Project structure
 
@@ -361,7 +324,7 @@ build with `--build-arg OTEL_ENABLED=false` to omit them.
 | `src/mcp-server/tools` | Tool definitions (`*.tool.ts`). |
 | `src/mcp-server/resources` | Resource definitions (`*.resource.ts`). |
 | `src/services/ris` | RIS request building, HTTP access, normalization, and static reference data. |
-| `docs/design.md` | Settled v1 design — tool surface, service spec, live-confirmed RIS API reference. |
+| `docs/design.md` | Design notes: tool surface, service spec, live-confirmed RIS API reference. |
 | `tests/` | Unit and integration tests mirroring `src/`. |
 | `framework-skills/` | Development skills synced from `@cyanheads/mcp-ts-core`. |
 
