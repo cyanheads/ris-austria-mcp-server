@@ -1,6 +1,6 @@
 # ris-austria-mcp-server - Directory Structure
 
-Generated on: 2026-09-19 18:34:01
+Generated on: 2026-09-25 05:25:24
 
 ```text
 ris-austria-mcp-server/
@@ -28,6 +28,7 @@ ris-austria-mcp-server/
 │   ├── 0.2.x/
 │   ├── 0.3.x/
 │   ├── 0.4.x/
+│   ├── 0.5.x/
 │   └── template.md
 ├── docs/
 │   └── design.md
@@ -184,6 +185,7 @@ ris-austria-mcp-server/
 │   │   └── server-config.test.ts
 │   ├── fixtures/
 │   │   └── ris/
+│   │       ├── document-begut-nutzdaten.xml
 │   │       ├── document-brkons-sr-only.html
 │   │       ├── document-regv-artikel-sections.html
 │   │       ├── error-500-fulltext-landesrecht.json
@@ -194,6 +196,7 @@ ris-austria-mcp-server/
 │   │       ├── error-client.json
 │   │       ├── history-with-deleted.json
 │   │       ├── search-avsv.json
+│   │       ├── search-begut-ogd.json
 │   │       ├── search-begut.json
 │   │       ├── search-bgblalt.json
 │   │       ├── search-bgblauth-2004-01.json
@@ -223,7 +226,10 @@ ris-austria-mcp-server/
 │   │       └── ris-service.test.ts
 │   └── tools/
 │       ├── _shared.test.ts
+│       ├── _wire.ts
 │       ├── framework-contract.test.ts
+│       ├── issuer-and-recency-filters.test.ts
+│       ├── paging.test.ts
 │       ├── ris-get-document.tool.test.ts
 │       ├── ris-list-reference.tool.test.ts
 │       ├── ris-lookup-citation.tool.test.ts

@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.5.0](changelog/0.5.x/0.5.0.md) — 2026-09-24 · ⚠️ Breaking
+
+ris_get_document returns over-budget html/xml as kind: link and accepts ogd.ris.bka.gv.at URLs; search tools reject blank text filters and page sizes above 20; issuer filters resolve the 2025 ministries and social-insurance carrier abbreviations.
+
 ## [0.4.4](changelog/0.4.x/0.4.4.md) — 2026-09-19
 
 ris_list_reference escapes backslashes before table pipes, a CodeQL workflow runs on every push and PR, and the server adopts mcp-ts-core 0.13.6's session-mode and retry-budget APIs.
