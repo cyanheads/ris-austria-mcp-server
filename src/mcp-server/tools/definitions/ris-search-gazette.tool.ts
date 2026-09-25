@@ -27,8 +27,10 @@ import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisHit } from '@/services/ris/types.js';
 
 import {
-  failSearchError,
+  failMinistrySearchError,
+  filterText,
   isoDateString,
+  pageSizeParam,
   rewriteUnsupportedParam,
   type UnsupportedParam,
 } from './_shared.js';
@@ -231,11 +233,6 @@ function crossTierMessage(spans: readonly FederalTier[], interval: string): stri
     .reverse()
     .join(' and ');
   return `${interval} spans ${spans.length} federal era tiers — ${windows}. One call serves one tier, so this range would return only part of the interval. Split it at ${boundaries} and issue one call per tier.`;
-}
-
-/** Map an empty string from a form-based client to `undefined`. */
-function meaningful(value: string | undefined): string | undefined {
-  return value !== undefined && value !== '' ? value : undefined;
 }
 
 /**
@@ -486,23 +483,20 @@ export const risSearchGazette = tool('ris_search_gazette', {
       .describe(
         'State scopes only. current (default when omitted) searches the authentic Landesgesetzblatt; legacy searches the state’s earlier non-authentic series — Niederösterreich’s systematic LgblNO collection, or the historical Lgbl for the other Bundesländer (Wien carries neither).',
       ),
-    query: z
-      .string()
+    query: filterText
       .optional()
       .describe(
-        'Full-text search (Suchworte). Boolean operators UND/ODER/NICHT or AND/OR/NOT, parentheses, quoted phrases; wildcard * is trailing-only. Syntax: ris_list_reference topic search_syntax.',
+        'Full-text search (Suchworte). Boolean operators UND/ODER/NICHT or AND/OR/NOT, parentheses, quoted phrases; wildcard * is trailing-only. Syntax: ris_list_reference topic search_syntax. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    title: z
-      .string()
+    title: filterText
       .optional()
       .describe(
-        'Title search (Titel) — phrase field: * allowed leading or trailing with ≥2 characters beside it.',
+        'Title search (Titel) — phrase field: * allowed leading or trailing with ≥2 characters beside it. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    number: z
-      .string()
+    number: filterText
       .optional()
       .describe(
-        'Gazette number, e.g. "171/2026" or "BGBl. II Nr. 171/2026" (federal), "61/2026" (state), a Kundmachungsnummer (district/municipal). A trailing year routes a federal query to the right era tier; a bare number searches the current tier.',
+        'Gazette number, e.g. "171/2026" or "BGBl. II Nr. 171/2026" (federal), "61/2026" (state), a Kundmachungsnummer (district/municipal). A trailing year routes a federal query to the right era tier; a bare number searches the current tier. Omit to leave unfiltered; a blank value is rejected.',
       ),
     part: z
       .enum(['part1', 'part2', 'part3', 'pre_1997'])
@@ -526,22 +520,21 @@ export const risSearchGazette = tool('ris_search_gazette', {
       .describe(
         'Latest promulgation date (YYYY-MM-DD). Federal: the interval must stay inside one era tier, so pair it with published_from — an interval crossing 2004-01-01 or 1945-01-01 is rejected with the boundaries to split at.',
       ),
-    issuer: z
-      .string()
+    issuer: filterText
       .optional()
       .describe(
-        'Issuing body — federal (EinbringendeStelle, e.g. "BMF") or ordinance gazettes (Vbl Einbringer: Landeshauptmann/frau, Landesregierung, Amt der Landesregierung, Sonstige Landesbehörden) only. Phrase field.',
+        'Issuing body — federal (EinbringendeStelle: a ministry abbreviation such as "BMF" or a full designation; an abbreviation missing from ris_list_reference topic ministries is rejected, a full designation missing from it is sent as written) or ordinance gazettes (Vbl Einbringer, exact match with no wildcards: Landeshauptmann/frau, Landesregierung, Amt der Landesregierung, Sonstige Landesbehörden) only. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    district_authority: z
-      .string()
+    district_authority: filterText
       .optional()
       .describe(
-        'District only. Bezirksverwaltungsbehörde name, e.g. "Bezirkshauptmannschaft Liezen" — full list: ris_list_reference topic district_authorities.',
+        'District only. Bezirksverwaltungsbehörde name, e.g. "Bezirkshauptmannschaft Liezen" — full list: ris_list_reference topic district_authorities. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    municipality: z
-      .string()
+    municipality: filterText
       .optional()
-      .describe('Municipal only. Exact municipality name (Gemeinde), RIS’s spelling.'),
+      .describe(
+        'Municipal only. Exact municipality name (Gemeinde), RIS’s spelling. Omit to leave unfiltered; a blank value is rejected.',
+      ),
     sort_by: z
       .enum(['published', 'number'])
       .optional()
@@ -553,10 +546,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
       .optional()
       .describe('Sort direction; applies with sort_by.'),
     page: z.number().int().min(1).optional().describe('1-based result page. Default 1.'),
-    page_size: z
-      .union([z.literal(10), z.literal(20), z.literal(50), z.literal(100)])
-      .optional()
-      .describe('Documents per page — RIS accepts 10, 20, 50, or 100. Default 20.'),
+    page_size: pageSizeParam,
   }),
   output: z.object({
     results: z
@@ -599,6 +589,14 @@ export const risSearchGazette = tool('ris_search_gazette', {
         'Split the date range at each era boundary — 2004-01-01 (BgblAuth begins) and 1945-01-01 (BgblPdf begins) — and issue one call per tier, then combine the results. Set both published_from and published_to: a one-sided bound spans every tier beyond it. RIS carries no federal gazette for 1941–1944. Tier windows: ris_list_reference topic gazette_parts.',
     },
     {
+      reason: 'unresolved_ministry',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'A federal issuer is an abbreviation-shaped value matching no row of the RIS ministries table (the message names the closest matches), or a ministry the table lists only for another issuer parameter (the message names the parameters that accept it) — rejected locally before any upstream call. A value the table does not know that contains a space is sent to RIS as written instead.',
+      recovery:
+        'Pass a ministry abbreviation or full designation from ris_list_reference topic ministries whose "Accepted by" includes einbringende_stelle — the message names the closest matches when there are any.',
+      thrownBy: 'service',
+    },
+    {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
       when: 'A page past the last page of results; or a parameter the resolved gazette does not carry — sort_by, number, type, part, issuer, or a state absent from the historical Lgbl series — rejected locally before any upstream call, naming the field and the gazette that rejected it (by scope/series/state_era, or for a federal era tier by its window and the input that routed there); or RIS rejecting a value in-band (the Client error message is passed through verbatim, in German, and it does not name the page).',
@@ -627,17 +625,19 @@ export const risSearchGazette = tool('ris_search_gazette', {
   ],
 
   async handler(input, ctx) {
-    const { scope } = input;
-    const query = meaningful(input.query);
-    const title = meaningful(input.title);
-    const number = meaningful(input.number);
-    const publishedFrom = meaningful(input.published_from);
-    const publishedTo = meaningful(input.published_to);
-    const issuer = meaningful(input.issuer);
-    const districtAuthority = meaningful(input.district_authority);
-    const municipality = meaningful(input.municipality);
-    const { series } = input;
-    const stateEra = input.state_era;
+    const {
+      district_authority: districtAuthority,
+      issuer,
+      municipality,
+      number,
+      published_from: publishedFrom,
+      published_to: publishedTo,
+      query,
+      scope,
+      series,
+      state_era: stateEra,
+      title,
+    } = input;
     const isState = isStateScope(scope);
 
     const fail = (message: string) =>
@@ -742,7 +742,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
     const result = await getRisService()
       .searchGazette(params, ctx)
       .catch((err: unknown) => {
-        throw failSearchError(
+        throw failMinistrySearchError(
           rewriteUnsupportedParam(err, (rejected) =>
             callerFacingRejection(rejected, gazetteLabel(application, scope, routedBy)),
           ),
@@ -779,7 +779,9 @@ export const risSearchGazette = tool('ris_search_gazette', {
       }
       if (issuer !== undefined) {
         fragments.push(
-          "issuer is a phrase field — try the ministry abbreviation with a trailing * ('BMK*').",
+          application === 'Vbl'
+            ? 'An ordinance-gazette issuer is an exact match — use one of the Einbringer values listed in the issuer description, spelled exactly, with no wildcard.'
+            : "issuer names the submitting ministry, and the ministry name at the time of promulgation counts ('BMK' until 2025, not its successor 'BMIMI'). Abbreviations and designations: ris_list_reference topic ministries.",
         );
       }
       if (scope === 'federal' && era === 'postwar') {

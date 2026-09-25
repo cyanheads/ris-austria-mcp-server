@@ -1,10 +1,12 @@
 /**
- * @fileoverview Tests for the shared date schema in `_shared.ts` and its reach across the
+ * @fileoverview Tests for the shared input schemas in `_shared.ts` and their reach across the
  * surface. `isoDateString` backs every date-taking parameter on every tool, so an impossible
  * calendar date must be an input error at each of them rather than a shape-valid string sent
  * upstream — where RIS's rejection is either an opaque error or, in ris_lookup_citation,
- * silently reinterpreted as a citation miss (#14). Fully offline: only input schemas are
- * exercised, no handler and no service.
+ * silently reinterpreted as a citation miss (#14). Every free-text filter on the filter tools
+ * rejects a blank or whitespace-only value (#39), and every paginated tool takes page_size 10
+ * or 20 only (#40) — both swept from the advertised schemas, so a parameter added later cannot
+ * skip the rule. Fully offline: only input schemas are exercised, no handler and no service.
  * @module tests/tools/_shared.test
  */
 
@@ -172,6 +174,10 @@ describe('isoDateString — reach across the tool surface (#14)', () => {
       it(`${tool}.${param} still accepts a leap day`, () => {
         expect(() => schema.parse({ ...base, [param]: '2024-02-29' })).not.toThrow();
       });
+
+      it(`${tool}.${param} rejects an empty string rather than reading it as omitted`, () => {
+        expect(() => schema.parse({ ...base, [param]: '' })).toThrow();
+      });
     }
   }
 
@@ -193,5 +199,239 @@ describe('isoDateString — reach across the tool surface (#14)', () => {
 
     expect(advertised.toSorted()).toEqual(swept.toSorted());
     expect(swept).toHaveLength(20);
+  });
+});
+
+/** The slice of an advertised JSON Schema node the sweeps below read. */
+interface SchemaNode {
+  readonly anyOf?: readonly SchemaNode[];
+  readonly const?: unknown;
+  readonly enum?: readonly unknown[];
+  readonly items?: SchemaNode;
+  readonly pattern?: string;
+  readonly properties?: Readonly<Record<string, SchemaNode>>;
+  readonly type?: unknown;
+}
+
+/** A definition's input schema as `tools/list` advertises it. */
+function advertisedInput(definition: { readonly input: z.ZodType }): SchemaNode {
+  return z.toJSONSchema(definition.input, { io: 'input' }) as SchemaNode;
+}
+
+/**
+ * Every free-text leaf under `node` — a string that is neither an enum/const nor an ISO date —
+ * reached through nested objects, array items (segment `[]`), and union branches, so a text
+ * filter nested below the top level is found as surely as a flat one.
+ */
+function freeTextPaths(node: SchemaNode, path: readonly string[] = []): string[][] {
+  const found: string[][] = [];
+  // A union of primitives serializes as a type list (["string", "number"]), not anyOf.
+  const types = Array.isArray(node.type) ? node.type : [node.type];
+  if (
+    types.includes('string') &&
+    node.enum === undefined &&
+    node.const === undefined &&
+    node.pattern !== ISO_DATE_PATTERN
+  ) {
+    found.push([...path]);
+  }
+  for (const [key, child] of Object.entries(node.properties ?? {})) {
+    found.push(...freeTextPaths(child, [...path, key]));
+  }
+  if (node.items !== undefined) found.push(...freeTextPaths(node.items, [...path, '[]']));
+  for (const branch of node.anyOf ?? []) found.push(...freeTextPaths(branch, path));
+  return [...new Map(found.map((segments) => [segments.join('.'), segments])).values()];
+}
+
+/** The argument object that puts `value` at `path` (the inverse of the walk above). */
+function argumentAt(path: readonly string[], value: unknown): unknown {
+  const [head, ...rest] = path;
+  if (head === undefined) return value;
+  const inner = argumentAt(rest, value);
+  return head === '[]' ? [inner] : { [head]: inner };
+}
+
+/**
+ * The six tools that filter and page a result set, each with the minimal sibling input its
+ * schema requires. Their free-text filters are what #39 guards: RIS reads a blank one as "no
+ * filter" or ignores it, widening the query the caller meant to narrow.
+ */
+const FILTER_TOOLS = [
+  { definition: risSearchLegislation, base: {} },
+  { definition: risSearchCaseLaw, base: { court: 'vfgh' } },
+  { definition: risSearchGazette, base: {} },
+  { definition: risSearchDrafts, base: { stage: 'review_drafts' } },
+  { definition: risSearchAnnouncements, base: { collection: 'social_insurance' } },
+  { definition: risTrackChanges, base: { application: 'BrKons' } },
+] as const;
+
+/** The free-text filters the walk must find — pinned, so a new or lost filter is a visible diff. */
+const FREE_TEXT_FILTERS: Readonly<Record<string, readonly string[]>> = {
+  ris_search_legislation: [
+    'query',
+    'title',
+    'municipality',
+    'section_from',
+    'section_to',
+    'law_id',
+    'index',
+  ],
+  ris_search_case_law: [
+    'query',
+    'norm',
+    'case_number',
+    'decision_kind',
+    'collection_number',
+    'issuing_body',
+    'court_name',
+    'subject_area',
+    'party',
+    'subject_law',
+  ],
+  ris_search_gazette: ['query', 'title', 'number', 'issuer', 'district_authority', 'municipality'],
+  ris_search_drafts: ['query', 'title', 'ministry'],
+  ris_search_announcements: [
+    'query',
+    'title',
+    'number',
+    'issuer',
+    'norm',
+    'case_number',
+    'type',
+    'department',
+    'session_number',
+    'legislature',
+  ],
+  ris_track_changes: [],
+};
+
+const DERIVED_FILTERS = FILTER_TOOLS.flatMap(({ base, definition }) =>
+  freeTextPaths(advertisedInput(definition)).map((path) => ({
+    base,
+    definition,
+    label: `${definition.name}.${path.join('.')}`,
+    path,
+  })),
+);
+
+describe('free-text filters — blank and whitespace-only rejected at the schema (#39)', () => {
+  it('walks nested objects, array items, and union branches, not just top-level fields', () => {
+    const nested = z.object({
+      outer: z.object({ inner: z.string().describe('Nested text.') }).describe('Nested object.'),
+      list: z.array(z.string().describe('Item.')).describe('Text list.'),
+      either: z.union([z.string(), z.number()]).describe('Text or number.'),
+      kind: z.enum(['a', 'b']).describe('Enum — not free text.'),
+      when: isoDateString.describe('Date — not free text.'),
+    });
+    expect(freeTextPaths(advertisedInput({ input: nested }))).toEqual([
+      ['outer', 'inner'],
+      ['list', '[]'],
+      ['either'],
+    ]);
+  });
+
+  it('finds exactly the pinned free-text filters on the six filter tools — 36 in all', () => {
+    const derived = Object.fromEntries(
+      FILTER_TOOLS.map(({ definition }) => [
+        definition.name,
+        DERIVED_FILTERS.filter((entry) => entry.definition === definition).map((entry) =>
+          entry.path.join('.'),
+        ),
+      ]),
+    );
+    expect(derived).toEqual(FREE_TEXT_FILTERS);
+    expect(DERIVED_FILTERS).toHaveLength(36);
+  });
+
+  describe.each(DERIVED_FILTERS)('$label', ({ base, definition, path }) => {
+    it.each([
+      ['', 'an empty string'],
+      ['   ', 'spaces only'],
+      ['\t\n', 'a tab and a newline'],
+      [' 　', 'non-breaking and ideographic spaces'],
+    ])('rejects %j (%s), naming the field and telling the caller to omit it', (blank) => {
+      const outcome = definition.input.safeParse({
+        ...base,
+        ...(argumentAt(path, blank) as object),
+      });
+      expect(outcome.success).toBe(false);
+      expect(outcome.error?.issues).toEqual([
+        expect.objectContaining({
+          path,
+          message: expect.stringContaining('omit the field to leave it unfiltered'),
+        }),
+      ]);
+    });
+
+    it('accepts a value with a non-whitespace character, unchanged — surrounding spaces kept', () => {
+      const outcome = definition.input.safeParse({
+        ...base,
+        ...(argumentAt(path, ' x ') as object),
+      });
+      expect(outcome.success).toBe(true);
+      const parsed = path.reduce<unknown>(
+        (current, segment) =>
+          segment === '[]'
+            ? (current as unknown[])[0]
+            : (current as Record<string, unknown>)[segment],
+        outcome.data,
+      );
+      expect(parsed).toBe(' x ');
+    });
+
+    it('advertises a pattern that rejects whitespace-only, so a schema-validating client rejects before the call', () => {
+      const node = path.reduce<SchemaNode>(
+        (current, segment) =>
+          (segment === '[]' ? current.items : current.properties?.[segment]) as SchemaNode,
+        advertisedInput(definition),
+      );
+      expect(node.pattern).toBeDefined();
+      const pattern = new RegExp(node.pattern as string, 'u');
+      expect(pattern.test('   ')).toBe(false);
+      expect(pattern.test('x')).toBe(true);
+    });
+  });
+});
+
+describe('page_size — 10 or 20 on every paginated tool (#40)', () => {
+  const PAGINATED = FILTER_TOOLS.filter(
+    ({ definition }) => advertisedInput(definition).properties?.page_size !== undefined,
+  );
+
+  it('is carried by exactly the six paginated tools, derived from the advertised schemas', () => {
+    const everyTool = ALL_TOOLS.filter(
+      (definition) => advertisedInput(definition).properties?.page_size !== undefined,
+    ).map((definition) => definition.name);
+    expect(everyTool.toSorted()).toEqual(
+      FILTER_TOOLS.map(({ definition }) => definition.name).toSorted(),
+    );
+    expect(PAGINATED).toHaveLength(6);
+  });
+
+  describe.each(PAGINATED)('$definition.name', ({ base, definition }) => {
+    it('advertises exactly 10 and 20', () => {
+      const node = advertisedInput(definition).properties?.page_size as SchemaNode;
+      const values = node.enum ?? node.anyOf?.map((branch) => branch.const);
+      expect(values).toEqual([10, 20]);
+    });
+
+    it.each([10, 20])('accepts %d', (size) => {
+      expect(definition.input.safeParse({ ...base, page_size: size }).success).toBe(true);
+    });
+
+    it('accepts an omitted page_size (RIS serves 20)', () => {
+      const outcome = definition.input.safeParse(base);
+      expect(outcome.success).toBe(true);
+      expect((outcome.data as Record<string, unknown>).page_size).toBeUndefined();
+    });
+
+    it.each([50, 100, 30, '20'])('rejects %j, naming 10, 20, and page', (size) => {
+      const outcome = definition.input.safeParse({ ...base, page_size: size });
+      expect(outcome.success).toBe(false);
+      const [issue] = outcome.error?.issues ?? [];
+      expect(issue?.path).toEqual(['page_size']);
+      expect(issue?.message).toContain('Expected 10 or 20');
+      expect(issue?.message).toContain('raise page');
+    });
   });
 });

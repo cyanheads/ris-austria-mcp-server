@@ -16,12 +16,14 @@ import {
   timeout,
   validationError,
 } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { risSearchCaseLaw } from '@/mcp-server/tools/definitions/ris-search-case-law.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import { buildCaseLawRequest, type CaseLawSearchParams } from '@/services/ris/request-builder.js';
+
+import { expectArgumentRejection } from './_wire.js';
 
 const { searchCaseLaw } = vi.hoisted(() => ({ searchCaseLaw: vi.fn() }));
 
@@ -333,6 +335,65 @@ describe('risSearchCaseLaw — enrichment: truncation disclosure', () => {
     const enrichment = getEnrichment(ctx);
     expect(enrichment.totalCount).toBe(base.hits.length);
     expect(enrichment.truncated).toBeUndefined();
+  });
+});
+
+describe('risSearchCaseLaw — text filters: blank rejected, non-blank passed through (#39)', () => {
+  /**
+   * Every optional free-text input: [field, the court it applies to, a value, builder key].
+   * decision_kind, subject_area, and issuing_body carry values the local reference checks
+   * accept verbatim, so the value reaching the service is the value sent.
+   */
+  const TEXT_FILTERS = [
+    ['query', { court: 'vfgh' }, ' Datenschutz ', 'query'],
+    ['norm', { court: 'vfgh' }, 'DSG §1', 'norm'],
+    ['case_number', { court: 'vfgh' }, 'G 287/2022', 'caseNumber'],
+    ['decision_kind', { court: 'vfgh' }, 'Erkenntnis', 'decisionKind'],
+    ['collection_number', { court: 'vfgh' }, '19.632', 'collectionNumber'],
+    ['issuing_body', { court: 'dsk' }, 'Datenschutzbehoerde', 'issuingBody'],
+    ['court_name', { court: 'justiz' }, 'OLG Wien', 'courtName'],
+    ['subject_area', { court: 'justiz' }, 'Datenschutzrecht', 'subjectArea'],
+    ['party', { court: 'upts' }, 'ÖVP', 'party'],
+    ['subject_law', { court: 'bks' }, 'ORF-Gesetz', 'subjectLaw'],
+  ] as const;
+
+  beforeEach(() => {
+    searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
+  });
+
+  it.each(TEXT_FILTERS)(
+    '%s: a non-blank value reaches RIS unchanged',
+    async (field, base, value, key) => {
+      const result = await runToolContract(risSearchCaseLaw, { ...base, [field]: value } as never);
+      expect(result.isError).not.toBe(true);
+      expect(searchCaseLaw).toHaveBeenCalledTimes(1);
+      expect(searchCaseLaw.mock.calls[0]![0]).toMatchObject({ [key]: value });
+    },
+  );
+
+  it.each(
+    TEXT_FILTERS.flatMap((row) =>
+      ['', '   ', '\t\n'].map((blank) => [row[0], blank, row[1]] as const),
+    ),
+  )('%s: %j is rejected over the wire before any RIS call', async (field, blank, base) => {
+    const result = await runToolContract(risSearchCaseLaw, { ...base, [field]: blank } as never);
+    expectArgumentRejection(result, [`${field}: `, 'omit the field to leave it unfiltered']);
+    expect(searchCaseLaw).not.toHaveBeenCalled();
+  });
+
+  it('rejects a blank court-conditional filter as blank rather than dropping it under the wrong court', async () => {
+    // court_name is justiz-only; a blank one under vfgh used to vanish and search vfgh unfiltered.
+    const result = await runToolContract(risSearchCaseLaw, { court: 'vfgh', court_name: '' });
+    expectArgumentRejection(result, ['court_name: ', 'omit the field to leave it unfiltered']);
+    expect(searchCaseLaw).not.toHaveBeenCalled();
+  });
+
+  it('sends none of the text filters when every one is omitted', async () => {
+    const result = await runToolContract(risSearchCaseLaw, { court: 'vfgh' });
+    expect(result.isError).not.toBe(true);
+    const params = searchCaseLaw.mock.calls[0]![0] as Record<string, unknown>;
+    for (const [, , , key] of TEXT_FILTERS) expect(params).not.toHaveProperty(key);
+    expect(params).toMatchObject({ court: 'vfgh' });
   });
 });
 

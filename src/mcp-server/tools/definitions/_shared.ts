@@ -8,6 +8,8 @@ import type { TypedFail, TypedRecoveryFor } from '@cyanheads/mcp-ts-core';
 import { z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError, validationError } from '@cyanheads/mcp-ts-core/errors';
 
+import { UNRESOLVED_MINISTRY_REASON } from '@/services/ris/request-builder.js';
+
 /** Months with 30 days — the only non-February lengths a day of 31 can overshoot. */
 const THIRTY_DAY_MONTHS = new Set([4, 6, 9, 11]);
 
@@ -46,6 +48,36 @@ export const isoDateString = z
   .refine(isRealCalendarDate, 'No such calendar date — check the day against the month and year.');
 
 /**
+ * A free-text search filter, validated client-side: a supplied value must carry a
+ * non-whitespace character. RIS reads an empty filter as no filter and ignores some
+ * whitespace-only ones, so a blank would answer the unfiltered query the caller meant to
+ * narrow; omitting the field is the one way to leave a filter unset. The pattern reaches the
+ * advertised JSON Schema, so a schema-validating client rejects a blank before the call.
+ */
+export const filterText = z
+  .string()
+  .regex(
+    /\S/u,
+    'Blank or whitespace-only — send a value, or omit the field to leave it unfiltered.',
+  );
+
+/**
+ * Documents per page on every paginated tool. RIS pages by page number over a fixed page
+ * size, so `page` / `pageSize` / `totalCount` / `truncated` stay exact at either size here;
+ * the service still speaks all four RIS sizes, but pages of 50 or 100 records are too large
+ * to return on both response surfaces, so callers read further with `page` instead.
+ */
+export const pageSizeParam = z
+  .literal([10, 20], {
+    error:
+      'Expected 10 or 20 (default 20) — larger pages are not served; raise page to read further results.',
+  })
+  .optional()
+  .describe(
+    'Documents per page: 10 or 20 (default 20). For more results, keep the size and raise page.',
+  );
+
+/**
  * The three reasons every search-family tool declares for a failure raised below the
  * handler — in the request builder or in `RisService`. Each tool still declares its own
  * full `errors[]` inline (the contract is part of its public surface); this union is only
@@ -53,10 +85,10 @@ export const isoDateString = z
  */
 type SearchFailureReason = 'invalid_query' | 'upstream_error' | 'upstream_timeout';
 
-/** The slice of a handler `ctx` {@link failSearchError} needs. */
-interface SearchFailureContext {
-  readonly fail: TypedFail<SearchFailureReason>;
-  readonly recoveryFor: TypedRecoveryFor<SearchFailureReason>;
+/** The slice of a handler `ctx` the search-failure mappers need. */
+interface SearchFailureContext<R extends string = SearchFailureReason> {
+  readonly fail: TypedFail<R>;
+  readonly recoveryFor: TypedRecoveryFor<R>;
 }
 
 /**
@@ -89,6 +121,24 @@ export function failSearchError(error: unknown, ctx: SearchFailureContext): unkn
   return reason === undefined
     ? error
     : ctx.fail(reason, error.message, { ...ctx.recoveryFor(reason) });
+}
+
+/**
+ * {@link failSearchError} for the tools that take a ministry. The request builder tags a
+ * ministry it cannot resolve with `data.reason: 'unresolved_ministry'`; that rejection maps to
+ * the tool's own `unresolved_ministry` contract entry, whose recovery points at the ministries
+ * table, instead of the generic `invalid_query` advice. Everything else maps as usual.
+ */
+export function failMinistrySearchError(
+  error: unknown,
+  ctx: SearchFailureContext<SearchFailureReason | typeof UNRESOLVED_MINISTRY_REASON>,
+): unknown {
+  if (error instanceof McpError && error.data?.reason === UNRESOLVED_MINISTRY_REASON) {
+    return ctx.fail(UNRESOLVED_MINISTRY_REASON, error.message, {
+      ...ctx.recoveryFor(UNRESOLVED_MINISTRY_REASON),
+    });
+  }
+  return failSearchError(error, ctx);
 }
 
 /** A request-builder unsupported-parameter rejection, as the builder recorded it. */

@@ -23,18 +23,13 @@ import type {
 import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisHit, RisKeyedUrls } from '@/services/ris/types.js';
 
-import { failSearchError, isoDateString } from './_shared.js';
+import { failMinistrySearchError, filterText, isoDateString, pageSizeParam } from './_shared.js';
 
 const STAGE_CODES = RIS_STAGES.map((s) => s.code) as [RisStageCode, ...RisStageCode[]];
 const CHANGED_SINCE_CODES = RIS_CHANGED_SINCE_INTERVALS.map((i) => i.code) as [
   ChangedSinceCode,
   ...ChangedSinceCode[],
 ];
-
-/** Map an empty string from a form-based client to `undefined`. */
-function meaningful(value: string | undefined): string | undefined {
-  return value !== undefined && value !== '' ? value : undefined;
-}
 
 const ContentUrlsSchema = z
   .object({
@@ -195,23 +190,20 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       .describe(
         'Which pipeline stage to search — one per call. review_drafts (Begut, ministerial review) or government_bills (RegV, council-adopted bills). Details: ris_list_reference topic stages.',
       ),
-    query: z
-      .string()
+    query: filterText
       .optional()
       .describe(
-        'Full-text search (Suchworte). Boolean operators UND/ODER/NICHT or AND/OR/NOT, parentheses, quoted phrases; wildcard * is trailing-only.',
+        'Full-text search (Suchworte). Boolean operators UND/ODER/NICHT or AND/OR/NOT, parentheses, quoted phrases; wildcard * is trailing-only. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    title: z
-      .string()
+    title: filterText
       .optional()
       .describe(
-        'Title search (Titel) — phrase field: * allowed leading or trailing with ≥2 characters beside it.',
+        'Title search (Titel) — phrase field: * allowed leading or trailing with ≥2 characters beside it. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    ministry: z
-      .string()
+    ministry: filterText
       .optional()
       .describe(
-        'Submitting ministry (EinbringendeStelle). Accepts an abbreviation ("BMF") — expanded to RIS’s exact-match designation; use the ministry’s name at the time of submission. Table: ris_list_reference topic ministries.',
+        'Submitting ministry (EinbringendeStelle). Accepts an abbreviation ("BMF", "BMWET") or a full designation; use the ministry’s name at the time of submission. An abbreviation missing from the table is rejected; a full designation missing from it is sent as written. Table: ris_list_reference topic ministries. Omit to leave unfiltered; a blank value is rejected.',
       ),
     in_review_on: isoDateString
       .optional()
@@ -241,10 +233,7 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       .optional()
       .describe('Sort direction; applies with sort_by.'),
     page: z.number().int().min(1).optional().describe('1-based result page. Default 1.'),
-    page_size: z
-      .union([z.literal(10), z.literal(20), z.literal(50), z.literal(100)])
-      .optional()
-      .describe('Documents per page — RIS accepts 10, 20, 50, or 100. Default 20.'),
+    page_size: pageSizeParam,
   }),
   output: z.object({
     results: z
@@ -275,11 +264,19 @@ export const risSearchDrafts = tool('ris_search_drafts', {
         'Drop the named filter or switch stage: in_review_on applies only to stage: review_drafts; decided_from/to only to stage: government_bills.',
     },
     {
+      reason: 'unresolved_ministry',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'ministry is an abbreviation-shaped value matching no row of the RIS ministries table (the message names the closest matches), or a ministry the table lists only for another issuer parameter (the message names the parameters that accept it) — rejected locally before any upstream call. A value the table does not know that contains a space is sent to RIS as written instead.',
+      recovery:
+        'Pass a ministry abbreviation or full designation from ris_list_reference topic ministries whose "Accepted by" includes einbringende_stelle — the message names the closest matches when there are any.',
+      thrownBy: 'service',
+    },
+    {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'A page past the last page of results; or a parameter value rejected locally (ministry matched no entry in the RIS ministries table, or matched more than one); or RIS rejecting a value in-band (the Client error message is passed through verbatim, in German, and it does not name the page).',
+      when: 'A page past the last page of results; or RIS rejecting a value in-band (the Client error message is passed through verbatim, in German, and it does not name the page).',
       recovery:
-        'For a page past the end, request a lower page, starting from 1. Otherwise correct the parameter named in the message; the message lists the closest ministry matches when a ministry was passed. Ministry codes: ris_list_reference topic ministries.',
+        'For a page past the end, request a lower page, starting from 1. Otherwise correct the parameter named in the message. Ministry codes: ris_list_reference topic ministries.',
       thrownBy: 'service',
     },
     {
@@ -303,13 +300,15 @@ export const risSearchDrafts = tool('ris_search_drafts', {
   ],
 
   async handler(input, ctx) {
-    const { stage } = input;
-    const query = meaningful(input.query);
-    const title = meaningful(input.title);
-    const ministry = meaningful(input.ministry);
-    const inReviewOn = meaningful(input.in_review_on);
-    const decidedFrom = meaningful(input.decided_from);
-    const decidedTo = meaningful(input.decided_to);
+    const {
+      decided_from: decidedFrom,
+      decided_to: decidedTo,
+      in_review_on: inReviewOn,
+      ministry,
+      query,
+      stage,
+      title,
+    } = input;
 
     const mismatch = (message: string) =>
       ctx.fail('stage_filter_mismatch', message, { ...ctx.recoveryFor('stage_filter_mismatch') });
@@ -345,7 +344,7 @@ export const risSearchDrafts = tool('ris_search_drafts', {
     const result = await getRisService()
       .searchDrafts(params, ctx)
       .catch((err: unknown) => {
-        throw failSearchError(err, ctx);
+        throw failMinistrySearchError(err, ctx);
       });
     ctx.log.info('Drafts search completed', {
       hits: result.hits.length,

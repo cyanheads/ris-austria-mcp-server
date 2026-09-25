@@ -17,7 +17,7 @@ import {
   timeout,
   validationError,
 } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { risSearchAnnouncements } from '@/mcp-server/tools/definitions/ris-search-announcements.tool.js';
@@ -26,6 +26,8 @@ import {
   type AnnouncementsSearchParams,
   buildAnnouncementsRequest,
 } from '@/services/ris/request-builder.js';
+
+import { expectArgumentRejection } from './_wire.js';
 
 const { searchAnnouncements } = vi.hoisted(() => ({ searchAnnouncements: vi.fn() }));
 
@@ -179,11 +181,12 @@ describe('risSearchAnnouncements — zero-hit notices', () => {
     const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
     const input = risSearchAnnouncements.input.parse({
       collection: 'social_insurance',
-      issuer: 'ÖGK',
+      issuer: 'Unbekannter Versicherungsträger',
     });
     await risSearchAnnouncements.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
     expect(notice).toContain('issuer must match the RIS designation');
+    expect(notice).toContain('ministry and social-insurance carrier abbreviations are expanded');
   });
 
   it('includes the KmGer coverage caveat for collection: court_rules', async () => {
@@ -307,7 +310,7 @@ describe('risSearchAnnouncements — error mapping', () => {
     });
   });
 
-  it('maps a builder rejection of an unknown issuer to invalid_query', async () => {
+  it('maps a builder rejection of an unknown issuer to unresolved_ministry (#44)', async () => {
     searchAnnouncements.mockImplementation(async (params: AnnouncementsSearchParams) => {
       buildAnnouncementsRequest(params);
       throw new Error('unreachable — the builder was expected to reject these params');
@@ -319,9 +322,86 @@ describe('risSearchAnnouncements — error mapping', () => {
     });
     const err = await captureError(risSearchAnnouncements.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
-    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.data).toMatchObject({ reason: 'unresolved_ministry' });
     expect(err.message).toContain('Unknown ministry "BMXX"');
-    expect(err.data?.recovery).toBeDefined();
+    // The page-past-end advice that leads invalid_query does not apply to a ministry value.
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('ris_list_reference topic ministries'),
+    });
+    expect(err.data?.recovery).toMatchObject({ hint: expect.not.stringMatching(/page/iu) });
+  });
+});
+
+describe('risSearchAnnouncements — text filters: blank rejected, non-blank passed through (#39)', () => {
+  /** Every optional free-text input: [field, a collection that accepts it, a value, builder key]. */
+  const TEXT_FILTERS = [
+    ['query', { collection: 'social_insurance' }, ' Beitragsgrundlage ', 'query'],
+    ['title', { collection: 'social_insurance' }, 'Satzung', 'title'],
+    ['number', { collection: 'social_insurance' }, '40/2026', 'number'],
+    ['issuer', { collection: 'social_insurance' }, 'ÖGK', 'issuer'],
+    ['norm', { collection: 'veterinary' }, 'TSG §1', 'norm'],
+    ['case_number', { collection: 'veterinary' }, '2026-0.123.456', 'caseNumber'],
+    ['type', { collection: 'trade_exam_rules' }, 'Meisterpruefungsordnung', 'type'],
+    ['department', { collection: 'ministerial_decrees' }, 'IV/2', 'department'],
+    ['session_number', { collection: 'council_minutes' }, '59', 'sessionNumber'],
+    ['legislature', { collection: 'council_minutes' }, 'XXVII', 'legislature'],
+  ] as const;
+
+  beforeEach(() => {
+    searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
+  });
+
+  it.each(TEXT_FILTERS)(
+    '%s: a non-blank value reaches RIS unchanged',
+    async (field, base, value, key) => {
+      const result = await runToolContract(risSearchAnnouncements, {
+        ...base,
+        [field]: value,
+      } as never);
+      expect(result.isError).not.toBe(true);
+      expect(searchAnnouncements).toHaveBeenCalledTimes(1);
+      expect(searchAnnouncements.mock.calls[0]![0]).toMatchObject({ [key]: value });
+    },
+  );
+
+  it.each(
+    TEXT_FILTERS.flatMap((row) =>
+      ['', '   ', '\t\n'].map((blank) => [row[0], blank, row[1]] as const),
+    ),
+  )('%s: %j is rejected over the wire before any RIS call', async (field, blank, base) => {
+    const result = await runToolContract(risSearchAnnouncements, {
+      ...base,
+      [field]: blank,
+    } as never);
+    expectArgumentRejection(result, [`${field}: `, 'omit the field to leave it unfiltered']);
+    expect(searchAnnouncements).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    // RIS ignores a whitespace-only Urheber, so this one widened upstream, not locally.
+    ['issuer', '   '],
+    // norm is not a social_insurance filter; a blank one used to pass the collection guard.
+    ['norm', ''],
+  ])(
+    'rejects a blank %s under social_insurance instead of answering the whole collection',
+    async (field, blank) => {
+      const result = await runToolContract(risSearchAnnouncements, {
+        collection: 'social_insurance',
+        [field]: blank,
+      } as never);
+      expectArgumentRejection(result, [`${field}: `, 'omit the field to leave it unfiltered']);
+      expect(searchAnnouncements).not.toHaveBeenCalled();
+    },
+  );
+
+  it('sends none of the text filters when every one is omitted', async () => {
+    const result = await runToolContract(risSearchAnnouncements, {
+      collection: 'social_insurance',
+    });
+    expect(result.isError).not.toBe(true);
+    const params = searchAnnouncements.mock.calls[0]![0] as Record<string, unknown>;
+    for (const [, , , key] of TEXT_FILTERS) expect(params).not.toHaveProperty(key);
+    expect(params).toMatchObject({ collection: 'social_insurance' });
   });
 });
 

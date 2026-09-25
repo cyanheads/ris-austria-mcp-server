@@ -16,11 +16,13 @@ import {
   timeout,
   validationError,
 } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { risSearchLegislation } from '@/mcp-server/tools/definitions/ris-search-legislation.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
+
+import { expectArgumentRejection } from './_wire.js';
 
 const { searchLegislation } = vi.hoisted(() => ({ searchLegislation: vi.fn() }));
 
@@ -328,6 +330,68 @@ describe('risSearchLegislation — zero-hit notices', () => {
     await risSearchLegislation.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
     expect(notice).not.toContain('Only versions in force on');
+  });
+});
+
+describe('risSearchLegislation — text filters: blank rejected, non-blank passed through (#39)', () => {
+  /** Every optional free-text input: [field, the sibling input it needs, a value, builder key]. */
+  const TEXT_FILTERS = [
+    ['query', {}, ' Datenschutz UND DSGVO ', 'query'],
+    ['title', {}, 'DSG', 'title'],
+    ['municipality', { scope: 'wien' }, 'Wien', 'municipality'],
+    ['section_from', {}, '6', 'sectionFrom'],
+    ['section_to', {}, '1a', 'sectionTo'],
+    ['law_id', {}, '10001597', 'lawId'],
+    ['index', {}, '10/10 Datenschutz', 'index'],
+  ] as const;
+
+  beforeEach(() => {
+    searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
+  });
+
+  it.each(TEXT_FILTERS)(
+    '%s: a non-blank value reaches RIS unchanged',
+    async (field, base, value, key) => {
+      const result = await runToolContract(risSearchLegislation, {
+        ...base,
+        [field]: value,
+      } as never);
+      expect(result.isError).not.toBe(true);
+      expect(searchLegislation).toHaveBeenCalledTimes(1);
+      expect(searchLegislation.mock.calls[0]![0]).toMatchObject({ [key]: value });
+    },
+  );
+
+  it.each(
+    TEXT_FILTERS.flatMap((row) =>
+      ['', '   ', '\t\n'].map((blank) => [row[0], blank, row[1]] as const),
+    ),
+  )('%s: %j is rejected over the wire before any RIS call', async (field, blank, base) => {
+    const result = await runToolContract(risSearchLegislation, {
+      ...base,
+      [field]: blank,
+    } as never);
+    expectArgumentRejection(result, [`${field}: `, 'omit the field to leave it unfiltered']);
+    expect(searchLegislation).not.toHaveBeenCalled();
+  });
+
+  it('rejects a blank municipality under a state scope instead of searching state law', async () => {
+    // municipality: "" used to fall back to consolidated state law (LrKons) — a silent
+    // re-route from municipal to state law, not an unfiltered municipal search.
+    const result = await runToolContract(risSearchLegislation, {
+      municipality: '',
+      scope: 'wien',
+    });
+    expectArgumentRejection(result, ['municipality: ']);
+    expect(searchLegislation).not.toHaveBeenCalled();
+  });
+
+  it('sends none of the text filters when every one is omitted', async () => {
+    const result = await runToolContract(risSearchLegislation, {});
+    expect(result.isError).not.toBe(true);
+    const params = searchLegislation.mock.calls[0]![0] as Record<string, unknown>;
+    for (const [, , , key] of TEXT_FILTERS) expect(params).not.toHaveProperty(key);
+    expect(params).toMatchObject({ application: 'BrKons' });
   });
 });
 

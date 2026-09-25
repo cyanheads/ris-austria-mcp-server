@@ -22,7 +22,7 @@ import type {
 import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisHit } from '@/services/ris/types.js';
 
-import { failSearchError, isoDateString } from './_shared.js';
+import { failSearchError, filterText, isoDateString, pageSizeParam } from './_shared.js';
 
 const STATE_CODES = RIS_STATES.map((s) => s.code) as [RisStateCode, ...RisStateCode[]];
 const SCOPE_VALUES = ['federal', ...STATE_CODES] as ['federal', ...RisStateCode[]];
@@ -43,11 +43,6 @@ function todayInAustria(): string {
     timeZone: 'Europe/Vienna',
     year: 'numeric',
   }).format(new Date());
-}
-
-/** Map an empty string from a form-based client to `undefined`. */
-function meaningful(value: string | undefined): string | undefined {
-  return value !== undefined && value !== '' ? value : undefined;
 }
 
 const ContentUrlsSchema = z
@@ -232,17 +227,15 @@ export const risSearchLegislation = tool('ris_search_legislation', {
     'Search Austrian consolidated law and English translations: federal law (scope: federal, the default), one Bundesland (scope: burgenland … wien), municipal law (municipality plus a state scope — selected norms in 6 Bundesländer), or English translations of selected federal laws (language: english, federal only, ~138 documents). One document is one § / Artikel / Anlage; fetch a whole law by filtering law_id. Searches apply the version in force today in Austria by default — set in_force_as_of for another date, include_all_versions: true for full version history, or an entered_force / left_force window for new-law and repeal tracking; the three version filters are mutually exclusive, and the applied date is echoed back in the result. query is full text (boolean UND/ODER/NICHT or AND/OR/NOT, trailing-only * wildcard); title matches title, short title, and abbreviation ("DSG"). For a specific citation like "§ 6 DSG", ris_lookup_citation resolves it deterministically instead. Consolidated text is informational, not legally binding — the authentic gazette artifact lives in ris_search_gazette.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
-    query: z
-      .string()
+    query: filterText
       .optional()
       .describe(
-        'Full-text search (Suchworte). Boolean operators UND/ODER/NICHT or AND/OR/NOT, parentheses, quoted phrases; wildcard * is trailing-only ("Datenschutz*", never "*schutz"). Syntax: ris_list_reference topic search_syntax.',
+        'Full-text search (Suchworte). Boolean operators UND/ODER/NICHT or AND/OR/NOT, parentheses, quoted phrases; wildcard * is trailing-only ("Datenschutz*", never "*schutz"). Syntax: ris_list_reference topic search_syntax. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    title: z
-      .string()
+    title: filterText
       .optional()
       .describe(
-        'Title search (Titel) — matches title, short title, and official abbreviation ("ABGB", "DSG"). Phrase field: * allowed leading or trailing with ≥2 characters beside it.',
+        'Title search (Titel) — matches title, short title, and official abbreviation ("ABGB", "DSG"). Phrase field: * allowed leading or trailing with ≥2 characters beside it. Omit to leave unfiltered; a blank value is rejected.',
       ),
     scope: z
       .enum(SCOPE_VALUES)
@@ -250,11 +243,10 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       .describe(
         'Jurisdiction: federal (default) searches consolidated federal law; a Bundesland searches that state’s consolidated law (or, with municipality set, its municipal law).',
       ),
-    municipality: z
-      .string()
+    municipality: filterText
       .optional()
       .describe(
-        'Municipality name for municipal law (e.g. "Graz" — RIS’s spelling, not "Stadt Graz"). Requires a state scope; combines only with query, title, and in_force_as_of. Coverage is selected norms in 6 Bundesländer (no Burgenland/Tirol/Vorarlberg).',
+        'Municipality name for municipal law (e.g. "Graz" — RIS’s spelling, not "Stadt Graz"). Requires a state scope; combines only with query, title, and in_force_as_of. Coverage is selected norms in 6 Bundesländer (no Burgenland/Tirol/Vorarlberg). Omit to search consolidated law; a blank value is rejected.',
       ),
     language: z
       .enum(['german', 'english'])
@@ -289,33 +281,31 @@ export const risSearchLegislation = tool('ris_search_legislation', {
     left_force_to: isoDateString
       .optional()
       .describe('Provisions that left force on/before this date (YYYY-MM-DD).'),
-    section_from: z
-      .string()
+    section_from: filterText
       .optional()
       .describe(
-        'Start of a § / Artikel / Anlage number range, digits with optional letter ("6", "1a"). Federal/state consolidated law only.',
+        'Start of a § / Artikel / Anlage number range, digits with optional letter ("6", "1a"). Federal/state consolidated law only. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    section_to: z
-      .string()
+    section_to: filterText
       .optional()
-      .describe('End of the section range. Equal to section_from for a single section.'),
+      .describe(
+        'End of the section range. Equal to section_from for a single section. Omit to leave unfiltered; a blank value is rejected.',
+      ),
     section_type: z
       .enum(['Alle', 'Artikel', 'Paragraph', 'Anlage'])
       .optional()
       .describe(
         'Which section kind the range addresses. Defaults to Paragraph when a section range is set. Values: ris_list_reference topic section_types.',
       ),
-    law_id: z
-      .string()
+    law_id: filterText
       .optional()
       .describe(
-        'Law-level grouping key (Gesetzesnummer, e.g. 10001597 = DSG) — exact match; returns every section of that law. Federal/state consolidated law only.',
+        'Law-level grouping key (Gesetzesnummer, e.g. 10001597 = DSG) — exact match; returns every section of that law. Federal/state consolidated law only. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    index: z
-      .string()
+    index: filterText
       .optional()
       .describe(
-        'Systematik classification filter (e.g. "10/10 Datenschutz"). Federal/state consolidated law only.',
+        'Systematik classification filter (e.g. "10/10 Datenschutz"). Federal/state consolidated law only. Omit to leave unfiltered; a blank value is rejected.',
       ),
     changed_since: z
       .enum(CHANGED_SINCE_CODES)
@@ -334,10 +324,7 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       .optional()
       .describe('Sort direction; applies with sort_by.'),
     page: z.number().int().min(1).optional().describe('1-based result page. Default 1.'),
-    page_size: z
-      .union([z.literal(10), z.literal(20), z.literal(50), z.literal(100)])
-      .optional()
-      .describe('Documents per page — RIS accepts 10, 20, 50, or 100. Default 20.'),
+    page_size: pageSizeParam,
   }),
   output: z.object({
     results: z
@@ -400,19 +387,22 @@ export const risSearchLegislation = tool('ris_search_legislation', {
   ],
 
   async handler(input, ctx) {
-    const query = meaningful(input.query);
-    const title = meaningful(input.title);
-    const municipality = meaningful(input.municipality);
-    const explicitAsOf = meaningful(input.in_force_as_of);
-    const enteredForceFrom = meaningful(input.entered_force_from);
-    const enteredForceTo = meaningful(input.entered_force_to);
-    const leftForceFrom = meaningful(input.left_force_from);
-    const leftForceTo = meaningful(input.left_force_to);
-    const sectionFrom = meaningful(input.section_from);
-    const sectionTo = meaningful(input.section_to);
-    const lawId = meaningful(input.law_id);
-    const index = meaningful(input.index);
-    const { language, scope } = input;
+    const {
+      entered_force_from: enteredForceFrom,
+      entered_force_to: enteredForceTo,
+      in_force_as_of: explicitAsOf,
+      index,
+      language,
+      law_id: lawId,
+      left_force_from: leftForceFrom,
+      left_force_to: leftForceTo,
+      municipality,
+      query,
+      scope,
+      section_from: sectionFrom,
+      section_to: sectionTo,
+      title,
+    } = input;
     const includeAllVersions = input.include_all_versions === true;
 
     const fail = (message: string) =>

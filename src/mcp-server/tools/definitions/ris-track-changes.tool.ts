@@ -20,7 +20,7 @@ import type { TrackChangesParams } from '@/services/ris/request-builder.js';
 import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisChange } from '@/services/ris/types.js';
 
-import { failSearchError, isoDateString } from './_shared.js';
+import { failSearchError, isoDateString, pageSizeParam } from './_shared.js';
 
 const APPLICATION_CODES = RIS_APPLICATIONS.map((app) => app.code) as [string, ...string[]];
 
@@ -37,11 +37,6 @@ const BINDING_STATUSES = [
   'administrative_directive',
   'translation',
 ] as const satisfies readonly RisBindingStatus[];
-
-/** Map an empty string from a form-based client to `undefined`. */
-function meaningful(value: string | undefined): string | undefined {
-  return value !== undefined && value !== '' ? value : undefined;
-}
 
 const ContentUrlsSchema = z
   .object({
@@ -167,10 +162,7 @@ export const risTrackChanges = tool('ris_track_changes', {
         'true also returns documents removed from RIS in the window, as deleted records — the only way to observe deletions.',
       ),
     page: z.number().int().min(1).optional().describe('1-based result page. Default 1.'),
-    page_size: z
-      .union([z.literal(10), z.literal(20), z.literal(50), z.literal(100)])
-      .optional()
-      .describe('Documents per page — RIS accepts 10, 20, 50, or 100. Default 20.'),
+    page_size: pageSizeParam,
   }),
   output: z.object({
     results: z
@@ -231,8 +223,7 @@ export const risTrackChanges = tool('ris_track_changes', {
   ],
 
   async handler(input, ctx) {
-    const changedFrom = meaningful(input.changed_from);
-    const changedTo = meaningful(input.changed_to);
+    const { changed_from: changedFrom, changed_to: changedTo } = input;
     // application is a Zod enum of the reference codes, so the lookup always resolves.
     const bindingStatus = (APPLICATION_BY_CODE.get(input.application) as RisApplication).binding;
 

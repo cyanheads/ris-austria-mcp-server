@@ -18,12 +18,14 @@ import {
   timeout,
   validationError,
 } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { risSearchGazette } from '@/mcp-server/tools/definitions/ris-search-gazette.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import { buildGazetteRequest, type GazetteSearchParams } from '@/services/ris/request-builder.js';
+
+import { expectArgumentRejection } from './_wire.js';
 
 const { searchGazette } = vi.hoisted(() => ({ searchGazette: vi.fn() }));
 
@@ -499,14 +501,31 @@ describe('risSearchGazette — zero-hit notices', () => {
     expect(notice).toContain('number names part II but the part filter is I — drop one.');
   });
 
-  it('includes the issuer phrase-field guidance when issuer is set', async () => {
+  it('includes federal issuer guidance that names no value the tool itself rejects', async () => {
+    // The old fragment advised 'BMK*', which the ministry resolution rejects before any call
+    // (an abbreviation-shaped token missing from the table) — a zero-hit notice may only
+    // suggest values that can run (#44).
     const ctx = createMockContext({ errors: risSearchGazette.errors });
-    const input = risSearchGazette.input.parse({ issuer: 'BMF' });
+    const input = risSearchGazette.input.parse({ issuer: 'BMK' });
     await risSearchGazette.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
-    expect(notice).toContain(
-      "issuer is a phrase field — try the ministry abbreviation with a trailing * ('BMK*').",
-    );
+    expect(notice).toContain('the ministry name at the time of promulgation counts');
+    expect(notice).toContain('ris_list_reference topic ministries');
+    expect(notice).not.toContain('*');
+  });
+
+  it('includes exact-match issuer guidance for an ordinance gazette', async () => {
+    // Vbl Einbringer is an exact-match expression: RIS refuses a wildcard in-band.
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
+    const input = risSearchGazette.input.parse({
+      scope: 'tirol',
+      series: 'ordinance_gazette',
+      issuer: 'Nichtexistent',
+    });
+    await risSearchGazette.handler(input, ctx);
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('ordinance-gazette issuer is an exact match');
+    expect(notice).not.toContain('*');
   });
 
   // The two historical tiers get their own fragment. BgblAlt's floor (1848) and its
@@ -692,6 +711,66 @@ describe('risSearchGazette — error mapping', () => {
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
     expect(err.message).toContain('The historical Lgbl gazette has no Wien');
     expect(err.data?.recovery).toBeDefined();
+  });
+});
+
+describe('risSearchGazette — text filters: blank rejected, non-blank passed through (#39)', () => {
+  /** Every optional free-text input: [field, the scope it applies to, a value, builder key]. */
+  const TEXT_FILTERS = [
+    ['query', {}, ' Klimaschutz ', 'query'],
+    ['title', {}, 'Klimaschutzgesetz', 'title'],
+    ['number', {}, '171/2026', 'number'],
+    ['issuer', {}, 'BMF', 'issuer'],
+    [
+      'district_authority',
+      { scope: 'district' },
+      'Bezirkshauptmannschaft Liezen',
+      'districtAuthority',
+    ],
+    ['municipality', { scope: 'municipal' }, 'Graz', 'municipality'],
+  ] as const;
+
+  beforeEach(() => {
+    searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
+  });
+
+  it.each(TEXT_FILTERS)(
+    '%s: a non-blank value reaches RIS unchanged',
+    async (field, base, value, key) => {
+      const result = await runToolContract(risSearchGazette, { ...base, [field]: value } as never);
+      expect(result.isError).not.toBe(true);
+      expect(searchGazette).toHaveBeenCalledTimes(1);
+      expect(searchGazette.mock.calls[0]![0]).toMatchObject({ [key]: value });
+    },
+  );
+
+  it.each(
+    TEXT_FILTERS.flatMap((row) =>
+      ['', '   ', '\t\n'].map((blank) => [row[0], blank, row[1]] as const),
+    ),
+  )('%s: %j is rejected over the wire before any RIS call', async (field, blank, base) => {
+    const result = await runToolContract(risSearchGazette, { ...base, [field]: blank } as never);
+    expectArgumentRejection(result, [`${field}: `, 'omit the field to leave it unfiltered']);
+    expect(searchGazette).not.toHaveBeenCalled();
+  });
+
+  it('rejects a blank scope-conditional filter as blank rather than dropping it under the wrong scope', async () => {
+    // district_authority is district-only; a blank one under federal used to vanish and
+    // answer the whole federal gazette.
+    const result = await runToolContract(risSearchGazette, { district_authority: '' });
+    expectArgumentRejection(result, [
+      'district_authority: ',
+      'omit the field to leave it unfiltered',
+    ]);
+    expect(searchGazette).not.toHaveBeenCalled();
+  });
+
+  it('sends none of the text filters when every one is omitted', async () => {
+    const result = await runToolContract(risSearchGazette, {});
+    expect(result.isError).not.toBe(true);
+    const params = searchGazette.mock.calls[0]![0] as Record<string, unknown>;
+    for (const [, , , key] of TEXT_FILTERS) expect(params).not.toHaveProperty(key);
+    expect(params).toMatchObject({ application: 'BgblAuth' });
   });
 });
 

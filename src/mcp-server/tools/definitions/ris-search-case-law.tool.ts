@@ -31,7 +31,9 @@ import type { RisHit, RisJudikaturMetadata } from '@/services/ris/types.js';
 
 import {
   failSearchError,
+  filterText,
   isoDateString,
+  pageSizeParam,
   rewriteUnsupportedParam,
   type UnsupportedParam,
 } from './_shared.js';
@@ -50,11 +52,6 @@ const NO_DECISION_KIND = new Set<string>(COURTS_WITHOUT_DECISION_KIND);
 function coverageStartYear(window: string | null): number | undefined {
   const match = window === null ? null : /\d{4}/.exec(window);
   return match ? Number.parseInt(match[0], 10) : undefined;
-}
-
-/** Map an empty string from a form-based client to `undefined`. */
-function meaningful(value: string | undefined): string | undefined {
-  return value !== undefined && value !== '' ? value : undefined;
 }
 
 /**
@@ -291,23 +288,20 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       .describe(
         'Which court/tribunal application to search — one per call. Codes, coverage windows, and successor mapping: ris_list_reference topic courts.',
       ),
-    query: z
-      .string()
+    query: filterText
       .optional()
       .describe(
-        'Full-text search over decisions (Suchworte). Boolean UND/ODER/NICHT or AND/OR/NOT, quoted phrases, trailing-only * wildcard.',
+        'Full-text search over decisions (Suchworte). Boolean UND/ODER/NICHT or AND/OR/NOT, quoted phrases, trailing-only * wildcard. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    norm: z
-      .string()
+    norm: filterText
       .optional()
       .describe(
-        'Cited-provision filter (Norm) — "DSG §1", "DSGVO Art32", "GewO 1994 §129", matching the format returned in norms_cited. The highest-value case-law filter.',
+        'Cited-provision filter (Norm) — "DSG §1", "DSGVO Art32", "GewO 1994 §129", matching the format returned in norms_cited. The highest-value case-law filter. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    case_number: z
-      .string()
+    case_number: filterText
       .optional()
       .describe(
-        'Exact Geschäftszahl — returns that decision’s documents. Formats differ per court (examples: ris_list_reference topic courts). Not available for normenliste.',
+        'Exact Geschäftszahl — returns that decision’s documents. Formats differ per court (examples: ris_list_reference topic courts). Not available for normenliste. Omit to leave unfiltered; a blank value is rejected.',
       ),
     decision_type: z
       .enum(['headnote', 'full_text', 'all'])
@@ -319,39 +313,36 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       .optional()
       .describe('Earliest decision date (YYYY-MM-DD). Not available for normenliste.'),
     decided_to: isoDateString.optional().describe('Latest decision date (YYYY-MM-DD).'),
-    decision_kind: z
-      .string()
+    decision_kind: filterText
       .optional()
       .describe(
-        'Decision kind (Entscheidungsart) — per-court value sets, validated locally: ris_list_reference topic decision_kinds. No such parameter exists for normenliste, dok, pvak, umse, bks, or upts. For justiz the four documented values are not yet populated in the corpus (every value returns 0 hits, verified 2026-07-05) — filter justiz with query or norm instead.',
+        'Decision kind (Entscheidungsart) — per-court value sets, validated locally: ris_list_reference topic decision_kinds. No such parameter exists for normenliste, dok, pvak, umse, bks, or upts. For justiz the four documented values are not yet populated in the corpus (every value returns 0 hits, verified 2026-07-05) — filter justiz with query or norm instead. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    collection_number: z
-      .string()
+    collection_number: filterText
       .optional()
       .describe(
-        'Official collection number (Sammlungsnummer). vfgh, vwgh, and uvs only, and the accepted form differs: vfgh and uvs store the bare number and match it dotted or undotted ("19632", "19.632"), while vwgh stores the full labelled undotted cite — pass "VwSlg 18000 A/2010", or the space-anchored prefix "VwSlg 18000 *" when the part letter or year is unknown. A bare or dotted number matches nothing under vwgh.',
+        'Official collection number (Sammlungsnummer). vfgh, vwgh, and uvs only, and the accepted form differs: vfgh and uvs store the bare number and match it dotted or undotted ("19632", "19.632"), while vwgh stores the full labelled undotted cite — pass "VwSlg 18000 A/2010", or the space-anchored prefix "VwSlg 18000 *" when the part letter or year is unknown. A bare or dotted number matches nothing under vwgh. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    issuing_body: z
-      .string()
+    issuing_body: filterText
       .optional()
       .describe(
-        'Deciding body (EntscheidendeBehoerde) — dsk, dok, pvak, and verg only. dsk: Datenschutzbehoerde (2014+) or Datenschutzkommission (up to 2013). Full value lists: ris_list_reference topic issuing_bodies.',
+        'Deciding body (EntscheidendeBehoerde) — dsk, dok, pvak, and verg only. dsk: Datenschutzbehoerde (2014+) or Datenschutzkommission (up to 2013). Full value lists: ris_list_reference topic issuing_bodies. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    court_name: z
-      .string()
+    court_name: filterText
       .optional()
-      .describe('Filter within the ordinary courts (justiz only) — "OGH", "OLG Wien", "LG Linz".'),
+      .describe(
+        'Filter within the ordinary courts (justiz only) — "OGH", "OLG Wien", "LG Linz". Omit to leave unfiltered; a blank value is rejected.',
+      ),
     legal_area: z
       .enum(['civil', 'criminal'])
       .optional()
       .describe(
         'Legal area (Rechtsgebiet, justiz only): civil (Zivilrecht) or criminal (Strafrecht).',
       ),
-    subject_area: z
-      .string()
+    subject_area: filterText
       .optional()
       .describe(
-        'Subject-area taxonomy filter (Fachgebiet, justiz only) — 39 exact German values like "Datenschutzrecht", validated locally: ris_list_reference topic justiz_subject_areas. The corpus carries no tagged documents yet (every value returns 0 hits, verified 2026-07-05) — filter with query or norm instead until RIS populates the tags.',
+        'Subject-area taxonomy filter (Fachgebiet, justiz only) — 39 exact German values like "Datenschutzrecht", validated locally: ris_list_reference topic justiz_subject_areas. The corpus carries no tagged documents yet (every value returns 0 hits, verified 2026-07-05) — filter with query or norm instead until RIS populates the tags. Omit to leave unfiltered; a blank value is rejected.',
       ),
     state: z
       .enum(STATE_CODES)
@@ -359,11 +350,10 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       .describe(
         'Which of the nine state administrative courts/senates to search (lvwg and uvs only).',
       ),
-    party: z
-      .string()
+    party: filterText
       .optional()
       .describe(
-        'Political party the decision concerns (upts only). Documented values: ÖVP, SPÖ, FPÖ, KPÖ, BZÖ, Team Stronach — the filter is full-text, and further party names appear in live data (e.g. "Wandel").',
+        'Political party the decision concerns (upts only). Documented values: ÖVP, SPÖ, FPÖ, KPÖ, BZÖ, Team Stronach — the filter is full-text, and further party names appear in live data (e.g. "Wandel"). Omit to leave unfiltered; a blank value is rejected.',
       ),
     commission: z
       .enum(['federal', 'general'])
@@ -386,11 +376,10 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       .describe(
         'Discrimination ground (gbk only): Alter (age), EthnischeZugehoerigkeit (ethnic origin), Geschlecht (gender/sex), Mehrfachdiskriminierung (multiple grounds), Religion (religion), SexuelleOrientierung (sexual orientation), Weltanschauung (worldview/belief). Upstream German enum values, sent verbatim.',
       ),
-    subject_law: z
-      .string()
+    subject_law: filterText
       .optional()
       .describe(
-        'Media statute the case concerns (Bereich, bks only) — e.g. "ORF-Gesetz", "Privatradiogesetz".',
+        'Media statute the case concerns (Bereich, bks only) — e.g. "ORF-Gesetz", "Privatradiogesetz". Omit to leave unfiltered; a blank value is rejected.',
       ),
     changed_since: z
       .enum(CHANGED_SINCE_CODES)
@@ -409,10 +398,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       .optional()
       .describe('Sort direction; applies with sort_by.'),
     page: z.number().int().min(1).optional().describe('1-based result page. Default 1.'),
-    page_size: z
-      .union([z.literal(10), z.literal(20), z.literal(50), z.literal(100)])
-      .optional()
-      .describe('Documents per page — RIS accepts 10, 20, 50, or 100. Default 20.'),
+    page_size: pageSizeParam,
   }),
   output: z.object({
     results: z
@@ -470,19 +456,21 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
   ],
 
   async handler(input, ctx) {
-    const { court } = input;
-    const query = meaningful(input.query);
-    const norm = meaningful(input.norm);
-    const caseNumber = meaningful(input.case_number);
-    const decidedFrom = meaningful(input.decided_from);
-    const decidedTo = meaningful(input.decided_to);
-    const decisionKind = meaningful(input.decision_kind);
-    const collectionNumber = meaningful(input.collection_number);
-    const courtName = meaningful(input.court_name);
-    const subjectArea = meaningful(input.subject_area);
-    const party = meaningful(input.party);
-    const subjectLaw = meaningful(input.subject_law);
-    let issuingBody = meaningful(input.issuing_body);
+    const {
+      case_number: caseNumber,
+      collection_number: collectionNumber,
+      court,
+      court_name: courtName,
+      decided_from: decidedFrom,
+      decided_to: decidedTo,
+      decision_kind: decisionKind,
+      norm,
+      party,
+      query,
+      subject_area: subjectArea,
+      subject_law: subjectLaw,
+    } = input;
+    let issuingBody = input.issuing_body;
 
     const mismatch = (message: string) =>
       ctx.fail('court_filter_mismatch', message, { ...ctx.recoveryFor('court_filter_mismatch') });

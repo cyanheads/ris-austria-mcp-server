@@ -26,8 +26,10 @@ import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisHit } from '@/services/ris/types.js';
 
 import {
-  failSearchError,
+  failMinistrySearchError,
+  filterText,
   isoDateString,
+  pageSizeParam,
   rewriteUnsupportedParam,
   type UnsupportedParam,
 } from './_shared.js';
@@ -55,11 +57,6 @@ const ANNOUNCEMENT_BINDING: Record<
   trade_exam_rules: 'authentic',
   veterinary: 'authentic',
 };
-
-/** Map an empty string from a form-based client to `undefined`. */
-function meaningful(value: string | undefined): string | undefined {
-  return value !== undefined && value !== '' ? value : undefined;
-}
 
 /**
  * A request-builder rejection restated with the `collection` value the caller sent and the
@@ -196,7 +193,7 @@ function toRecord(hit: RisHit, collection: RisCollectionCode): AnnouncementRecor
 export const risSearchAnnouncements = tool('ris_search_announcements', {
   title: 'Search Official Announcements',
   description:
-    'Search Austria’s sectoral official gazettes and executive documents — seven collections behind one collection enum: social_insurance (Amtliche Verlautbarungen der Sozialversicherung, authentic), veterinary (Amtliche Veterinärnachrichten, authentic), court_rules (Kundmachungen der Gerichte — rules of procedure and case-allocation plans, authentic; currently LVwG Tirol and Vorarlberg only), trade_exam_rules (Prüfungsordnungen gemäß Gewerbeordnung, authentic), health_structure_plans (Strukturpläne Gesundheit — federal ÖSG and per-state RSG, authentic), ministerial_decrees (Erlässe der Bundesministerien — decrees interpreting law; bind the administration, not citizens), and council_minutes (Ministerratsprotokolle — council-of-ministers session records). Each collection accepts a different filter set: query and title are broadly available; number, published_from/to, in_force_as_of, issuer (ministry abbreviations expanded), norm ("decrees citing the DSG"), case_number, type, department, plan_type/plan_state (health plans), and session_number/legislature (council minutes) apply where the collection supports them — a filter outside its set is rejected locally. Every result carries a binding label, the authentic PDF where it exists, and the RIS web view (document_url) — the only browsable surface for the PDF-only council minutes and for ministerial decrees. Per-collection parameter matrix and issuers: ris_list_reference topic collections or issuing_bodies.',
+    'Search Austria’s sectoral official gazettes and executive documents — seven collections behind one collection enum: social_insurance (Amtliche Verlautbarungen der Sozialversicherung, authentic), veterinary (Amtliche Veterinärnachrichten, authentic), court_rules (Kundmachungen der Gerichte — rules of procedure and case-allocation plans, authentic; currently LVwG Tirol and Vorarlberg only), trade_exam_rules (Prüfungsordnungen gemäß Gewerbeordnung, authentic), health_structure_plans (Strukturpläne Gesundheit — federal ÖSG and per-state RSG, authentic), ministerial_decrees (Erlässe der Bundesministerien — decrees interpreting law; bind the administration, not citizens), and council_minutes (Ministerratsprotokolle — council-of-ministers session records). Each collection accepts a different filter set: query and title are broadly available; number, published_from/to, in_force_as_of, issuer (ministry and social-insurance carrier abbreviations expanded), norm ("decrees citing the DSG"), case_number, type, department, plan_type/plan_state (health plans), session_number/legislature (council minutes), and changed_since (all but social_insurance and veterinary) apply where the collection supports them — a filter outside its set is rejected locally. Every result carries a binding label, the authentic PDF where it exists, and the RIS web view (document_url) — the only browsable surface for the PDF-only council minutes and for ministerial decrees. Per-collection parameter matrix and issuers: ris_list_reference topic collections or issuing_bodies.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     collection: z
@@ -204,23 +201,20 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       .describe(
         'Which collection to search — one per call. social_insurance | veterinary | court_rules | trade_exam_rules | health_structure_plans | ministerial_decrees | council_minutes. Per-collection filter matrix: ris_list_reference topic collections.',
       ),
-    query: z
-      .string()
+    query: filterText
       .optional()
       .describe(
-        'Full-text search (Suchworte). Boolean operators UND/ODER/NICHT or AND/OR/NOT, parentheses, quoted phrases; wildcard * is trailing-only. Valid for all collections.',
+        'Full-text search (Suchworte). Boolean operators UND/ODER/NICHT or AND/OR/NOT, parentheses, quoted phrases; wildcard * is trailing-only. Valid for all collections. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    title: z
-      .string()
+    title: filterText
       .optional()
       .describe(
-        'Title search (Titel) — phrase field. Valid for all collections except council_minutes.',
+        'Title search (Titel) — phrase field. Valid for all collections except council_minutes. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    number: z
-      .string()
+    number: filterText
       .optional()
       .describe(
-        'Serial number (Avsvnummer / Avnnummer / Spgnummer) — social_insurance, veterinary, health_structure_plans.',
+        'Serial number (Avsvnummer / Avnnummer / Spgnummer) — social_insurance, veterinary, health_structure_plans. Omit to leave unfiltered; a blank value is rejected.',
       ),
     published_from: isoDateString
       .optional()
@@ -245,34 +239,31 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       .describe(
         'Provisions that entered force on/before this date (YYYY-MM-DD) — ministerial_decrees only.',
       ),
-    issuer: z
-      .string()
+    issuer: filterText
       .optional()
       .describe(
-        'Issuing body — social_insurance (Urheber, e.g. ÖGK/SVS/BVAEB/AUVA/PVA), ministerial_decrees (Bundesministerium — abbreviation expanded), council_minutes (Einbringer ministry). Values: ris_list_reference topic issuing_bodies or ministries.',
+        'Issuing body — social_insurance (Urheber: a carrier abbreviation such as ÖGK, DVSV, SVS, BVAEB, AUVA, or PVA is expanded to its full designation; a full designation or a "<ABBR> Gesamtvertrag" series is sent as written), ministerial_decrees (Bundesministerium) or council_minutes (Einbringer) — a ministry abbreviation such as "BMF" is expanded, a full designation is sent as written. Values: ris_list_reference topic issuing_bodies or ministries. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    norm: z
-      .string()
+    norm: filterText
       .optional()
       .describe(
-        'Cited-provision filter (Norm) — "DSG §1", "DSGVO Art32" style. veterinary and ministerial_decrees only ("decrees citing the DSG").',
+        'Cited-provision filter (Norm) — "DSG §1", "DSGVO Art32" style. veterinary and ministerial_decrees only ("decrees citing the DSG"). Omit to leave unfiltered; a blank value is rejected.',
       ),
-    case_number: z
-      .string()
+    case_number: filterText
       .optional()
       .describe(
-        'Business reference number (Geschäftszahl) — veterinary and ministerial_decrees only.',
+        'Business reference number (Geschäftszahl) — veterinary and ministerial_decrees only. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    type: z
-      .string()
+    type: filterText
       .optional()
       .describe(
-        'Document type (Typ) — trade_exam_rules (Befaehigungspruefungsordnung | Meisterpruefungsordnung), court_rules (Geschaeftsordnung | Geschaeftsverteilung), veterinary (Kundmachungen | VeroeffentlichungenAufGrundVEVO | SonstigeVeroeffentlichungen).',
+        'Document type (Typ) — trade_exam_rules (Befaehigungspruefungsordnung | Meisterpruefungsordnung), court_rules (Geschaeftsordnung | Geschaeftsverteilung), veterinary (Kundmachungen | VeroeffentlichungenAufGrundVEVO | SonstigeVeroeffentlichungen). Omit to leave unfiltered; a blank value is rejected.',
       ),
-    department: z
-      .string()
+    department: filterText
       .optional()
-      .describe('Ministry department (Abteilung) — ministerial_decrees only.'),
+      .describe(
+        'Ministry department (Abteilung) — ministerial_decrees only. Omit to leave unfiltered; a blank value is rejected.',
+      ),
     plan_type: z
       .enum(['all', 'expert_opinion', 'regulation'])
       .optional()
@@ -285,19 +276,21 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       .describe(
         'health_structure_plans only. Restrict to one Bundesland’s regional health-structure plan (RSG) — setting it switches the search from the federal ÖSG to that state’s RSG.',
       ),
-    session_number: z
-      .string()
+    session_number: filterText
       .optional()
-      .describe('Council session number (Sitzungsnummer) — council_minutes only.'),
-    legislature: z
-      .string()
+      .describe(
+        'Council session number (Sitzungsnummer) — council_minutes only. Omit to leave unfiltered; a blank value is rejected.',
+      ),
+    legislature: filterText
       .optional()
-      .describe('Legislative period (Gesetzgebungsperiode, e.g. "XXVII") — council_minutes only.'),
+      .describe(
+        'Legislative period (Gesetzgebungsperiode, e.g. "XXVII") — council_minutes only. Omit to leave unfiltered; a blank value is rejected.',
+      ),
     changed_since: z
       .enum(CHANGED_SINCE_CODES)
       .optional()
       .describe(
-        'Coarse recency filter — documents changed in RIS within the interval. For exact windows use ris_track_changes.',
+        'Coarse recency filter — documents changed in RIS within the interval. Every collection except social_insurance and veterinary, where RIS ignores it: use published_from there, or ris_track_changes for changes. For exact windows use ris_track_changes.',
       ),
     sort_by: z
       .enum(['published', 'number'])
@@ -310,10 +303,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       .optional()
       .describe('Sort direction; applies with sort_by.'),
     page: z.number().int().min(1).optional().describe('1-based result page. Default 1.'),
-    page_size: z
-      .union([z.literal(10), z.literal(20), z.literal(50), z.literal(100)])
-      .optional()
-      .describe('Documents per page — RIS accepts 10, 20, 50, or 100. Default 20.'),
+    page_size: pageSizeParam,
   }),
   output: z.object({
     results: z
@@ -337,14 +327,22 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
     {
       reason: 'collection_filter_mismatch',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'A parameter was combined with a collection that does not accept it — rejected locally before any upstream call; the message names the offending parameter and lists the collection’s valid parameters.',
+      when: 'A parameter was combined with a collection that does not accept it — rejected locally before any upstream call; the message names the offending parameter and lists the collection’s valid parameters. Includes changed_since on social_insurance or veterinary, where RIS ignores the recency filter and would return the whole collection; that rejection’s recovery names the replacement calls.',
       recovery:
         'Drop the named parameter or switch collection — each collection accepts a different parameter set. Valid parameters per collection: ris_list_reference topic collections.',
     },
     {
+      reason: 'unresolved_ministry',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'A ministerial_decrees or council_minutes issuer did not resolve — an abbreviation-shaped value matching no row of the RIS ministries table (the message names the closest matches), a ministry the table lists only for another issuer parameter (the message names the parameters that accept it), or an abbreviation carrying several designations this collection cannot tell apart (the message lists them). Rejected locally before any upstream call; a value the table does not know that contains a space is sent to RIS as written instead.',
+      recovery:
+        'Pass a ministry abbreviation or full designation from ris_list_reference topic ministries whose "Accepted by" includes this collection’s parameter (erlaesse_bundesministerium for ministerial_decrees, mrp_einbringer for council_minutes), or one of the candidate designations the message lists, verbatim.',
+      thrownBy: 'service',
+    },
+    {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'A page past the last page of results; or a parameter value rejected locally — an unknown or ambiguous issuer, a plan_state outside regional health-structure plans, or a sort_by value this collection has no column for, in which case the message names the values it does sort by; or RIS rejecting a value in-band (the Client error message is passed through verbatim, in German, and it does not name the page).',
+      when: 'A page past the last page of results; or a parameter value rejected locally — a plan_state outside regional health-structure plans, or a sort_by value this collection has no column for, in which case the message names the values it does sort by; or RIS rejecting a value in-band (the Client error message is passed through verbatim, in German, and it does not name the page).',
       recovery:
         'For a page past the end, request a lower page, starting from 1. Otherwise correct the parameter named in the message, or drop it if this collection does not carry it. Collections and their issuers: ris_list_reference topic collections or issuing_bodies.',
       thrownBy: 'service',
@@ -370,22 +368,24 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
   ],
 
   async handler(input, ctx) {
-    const { collection } = input;
-    const query = meaningful(input.query);
-    const title = meaningful(input.title);
-    const number = meaningful(input.number);
-    const publishedFrom = meaningful(input.published_from);
-    const publishedTo = meaningful(input.published_to);
-    const inForceAsOf = meaningful(input.in_force_as_of);
-    const enteredForceFrom = meaningful(input.entered_force_from);
-    const enteredForceTo = meaningful(input.entered_force_to);
-    const issuer = meaningful(input.issuer);
-    const norm = meaningful(input.norm);
-    const caseNumber = meaningful(input.case_number);
-    const type = meaningful(input.type);
-    const department = meaningful(input.department);
-    const sessionNumber = meaningful(input.session_number);
-    const legislature = meaningful(input.legislature);
+    const {
+      case_number: caseNumber,
+      collection,
+      department,
+      entered_force_from: enteredForceFrom,
+      entered_force_to: enteredForceTo,
+      in_force_as_of: inForceAsOf,
+      issuer,
+      legislature,
+      norm,
+      number,
+      published_from: publishedFrom,
+      published_to: publishedTo,
+      query,
+      session_number: sessionNumber,
+      title,
+      type,
+    } = input;
 
     const collectionEntry = RIS_COLLECTIONS.find((entry) => entry.code === collection);
     const validParams = collectionEntry?.params ?? [];
@@ -407,13 +407,22 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       ['plan_state', input.plan_state],
       ['session_number', sessionNumber],
       ['legislature', legislature],
+      ['changed_since', input.changed_since],
     ];
     const offending = conditional.find(([name, value]) => value !== undefined && !valid.has(name));
     if (offending) {
+      const [name] = offending;
+      const recency = name === 'changed_since';
       throw ctx.fail(
         'collection_filter_mismatch',
-        `${offending[0]} is not a valid filter for collection '${collection}' — it accepts: ${validParams.join(', ')}.`,
-        { ...ctx.recoveryFor('collection_filter_mismatch') },
+        `${name} is not a valid filter for collection '${collection}'${recency ? ' (RIS ignores it there and would return the whole collection)' : ''} — it accepts: ${validParams.join(', ')}.`,
+        recency
+          ? {
+              recovery: {
+                hint: `Drop changed_since. For recently published documents, set published_from (YYYY-MM-DD) on collection '${collection}'; for recently changed ones, call ris_track_changes with application: "${collectionEntry?.application}" and changed_from (YYYY-MM-DD).`,
+              },
+            }
+          : { ...ctx.recoveryFor('collection_filter_mismatch') },
       );
     }
 
@@ -449,7 +458,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
     const result = await getRisService()
       .searchAnnouncements(params, ctx)
       .catch((err: unknown) => {
-        throw failSearchError(
+        throw failMinistrySearchError(
           rewriteUnsupportedParam(err, (rejected) => callerFacingRejection(rejected, collection)),
           ctx,
         );
@@ -475,7 +484,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       }
       if (issuer !== undefined) {
         fragments.push(
-          'issuer must match the RIS designation — abbreviations are expanded for ministries; social-insurance issuers: ris_list_reference topic issuing_bodies.',
+          'issuer must match the RIS designation — ministry and social-insurance carrier abbreviations are expanded, any other value is matched exactly as written; issuers: ris_list_reference topic issuing_bodies or ministries.',
         );
       }
       if (collection === 'court_rules') {

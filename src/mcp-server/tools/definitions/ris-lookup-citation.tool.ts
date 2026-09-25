@@ -517,11 +517,6 @@ function todayInAustria(): string {
   }).format(new Date());
 }
 
-/** Map an empty string from a form-based client to `undefined`. */
-function meaningful(value: string | undefined): string | undefined {
-  return value !== undefined && value !== '' ? value : undefined;
-}
-
 export const risLookupCitation = tool('ris_lookup_citation', {
   title: 'Resolve Austrian Legal Citation',
   description:
@@ -580,7 +575,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
     const citation = input.citation.trim();
     const courtHint = input.court;
     const stateHint = input.state;
-    const asOf = meaningful(input.in_force_as_of) ?? todayInAustria();
+    const asOf = input.in_force_as_of ?? todayInAustria();
 
     /**
      * Run a routed search: map an upstream failure to this tool's `upstream_error` or

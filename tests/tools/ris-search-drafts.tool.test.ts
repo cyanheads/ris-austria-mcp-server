@@ -17,12 +17,14 @@ import {
   timeout,
   validationError,
 } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { risSearchDrafts } from '@/mcp-server/tools/definitions/ris-search-drafts.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import { buildDraftsRequest, type DraftsSearchParams } from '@/services/ris/request-builder.js';
+
+import { expectArgumentRejection } from './_wire.js';
 
 const { searchDrafts } = vi.hoisted(() => ({ searchDrafts: vi.fn() }));
 
@@ -162,10 +164,11 @@ describe('risSearchDrafts — error mapping', () => {
     expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
   });
 
-  it('maps a builder rejection of an unknown ministry to invalid_query', async () => {
+  it('maps a builder rejection of an unknown ministry to unresolved_ministry (#44)', async () => {
     // stage + ministry passes the input schema, then expandMinistry refuses the value. The
     // real builder runs on the params the handler produced, so this pins the actual
-    // rejection; it reached the wire as a bare -32007 with no reason and no recovery (#12).
+    // rejection; it reached the wire as a bare -32007 with no reason and no recovery (#12),
+    // then under invalid_query, whose recovery leads with page-past-end advice (#44).
     searchDrafts.mockImplementation(async (params: DraftsSearchParams) => {
       buildDraftsRequest(params);
       throw new Error('unreachable — the builder was expected to reject these params');
@@ -174,11 +177,12 @@ describe('risSearchDrafts — error mapping', () => {
     const input = risSearchDrafts.input.parse({ stage: 'review_drafts', ministry: 'BMXX' });
     const err = await captureError(risSearchDrafts.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
-    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.data).toMatchObject({ reason: 'unresolved_ministry' });
     expect(err.message).toContain('Unknown ministry "BMXX"');
     expect(err.data?.recovery).toMatchObject({
-      hint: expect.stringContaining('correct the parameter named in the message'),
+      hint: expect.stringContaining('ris_list_reference topic ministries'),
     });
+    expect(err.data?.recovery).toMatchObject({ hint: expect.not.stringMatching(/page/iu) });
   });
 
   it('leads the recovery hint with the page for an out-of-range page (#30)', async () => {
@@ -198,6 +202,51 @@ describe('risSearchDrafts — error mapping', () => {
         /^For a page past the end, request a lower page, starting from 1\./u,
       ),
     });
+  });
+});
+
+describe('risSearchDrafts — text filters: blank rejected, non-blank passed through (#39)', () => {
+  /** Every optional free-text input: [field, a value, builder key]. */
+  const TEXT_FILTERS = [
+    ['query', ' Datenschutz ', 'query'],
+    ['title', 'Einkommensteuergesetz', 'title'],
+    ['ministry', 'BMF', 'ministry'],
+  ] as const;
+
+  beforeEach(() => {
+    searchDrafts.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
+  });
+
+  it.each(TEXT_FILTERS)(
+    '%s: a non-blank value reaches RIS unchanged',
+    async (field, value, key) => {
+      const result = await runToolContract(risSearchDrafts, {
+        stage: 'review_drafts',
+        [field]: value,
+      } as never);
+      expect(result.isError).not.toBe(true);
+      expect(searchDrafts).toHaveBeenCalledTimes(1);
+      expect(searchDrafts.mock.calls[0]![0]).toMatchObject({ [key]: value });
+    },
+  );
+
+  it.each(
+    TEXT_FILTERS.flatMap((row) => ['', '   ', '\t\n'].map((blank) => [row[0], blank] as const)),
+  )('%s: %j is rejected over the wire before any RIS call', async (field, blank) => {
+    const result = await runToolContract(risSearchDrafts, {
+      stage: 'review_drafts',
+      [field]: blank,
+    } as never);
+    expectArgumentRejection(result, [`${field}: `, 'omit the field to leave it unfiltered']);
+    expect(searchDrafts).not.toHaveBeenCalled();
+  });
+
+  it('sends none of the text filters when every one is omitted', async () => {
+    const result = await runToolContract(risSearchDrafts, { stage: 'review_drafts' });
+    expect(result.isError).not.toBe(true);
+    const params = searchDrafts.mock.calls[0]![0] as Record<string, unknown>;
+    for (const [, , key] of TEXT_FILTERS) expect(params).not.toHaveProperty(key);
+    expect(params).toMatchObject({ stage: 'review_drafts' });
   });
 });
 
