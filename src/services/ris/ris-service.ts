@@ -305,7 +305,10 @@ export class RisService {
         const text = await response.text();
         const contentType = response.headers.get('content-type');
         const byteSize = new TextEncoder().encode(text).length;
-        ctx.log.debug('RIS content fetched', { byteSize, url: target.href });
+        ctx.log.debug('RIS content fetched', {
+          byteSize,
+          file: target.pathname.slice(target.pathname.lastIndexOf('/') + 1),
+        });
         return {
           byteSize,
           ...(contentType !== null && { contentType }),
