@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs';
 
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, type MockContextLogger } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
@@ -455,6 +455,16 @@ describe('RisService.fetchDocumentContent — upstream classification and retry 
       data: { status: 501, retryable: false },
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs a fetched rendition by file name, never by URL', async () => {
+    stubStatus(200, '<p>Body</p>');
+    const ctx = createMockContext();
+    await service.fetchDocumentContent(URL_UNDER_TEST, ctx);
+    const record = (ctx.log as MockContextLogger).calls.find(
+      (call) => call.msg === 'RIS content fetched',
+    );
+    expect(record?.data).toEqual({ byteSize: 11, file: 'NOR11013238.html' });
   });
 });
 
