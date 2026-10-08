@@ -472,8 +472,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
     } = input;
     let issuingBody = input.issuing_body;
 
-    const mismatch = (message: string) =>
-      ctx.fail('court_filter_mismatch', message, { ...ctx.recoveryFor('court_filter_mismatch') });
+    const mismatch = (message: string) => ctx.fail('court_filter_mismatch', message);
 
     if (court === 'normenliste') {
       const rejected: readonly [name: string, value: unknown][] = [
@@ -507,7 +506,6 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
         throw ctx.fail(
           'invalid_query',
           `decision_kind '${decisionKind}' is not a valid Entscheidungsart for court '${court}'. Valid values: ${kinds.values.join(' | ')}.`,
-          { ...ctx.recoveryFor('invalid_query') },
         );
       }
     }
@@ -544,7 +542,6 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       throw ctx.fail(
         'invalid_query',
         `subject_area '${subjectArea}' is not in the Justiz Fachgebiet taxonomy — the 39 exact German values are listed by ris_list_reference topic justiz_subject_areas.`,
-        { ...ctx.recoveryFor('invalid_query') },
       );
     }
     if (issuingBody !== undefined && (court === 'dsk' || court === 'pvak')) {

@@ -591,12 +591,10 @@ export const risLookupCitation = tool('ris_lookup_citation', {
       } catch (err: unknown) {
         if (!(err instanceof McpError)) throw err;
         if (err.code === JsonRpcErrorCode.ServiceUnavailable) {
-          throw ctx.fail('upstream_error', err.message, { ...ctx.recoveryFor('upstream_error') });
+          throw ctx.fail('upstream_error', err.message);
         }
         if (err.code === JsonRpcErrorCode.Timeout) {
-          throw ctx.fail('upstream_timeout', err.message, {
-            ...ctx.recoveryFor('upstream_timeout'),
-          });
+          throw ctx.fail('upstream_timeout', err.message);
         }
         if (err.code === JsonRpcErrorCode.ValidationError) {
           return null;

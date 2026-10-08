@@ -422,7 +422,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
                 hint: `Drop changed_since. For recently published documents, set published_from (YYYY-MM-DD) on collection '${collection}'; for recently changed ones, call ris_track_changes with application: "${collectionEntry?.application}" and changed_from (YYYY-MM-DD).`,
               },
             }
-          : { ...ctx.recoveryFor('collection_filter_mismatch') },
+          : undefined,
       );
     }
 

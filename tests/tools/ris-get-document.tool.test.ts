@@ -36,7 +36,7 @@ import {
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import type { RisContentFormat } from '@/services/ris/ris-service.js';
 
-import { contentText } from './_wire.js';
+import { contentText, contractError } from './_wire.js';
 
 const { buildDocumentContentUrl, fetchDocumentContent } = vi.hoisted(() => ({
   buildDocumentContentUrl: vi.fn(),
@@ -329,11 +329,9 @@ describe('risGetDocument — addressing guards (no fetch)', () => {
   // throws a native URIError on a malformed escape. Escaping the errors-as-values boundary
   // would strand the caller with a contract-less "URI malformed" and no recovery hint.
   it('rejects malformed percent-encoding in the document-number position as unsupported_url', async () => {
-    const ctx = createMockContext({ errors: risGetDocument.errors });
-    const input = risGetDocument.input.parse({
+    const err = await contractError(risGetDocument, {
       document_url: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/%ZZ/%ZZ.html',
     });
-    const err = await captureError(risGetDocument.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'unsupported_url' });
     expect(err.message).toContain('malformed % escape');
@@ -688,12 +686,10 @@ describe('risGetDocument — companion documents (materials)', () => {
     fetchDocumentContent.mockRejectedValue(
       notFound('RIS content host returned 404.', { url: 'https://x' }),
     );
-    const ctx = createMockContext({ errors: risGetDocument.errors });
-    const input = risGetDocument.input.parse({
+    const err = await contractError(risGetDocument, {
       document_number: 'NOR40262691',
       application: 'BrKons',
     });
-    const err = await captureError(risGetDocument.handler(input, ctx));
     expect(err.data?.recovery).toMatchObject({
       hint: expect.stringContaining('ris_lookup_citation'),
     });
@@ -1609,12 +1605,10 @@ describe('risGetDocument — error mapping', () => {
     fetchDocumentContent.mockRejectedValue(
       timeout('fetch GET https://www.ris.bka.gv.at/Dokumente timed out.', {}),
     );
-    const ctx = createMockContext({ errors: risGetDocument.errors });
-    const input = risGetDocument.input.parse({
+    const err = await contractError(risGetDocument, {
       document_number: 'NOR40262691',
       application: 'BrKons',
     });
-    const err = await captureError(risGetDocument.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.Timeout);
     expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
     expect(err.data?.recovery).toMatchObject({

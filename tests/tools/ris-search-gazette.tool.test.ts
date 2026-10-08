@@ -25,7 +25,7 @@ import { risSearchGazette } from '@/mcp-server/tools/definitions/ris-search-gaze
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import { buildGazetteRequest, type GazetteSearchParams } from '@/services/ris/request-builder.js';
 
-import { expectArgumentRejection } from './_wire.js';
+import { contractError, expectArgumentRejection } from './_wire.js';
 
 const { searchGazette } = vi.hoisted(() => ({ searchGazette: vi.fn() }));
 
@@ -286,14 +286,12 @@ describe('risSearchGazette — cross-tier federal date ranges', () => {
   const zeroHitsResult = parseSearchResponse(fixture('search-zero-hits.json'));
 
   it('rejects the 2003/2004 boundary span, naming both tiers and the split date', async () => {
-    const ctx = createMockContext({ errors: risSearchGazette.errors });
-    const input = risSearchGazette.input.parse({
+    const err = await contractError(risSearchGazette, {
       scope: 'federal',
       published_from: '2003-12-01',
       published_to: '2004-01-31',
       page_size: 10,
     });
-    const err = await captureError(risSearchGazette.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'cross_tier_range' });
     expect(err.message).toContain('published_from 2003-12-01 / published_to 2004-01-31');
@@ -665,9 +663,7 @@ describe('risSearchGazette — error mapping', () => {
         buildGazetteRequest(params);
         throw new Error('unreachable — the builder was expected to reject these params');
       });
-      const ctx = createMockContext({ errors: risSearchGazette.errors });
-      const input = risSearchGazette.input.parse(raw);
-      const err = await captureError(risSearchGazette.handler(input, ctx));
+      const err = await contractError(risSearchGazette, raw);
       expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
       expect(err.data).toMatchObject({ reason: 'invalid_query' });
       expect(err.message).toBe(message);
@@ -687,9 +683,7 @@ describe('risSearchGazette — error mapping', () => {
     searchGazette.mockRejectedValue(
       validationError('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
     );
-    const ctx = createMockContext({ errors: risSearchGazette.errors });
-    const input = risSearchGazette.input.parse({ query: 'Datenschutz', page: 9999 });
-    const err = await captureError(risSearchGazette.handler(input, ctx));
+    const err = await contractError(risSearchGazette, { query: 'Datenschutz', page: 9999 });
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
     expect(err.message).toContain('Seitennummer');
     expect(err.data?.recovery).toMatchObject({
@@ -704,9 +698,7 @@ describe('risSearchGazette — error mapping', () => {
       buildGazetteRequest(params);
       throw new Error('unreachable — the builder was expected to reject these params');
     });
-    const ctx = createMockContext({ errors: risSearchGazette.errors });
-    const input = risSearchGazette.input.parse({ scope: 'wien', state_era: 'legacy' });
-    const err = await captureError(risSearchGazette.handler(input, ctx));
+    const err = await contractError(risSearchGazette, { scope: 'wien', state_era: 'legacy' });
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
     expect(err.message).toContain('The historical Lgbl gazette has no Wien');

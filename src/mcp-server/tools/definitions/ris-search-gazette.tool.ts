@@ -640,8 +640,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
     } = input;
     const isState = isStateScope(scope);
 
-    const fail = (message: string) =>
-      ctx.fail('scope_filter_mismatch', message, { ...ctx.recoveryFor('scope_filter_mismatch') });
+    const fail = (message: string) => ctx.fail('scope_filter_mismatch', message);
 
     if (input.part !== undefined && scope !== 'federal') {
       throw fail(`part applies only to scope: federal — got scope: '${scope}'.`);
@@ -681,9 +680,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
       const routed = resolveFederalTier(number, publishedFrom, publishedTo, input.part);
       routedBy = routed.routedBy;
       if ('spans' in routed) {
-        throw ctx.fail('cross_tier_range', crossTierMessage(routed.spans, routedBy), {
-          ...ctx.recoveryFor('cross_tier_range'),
-        });
+        throw ctx.fail('cross_tier_range', crossTierMessage(routed.spans, routedBy));
       }
       application = routed.tier.application;
       era = routed.tier.era;

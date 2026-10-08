@@ -5,11 +5,32 @@
  */
 
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import type { runToolContract } from '@cyanheads/mcp-ts-core/testing';
+import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { expect } from 'vitest';
 
 /** The result of one `runToolContract` call. */
 export type ToolResult = Awaited<ReturnType<typeof runToolContract>>;
+
+/** A tool error as the client receives it in `structuredContent.error`. */
+export interface WireError {
+  readonly code: number;
+  readonly data?: Record<string, unknown>;
+  readonly message: string;
+}
+
+/**
+ * Run one call through `runToolContract` and return the error the client receives. Assert a
+ * declared reason's recovery hint here, not on a direct `definition.handler(...)` throw: the
+ * framework fills `data.recovery` from the `errors[]` entry on the factory path, so a throw
+ * site that names only the reason carries no hint until then.
+ */
+export async function contractError(
+  ...args: Parameters<typeof runToolContract>
+): Promise<WireError> {
+  const result = await runToolContract(...args);
+  expect(result.isError).toBe(true);
+  return (result.structuredContent as { error: WireError }).error;
+}
 
 /** Every text block of `content[]`, joined — what a content-only client reads. */
 export function contentText(result: ToolResult): string {

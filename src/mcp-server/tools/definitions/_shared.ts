@@ -4,7 +4,7 @@
  * @module mcp-server/tools/definitions/_shared
  */
 
-import type { TypedFail, TypedRecoveryFor } from '@cyanheads/mcp-ts-core';
+import type { TypedFail } from '@cyanheads/mcp-ts-core';
 import { z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError, validationError } from '@cyanheads/mcp-ts-core/errors';
 
@@ -88,7 +88,6 @@ type SearchFailureReason = 'invalid_query' | 'upstream_error' | 'upstream_timeou
 /** The slice of a handler `ctx` the search-failure mappers need. */
 interface SearchFailureContext<R extends string = SearchFailureReason> {
   readonly fail: TypedFail<R>;
-  readonly recoveryFor: TypedRecoveryFor<R>;
 }
 
 /**
@@ -108,19 +107,17 @@ const REASON_BY_CODE = new Map<JsonRpcErrorCode, SearchFailureReason>([
 ]);
 
 /**
- * Map a request-builder or service failure onto the declared contract, so `reason` and
- * `recovery` reach the wire — neither the builder's `validationError` nor the service's
- * framework errors carry either on their own. An unmapped code is returned untouched for
- * the framework to classify.
+ * Map a request-builder or service failure onto the declared contract, so `reason` reaches
+ * the wire and the framework fills the entry's `recovery` from it — neither the builder's
+ * `validationError` nor the service's framework errors carry a reason on their own. An
+ * unmapped code is returned untouched for the framework to classify.
  *
  * Returns the error for the caller to `throw`, keeping the throw visible at the call site.
  */
 export function failSearchError(error: unknown, ctx: SearchFailureContext): unknown {
   if (!(error instanceof McpError)) return error;
   const reason = REASON_BY_CODE.get(error.code);
-  return reason === undefined
-    ? error
-    : ctx.fail(reason, error.message, { ...ctx.recoveryFor(reason) });
+  return reason === undefined ? error : ctx.fail(reason, error.message);
 }
 
 /**
@@ -134,9 +131,7 @@ export function failMinistrySearchError(
   ctx: SearchFailureContext<SearchFailureReason | typeof UNRESOLVED_MINISTRY_REASON>,
 ): unknown {
   if (error instanceof McpError && error.data?.reason === UNRESOLVED_MINISTRY_REASON) {
-    return ctx.fail(UNRESOLVED_MINISTRY_REASON, error.message, {
-      ...ctx.recoveryFor(UNRESOLVED_MINISTRY_REASON),
-    });
+    return ctx.fail(UNRESOLVED_MINISTRY_REASON, error.message);
   }
   return failSearchError(error, ctx);
 }

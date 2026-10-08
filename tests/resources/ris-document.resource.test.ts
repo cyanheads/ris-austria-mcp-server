@@ -18,6 +18,7 @@ import {
   timeout,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createWorkerHandler } from '@cyanheads/mcp-ts-core/worker';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { risDocumentResource } from '@/mcp-server/resources/definitions/ris-document.resource.js';
@@ -48,6 +49,58 @@ async function captureError(result: unknown | Promise<unknown>): Promise<McpErro
   const err = await Promise.resolve(result).catch((e: unknown) => e);
   if (!(err instanceof McpError)) throw new Error('unreachable — expected an McpError');
   return err;
+}
+
+/** The MCP revision the wire reads below speak, in the header and in `params._meta` alike. */
+const PROTOCOL_VERSION = '2026-07-28';
+
+/**
+ * Read `uri` through the resource factory and return the JSON-RPC error a client receives. A
+ * direct `handler(...)` throw carries only what the throw site set; the factory fills the
+ * declared reason's `recovery`, so a recovery hint is asserted here.
+ */
+async function readError(
+  uri: string,
+): Promise<{ code: number; data?: Record<string, unknown>; message: string }> {
+  const worker = createWorkerHandler({
+    name: 'ris-austria-mcp-server',
+    title: 'ris-austria-mcp-server',
+    resources: [risDocumentResource],
+  });
+  const response = await worker.fetch(
+    new Request('http://localhost/mcp', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json, text/event-stream',
+        'Content-Type': 'application/json',
+        'MCP-Protocol-Version': PROTOCOL_VERSION,
+        'Mcp-Method': 'resources/read',
+        'Mcp-Name': uri,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'resources/read',
+        params: {
+          uri,
+          _meta: {
+            'io.modelcontextprotocol/protocolVersion': PROTOCOL_VERSION,
+            'io.modelcontextprotocol/clientInfo': { name: 'ris-resource-test', version: '1.0.0' },
+            'io.modelcontextprotocol/clientCapabilities': {},
+          },
+        },
+      }),
+    }),
+    {},
+    { waitUntil: () => {}, passThroughOnException: () => {} } as never,
+  );
+  const text = await response.text();
+  const frame = text.split('\n').find((line) => line.startsWith('data:'));
+  const reply = JSON.parse(frame === undefined ? text : frame.slice(5)) as {
+    error?: { code: number; data?: Record<string, unknown>; message: string };
+  };
+  if (reply.error === undefined) throw new Error(`expected a JSON-RPC error, got: ${text}`);
+  return reply.error;
 }
 
 /** HTML whose markdown conversion exceeds the outline budget, split into `## Artikel N` sections. */
@@ -260,15 +313,7 @@ describe('risDocumentResource — error mapping', () => {
     fetchDocumentContent.mockRejectedValue(
       timeout('fetch GET https://www.ris.bka.gv.at/Dokumente timed out.', {}),
     );
-    const ctx = createMockContext({
-      errors: risDocumentResource.errors,
-      uri: new URL('ris://document/BrKons/NOR40262691'),
-    });
-    const params = risDocumentResource.params!.parse({
-      application: 'BrKons',
-      documentNumber: 'NOR40262691',
-    });
-    const err = await captureError(risDocumentResource.handler(params, ctx));
+    const err = await readError('ris://document/BrKons/NOR40262691');
     expect(err.code).toBe(JsonRpcErrorCode.Timeout);
     expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
     expect(err.data?.recovery).toMatchObject({

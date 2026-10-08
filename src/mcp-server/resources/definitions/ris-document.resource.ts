@@ -83,20 +83,16 @@ export const risDocumentResource = resource('ris://document/{application}/{docum
           err.code === JsonRpcErrorCode.ValidationError ||
           err.code === JsonRpcErrorCode.NotFound
         ) {
-          throw ctx.fail('document_not_found', err.message, {
-            ...ctx.recoveryFor('document_not_found'),
-          });
+          throw ctx.fail('document_not_found', err.message);
         }
         if (err.code === JsonRpcErrorCode.ServiceUnavailable) {
-          throw ctx.fail('upstream_error', err.message, { ...ctx.recoveryFor('upstream_error') });
+          throw ctx.fail('upstream_error', err.message);
         }
         // Its own reason, not a widened upstream_error guard: `ctx.fail` resolves the code
         // from the contract entry, so folding a deadline into upstream_error would report
         // -32000 for it — and the two want different recovery (degraded host vs. cold render).
         if (err.code === JsonRpcErrorCode.Timeout) {
-          throw ctx.fail('upstream_timeout', err.message, {
-            ...ctx.recoveryFor('upstream_timeout'),
-          });
+          throw ctx.fail('upstream_timeout', err.message);
         }
       }
       throw err;

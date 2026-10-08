@@ -24,7 +24,7 @@ import { risSearchDrafts } from '@/mcp-server/tools/definitions/ris-search-draft
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import { buildDraftsRequest, type DraftsSearchParams } from '@/services/ris/request-builder.js';
 
-import { expectArgumentRejection } from './_wire.js';
+import { contractError, expectArgumentRejection } from './_wire.js';
 
 const { searchDrafts } = vi.hoisted(() => ({ searchDrafts: vi.fn() }));
 
@@ -173,9 +173,7 @@ describe('risSearchDrafts — error mapping', () => {
       buildDraftsRequest(params);
       throw new Error('unreachable — the builder was expected to reject these params');
     });
-    const ctx = createMockContext({ errors: risSearchDrafts.errors });
-    const input = risSearchDrafts.input.parse({ stage: 'review_drafts', ministry: 'BMXX' });
-    const err = await captureError(risSearchDrafts.handler(input, ctx));
+    const err = await contractError(risSearchDrafts, { stage: 'review_drafts', ministry: 'BMXX' });
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'unresolved_ministry' });
     expect(err.message).toContain('Unknown ministry "BMXX"');
@@ -192,9 +190,7 @@ describe('risSearchDrafts — error mapping', () => {
     searchDrafts.mockRejectedValue(
       validationError('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
     );
-    const ctx = createMockContext({ errors: risSearchDrafts.errors });
-    const input = risSearchDrafts.input.parse({ stage: 'review_drafts', page: 9999 });
-    const err = await captureError(risSearchDrafts.handler(input, ctx));
+    const err = await contractError(risSearchDrafts, { stage: 'review_drafts', page: 9999 });
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
     expect(err.message).toContain('Seitennummer');
     expect(err.data?.recovery).toMatchObject({

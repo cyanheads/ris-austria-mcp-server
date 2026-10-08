@@ -405,8 +405,7 @@ export const risSearchLegislation = tool('ris_search_legislation', {
     } = input;
     const includeAllVersions = input.include_all_versions === true;
 
-    const fail = (message: string) =>
-      ctx.fail('scope_filter_mismatch', message, { ...ctx.recoveryFor('scope_filter_mismatch') });
+    const fail = (message: string) => ctx.fail('scope_filter_mismatch', message);
 
     if (language === 'english' && scope !== 'federal') {
       throw fail(

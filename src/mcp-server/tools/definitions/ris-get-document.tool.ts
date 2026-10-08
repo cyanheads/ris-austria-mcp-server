@@ -891,8 +891,7 @@ export const risGetDocument = tool('ris_get_document', {
     const documentUrl = meaningful(input.document_url);
     const { application, format } = input;
 
-    const failAddressing = (message: string) =>
-      ctx.fail('invalid_addressing', message, { ...ctx.recoveryFor('invalid_addressing') });
+    const failAddressing = (message: string) => ctx.fail('invalid_addressing', message);
 
     let resolvedApplication: string;
     let resolvedDocumentNumber: string;
@@ -905,9 +904,7 @@ export const risGetDocument = tool('ris_get_document', {
       }
       const parsed = parseDocumentUrl(documentUrl, getServerConfig().contentBaseUrl);
       if ('error' in parsed) {
-        throw ctx.fail('unsupported_url', `document_url is not fetchable — ${parsed.error}.`, {
-          ...ctx.recoveryFor('unsupported_url'),
-        });
+        throw ctx.fail('unsupported_url', `document_url is not fetchable — ${parsed.error}.`);
       }
       resolvedApplication = parsed.application;
       resolvedDocumentNumber = parsed.documentNumber;
@@ -932,9 +929,7 @@ export const risGetDocument = tool('ris_get_document', {
     ).catch((err: unknown) => {
       if (err instanceof McpError) {
         if (err.code === JsonRpcErrorCode.ValidationError) {
-          throw ctx.fail('invalid_addressing', err.message, {
-            ...ctx.recoveryFor('invalid_addressing'),
-          });
+          throw ctx.fail('invalid_addressing', err.message);
         }
         if (err.code === JsonRpcErrorCode.NotFound) {
           // The contract's recovery is written for the document_number + application mode.
@@ -946,7 +941,7 @@ export const risGetDocument = tool('ris_get_document', {
             'document_not_found',
             err.message,
             resolvedContentName === undefined
-              ? { ...ctx.recoveryFor('document_not_found') }
+              ? undefined
               : {
                   recovery: {
                     hint: `This companion document has no ${format} rendition — about one in eight is filed as a PDF with no text rendition at all, and RIS returns 404 for a rendition it does not publish. Re-call with format: urls_only and fetch content_urls.pdf yourself. If the PDF 404s too, the URL itself is stale — take a fresh one from a ris_search_drafts record's materials.`,
@@ -955,15 +950,13 @@ export const risGetDocument = tool('ris_get_document', {
           );
         }
         if (err.code === JsonRpcErrorCode.ServiceUnavailable) {
-          throw ctx.fail('upstream_error', err.message, { ...ctx.recoveryFor('upstream_error') });
+          throw ctx.fail('upstream_error', err.message);
         }
         // Its own reason, not a widened upstream_error guard: `ctx.fail` resolves the code
         // from the contract entry, so folding a deadline into upstream_error would report
         // -32000 for it — and the two want different recovery (degraded host vs. cold render).
         if (err.code === JsonRpcErrorCode.Timeout) {
-          throw ctx.fail('upstream_timeout', err.message, {
-            ...ctx.recoveryFor('upstream_timeout'),
-          });
+          throw ctx.fail('upstream_timeout', err.message);
         }
       }
       throw err;

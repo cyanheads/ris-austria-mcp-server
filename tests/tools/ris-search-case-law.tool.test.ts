@@ -23,7 +23,7 @@ import { risSearchCaseLaw } from '@/mcp-server/tools/definitions/ris-search-case
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import { buildCaseLawRequest, type CaseLawSearchParams } from '@/services/ris/request-builder.js';
 
-import { expectArgumentRejection } from './_wire.js';
+import { contractError, expectArgumentRejection } from './_wire.js';
 
 const { searchCaseLaw } = vi.hoisted(() => ({ searchCaseLaw: vi.fn() }));
 
@@ -179,9 +179,7 @@ describe('risSearchCaseLaw — error mapping', () => {
     // widened upstream_error guard would report -32000 for it, since ctx.fail resolves the
     // code from the contract entry — so the deadline needs its own declared reason.
     searchCaseLaw.mockRejectedValue(timeout('fetch GET https://data.bka.gv.at timed out.', {}));
-    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
-    const input = risSearchCaseLaw.input.parse({ court: 'vfgh', query: 'Datenschutz' });
-    const err = await captureError(risSearchCaseLaw.handler(input, ctx));
+    const err = await contractError(risSearchCaseLaw, { court: 'vfgh', query: 'Datenschutz' });
     expect(err.code).toBe(JsonRpcErrorCode.Timeout);
     expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
     expect(err.data?.recovery).toMatchObject({
@@ -198,12 +196,10 @@ describe('risSearchCaseLaw — error mapping', () => {
       buildCaseLawRequest(params);
       throw new Error('unreachable — the builder was expected to reject these params');
     });
-    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
-    const input = risSearchCaseLaw.input.parse({
+    const err = await contractError(risSearchCaseLaw, {
       court: 'normenliste',
       sort_by: 'decision_date',
     });
-    const err = await captureError(risSearchCaseLaw.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
     expect(err.message).toBe(
@@ -225,9 +221,11 @@ describe('risSearchCaseLaw — error mapping', () => {
     searchCaseLaw.mockRejectedValue(
       validationError('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
     );
-    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
-    const input = risSearchCaseLaw.input.parse({ court: 'vfgh', query: 'Datenschutz', page: 9999 });
-    const err = await captureError(risSearchCaseLaw.handler(input, ctx));
+    const err = await contractError(risSearchCaseLaw, {
+      court: 'vfgh',
+      query: 'Datenschutz',
+      page: 9999,
+    });
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
     expect(err.message).toContain('Seitennummer');
     expect(err.data?.recovery).toMatchObject({

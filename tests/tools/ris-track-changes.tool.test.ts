@@ -22,6 +22,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { risTrackChanges } from '@/mcp-server/tools/definitions/ris-track-changes.tool.js';
 import { parseHistoryResponse } from '@/services/ris/normalizer.js';
 
+import { contractError } from './_wire.js';
+
 const { trackChanges } = vi.hoisted(() => ({ trackChanges: vi.fn() }));
 
 vi.mock('@/services/ris/ris-service.js', () => ({
@@ -234,14 +236,12 @@ describe('risTrackChanges — error mapping', () => {
     );
     trackChanges.mockImplementation((params, ctx) => realService.trackChanges(params, ctx));
 
-    const ctx = createMockContext({ errors: risTrackChanges.errors });
-    const input = risTrackChanges.input.parse({
+    const err = await contractError(risTrackChanges, {
       application: 'Dsk',
       changed_from: '2026-07-01',
       changed_to: '2026-07-15',
       page: 2,
     });
-    const err = await captureError(risTrackChanges.handler(input, ctx));
 
     // The caller must not be told this server broke — the page number is their input.
     expect(err.code).not.toBe(JsonRpcErrorCode.InternalError);
@@ -269,9 +269,7 @@ describe('risTrackChanges — error mapping', () => {
 
   it('maps a fetch deadline to upstream_timeout, keeping -32004 on the wire', async () => {
     trackChanges.mockRejectedValue(timeout('fetch GET https://data.bka.gv.at timed out.', {}));
-    const ctx = createMockContext({ errors: risTrackChanges.errors });
-    const input = risTrackChanges.input.parse({ application: 'BrKons' });
-    const err = await captureError(risTrackChanges.handler(input, ctx));
+    const err = await contractError(risTrackChanges, { application: 'BrKons' });
     expect(err.code).toBe(JsonRpcErrorCode.Timeout);
     expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
     expect(err.data?.recovery).toMatchObject({

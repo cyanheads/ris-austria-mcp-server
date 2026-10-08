@@ -27,7 +27,7 @@ import {
   buildAnnouncementsRequest,
 } from '@/services/ris/request-builder.js';
 
-import { expectArgumentRejection } from './_wire.js';
+import { contractError, expectArgumentRejection } from './_wire.js';
 
 const { searchAnnouncements } = vi.hoisted(() => ({ searchAnnouncements: vi.fn() }));
 
@@ -273,9 +273,7 @@ describe('risSearchAnnouncements — error mapping', () => {
         buildAnnouncementsRequest(params);
         throw new Error('unreachable — the builder was expected to reject these params');
       });
-      const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
-      const input = risSearchAnnouncements.input.parse(raw);
-      const err = await captureError(risSearchAnnouncements.handler(input, ctx));
+      const err = await contractError(risSearchAnnouncements, raw);
       expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
       expect(err.data).toMatchObject({ reason: 'invalid_query' });
       expect(err.message).toBe(message);
@@ -295,12 +293,10 @@ describe('risSearchAnnouncements — error mapping', () => {
     searchAnnouncements.mockRejectedValue(
       validationError('Die Seitennummer ist höher als die Anzahl der verfügbaren Seiten', {}),
     );
-    const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
-    const input = risSearchAnnouncements.input.parse({
+    const err = await contractError(risSearchAnnouncements, {
       collection: 'social_insurance',
       page: 9999,
     });
-    const err = await captureError(risSearchAnnouncements.handler(input, ctx));
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
     expect(err.message).toContain('Seitennummer');
     expect(err.data?.recovery).toMatchObject({
@@ -315,12 +311,10 @@ describe('risSearchAnnouncements — error mapping', () => {
       buildAnnouncementsRequest(params);
       throw new Error('unreachable — the builder was expected to reject these params');
     });
-    const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
-    const input = risSearchAnnouncements.input.parse({
+    const err = await contractError(risSearchAnnouncements, {
       collection: 'ministerial_decrees',
       issuer: 'BMXX',
     });
-    const err = await captureError(risSearchAnnouncements.handler(input, ctx));
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'unresolved_ministry' });
     expect(err.message).toContain('Unknown ministry "BMXX"');

@@ -22,7 +22,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { risSearchLegislation } from '@/mcp-server/tools/definitions/ris-search-legislation.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 
-import { expectArgumentRejection } from './_wire.js';
+import { contractError, expectArgumentRejection } from './_wire.js';
 
 const { searchLegislation } = vi.hoisted(() => ({ searchLegislation: vi.fn() }));
 
@@ -215,9 +215,7 @@ describe('risSearchLegislation — error mapping', () => {
     // widened upstream_error guard would report -32000 for it, since ctx.fail resolves the
     // code from the contract entry — so the deadline needs its own declared reason.
     searchLegislation.mockRejectedValue(timeout('fetch GET https://data.bka.gv.at timed out.', {}));
-    const ctx = createMockContext({ errors: risSearchLegislation.errors });
-    const input = risSearchLegislation.input.parse({ query: 'Datenschutz' });
-    const err = await captureError(risSearchLegislation.handler(input, ctx));
+    const err = await contractError(risSearchLegislation, { query: 'Datenschutz' });
     expect(err.code).toBe(JsonRpcErrorCode.Timeout);
     expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
     expect(err.data?.recovery).toMatchObject({
@@ -245,9 +243,7 @@ describe('risSearchLegislation — error mapping', () => {
       realService.searchLegislation(params, ctx),
     );
 
-    const ctx = createMockContext({ errors: risSearchLegislation.errors });
-    const input = risSearchLegislation.input.parse({ title: 'DSG', page: 9999 });
-    const err = await captureError(risSearchLegislation.handler(input, ctx));
+    const err = await contractError(risSearchLegislation, { title: 'DSG', page: 9999 });
 
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });

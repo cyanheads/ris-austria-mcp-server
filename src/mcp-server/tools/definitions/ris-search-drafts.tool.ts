@@ -310,8 +310,7 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       title,
     } = input;
 
-    const mismatch = (message: string) =>
-      ctx.fail('stage_filter_mismatch', message, { ...ctx.recoveryFor('stage_filter_mismatch') });
+    const mismatch = (message: string) => ctx.fail('stage_filter_mismatch', message);
 
     if (inReviewOn !== undefined && stage === 'government_bills') {
       throw mismatch(
