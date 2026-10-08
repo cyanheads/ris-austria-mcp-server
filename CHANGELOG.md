@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.5.1](changelog/0.5.x/0.5.1.md) — 2026-10-08
+
+Framework ^0.13.6 → ^0.13.14: error envelopes carry a request ID and drop stack traces, request context, and rootCause; tool arguments sent as numeric or boolean strings, lone strings for arrays, or null optionals are repaired instead of rejected; registry npm entries launch via npx; the Docker image installs dependencies on the build platform.
+
 ## [0.5.0](changelog/0.5.x/0.5.0.md) — 2026-09-24 · ⚠️ Breaking
 
 ris_get_document returns over-budget html/xml as kind: link and accepts ogd.ris.bka.gv.at URLs; search tools reject blank text filters and page sizes above 20; issuer filters resolve the 2025 ministries and social-insurance carrier abbreviations.
