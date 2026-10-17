@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.5.2](changelog/0.5.x/0.5.2.md) — 2026-10-17 · 🛡️ Security
+
+ris_lookup_citation resolves ECLIs, court-prefixed and year-first cites, picks the cited document instead of the first hit, and parses citations in linear time; records gain abbreviation, keywords, CELEX, and decree fields; state parameters take German names; the server sends instructions.
+
 ## [0.5.1](changelog/0.5.x/0.5.1.md) — 2026-10-08
 
 Framework ^0.13.6 → ^0.13.14: error envelopes carry a request ID and drop stack traces, request context, and rootCause; tool arguments sent as numeric or boolean strings, lone strings for arrays, or null optionals are repaired instead of rejected; registry npm entries launch via npx; the Docker image installs dependencies on the build platform.
