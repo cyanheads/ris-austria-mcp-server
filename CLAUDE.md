@@ -2,10 +2,10 @@
 
 **Server:** ris-austria-mcp-server
 **Version:** 0.5.1
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.14`
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.15`
 **Engines:** Bun ≥1.4.0, Node ≥24.0.0
-**MCP SDK:** `@modelcontextprotocol/server` ^2.2.0
-**Zod:** ^4.6.5
+**MCP SDK:** `@modelcontextprotocol/server` ^2.3.1
+**Zod:** ^4.6.7
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
 
@@ -140,12 +140,14 @@ to env-var names so a configuration failure names the variable the operator can 
 
 ### Server identity and instructions
 
-The entry point pins the machine identity and immutable public catalog cache hints:
+The entry point pins the machine identity, the server instructions, and immutable public catalog
+cache hints:
 
 ```ts
 await createApp({
   name: 'ris-austria-mcp-server',
   title: 'ris-austria-mcp-server',
+  instructions: INSTRUCTIONS, // one paragraph: coverage, entry points, addressing, chains, binding
   sessionMode: 'stateless',
   cacheHints: {
     'tools/list': { ttlMs: 3_600_000, cacheScope: 'public' },
@@ -162,6 +164,9 @@ await createApp({
 ```
 
 `package.json` is the canonical description source; do not duplicate it into `createApp()`.
+`INSTRUCTIONS` in `src/index.ts` stays under 2,048 UTF-8 bytes (Claude Code truncates past that)
+and names only registered `ris_*` tools — `tests/tools/framework-contract.test.ts` pins both, so
+renaming a tool or a parameter it cites means updating the string.
 
 ### Session posture and shutdown
 
