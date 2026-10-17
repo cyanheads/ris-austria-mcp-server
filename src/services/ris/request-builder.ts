@@ -126,12 +126,36 @@ function unsupported(
   );
 }
 
-function invalidValue(param: string, value: string, valid: readonly string[]): never {
-  throw validationError(`Invalid ${param} value "${value}". Valid values: ${valid.join(', ')}.`, {
-    param,
-    valid: [...valid],
-    value,
-  });
+/** Reject a value outside `valid`; `scope` names what the list belongs to, e.g. `collection veterinary`. */
+function invalidValue(
+  param: string,
+  value: string,
+  valid: readonly string[],
+  scope?: string,
+): never {
+  throw validationError(
+    `Invalid ${param} value "${value}"${scope === undefined ? '' : ` for ${scope}`}. Valid values: ${valid.join(', ')}.`,
+    { param, valid: [...valid], value },
+  );
+}
+
+/**
+ * Resolve a caller value against one of RIS's case-sensitive schema enumerations, matching
+ * case-insensitively without surrounding whitespace and returning the spelling RIS accepts.
+ * RIS's no-filter member `Undefined` returns `undefined` — the caller gets what omitting the
+ * field gets. Any other value is rejected here: RIS would fail it on schema validation anyway.
+ */
+function enumValue(
+  param: string,
+  value: string,
+  valid: readonly string[],
+  scope: string,
+): string | undefined {
+  const needle = value.trim().toLowerCase();
+  if (needle === 'undefined') return;
+  const match = valid.find((candidate) => candidate.toLowerCase() === needle);
+  if (match === undefined) invalidValue(param, value, valid, scope);
+  return match;
 }
 
 class ParamBag {
@@ -449,14 +473,21 @@ export function buildCaseLawRequest(params: CaseLawSearchParams): RisRequest {
     if (code === 'normenliste') unsupported('caseNumber', court.application);
     bag.set(upts ? 'GZ' : 'Geschaeftszahl', params.caseNumber);
   }
-  if (params.decisionType !== undefined && params.decisionType !== 'all') {
+  const decisionType = params.decisionType ?? 'all';
+  if (decisionType !== 'all') {
     if (NO_DECISION_TYPE_COURTS.has(code)) unsupported('decisionType', court.application);
     bag.set(
-      params.decisionType === 'headnote'
+      decisionType === 'headnote'
         ? 'Dokumenttyp.SucheInRechtssaetzen'
         : 'Dokumenttyp.SucheInEntscheidungstexten',
       'true',
     );
+  } else if (!NO_DECISION_TYPE_COURTS.has(code)) {
+    // Unflagged, RIS serves only Rechtssätze on vfgh, vwgh, and justiz (measured 2026-10-17:
+    // VfGH decisions of 2026-09 total 17 unflagged, 41 with both flags). Both flags are a no-op
+    // on the courts that already serve both document types unflagged.
+    bag.set('Dokumenttyp.SucheInRechtssaetzen', 'true');
+    bag.set('Dokumenttyp.SucheInEntscheidungstexten', 'true');
   }
   if (params.decidedFrom !== undefined || params.decidedTo !== undefined) {
     if (code === 'normenliste') unsupported('decidedFrom/decidedTo', court.application);
@@ -691,7 +722,7 @@ export function buildGazetteRequest(params: GazetteSearchParams): RisRequest {
       if (!state.inLgbl) {
         throw validationError(
           `The historical Lgbl gazette has no ${state.name} — Niederösterreich uses the LgblNO systematic collection and Wien is not carried.`,
-          { application: app, state: params.state },
+          { application: app, param: 'state', state: params.state },
         );
       }
       bag.set(`Bundesland.${state.flagParam}`, 'true');
@@ -699,7 +730,12 @@ export function buildGazetteRequest(params: GazetteSearchParams): RisRequest {
       if (!VBL_COVERED_STATES.includes(params.state)) {
         throw validationError(
           `Verordnungsblätter in RIS currently cover Tirol only — "${params.state}" fails on the RIS backend.`,
-          { application: app, coveredStates: [...VBL_COVERED_STATES], state: params.state },
+          {
+            application: app,
+            coveredStates: [...VBL_COVERED_STATES],
+            param: 'state',
+            state: params.state,
+          },
         );
       }
       bag.set('Bundesland', state.flatAscii);
@@ -811,10 +847,8 @@ export interface AnnouncementsSearchParams extends RisPagingParams {
   readonly sortDirection?: RisSortDirection;
   readonly title?: string;
   /**
-   * Document type. KmGer: `Geschaeftsordnung` | `Geschaeftsverteilung`; PruefGewO:
-   * `Befaehigungspruefungsordnung` | `Meisterpruefungsordnung`; Avn: one of the
-   * `Kundmachungen` / `VeroeffentlichungenAufGrundVEVO` / `SonstigeVeroeffentlichungen`
-   * search flags.
+   * Document type, one of {@link ANNOUNCEMENT_TYPES} for the collection, matched
+   * case-insensitively; `Undefined` (RIS's no-filter member) builds the unfiltered request.
    */
   readonly type?: string;
 }
@@ -845,11 +879,22 @@ const ANNOUNCEMENT_FASSUNG_PARAMS: Partial<Record<AnnouncementApp, string>> = {
   Spg: 'Fassung.FassungVom',
 };
 
-const AVN_TYPE_FLAGS = [
-  'Kundmachungen',
-  'SonstigeVeroeffentlichungen',
-  'VeroeffentlichungenAufGrundVEVO',
-] as const;
+/**
+ * `type` values per collection, spelled as RIS's case-sensitive schema enumerations (OGD
+ * v2.6 WSDL): KmGer `KmGerTypSucheinschraenkung` and PruefGewO `PruefGewOSearchTyp` go out
+ * as `Typ`; Avn's are the names of its `Typ.SucheIn…` search flags.
+ */
+const ANNOUNCEMENT_TYPES: Partial<Record<AnnouncementApp, readonly string[]>> = {
+  Avn: ['Kundmachungen', 'SonstigeVeroeffentlichungen', 'VeroeffentlichungenAufGrundVEVO'],
+  KmGer: ['Geschaeftsordnung', 'Geschaeftsverteilung'],
+  PruefGewO: [
+    'Befaehigungspruefungsordnung',
+    'Meisterpruefungsordnung',
+    'HoehereBerufsqualifikation',
+    'Fachdiplom',
+    'HoeheresFachdiplom',
+  ],
+};
 
 const NORM_APPS = new Set<AnnouncementApp>(['Avn', 'Erlaesse']);
 
@@ -932,14 +977,13 @@ export function buildAnnouncementsRequest(params: AnnouncementsSearchParams): Ri
     bag.set('Geschaeftszahl', params.caseNumber);
   }
   if (params.type !== undefined) {
-    if (app === 'Avn') {
-      if (!(AVN_TYPE_FLAGS as readonly string[]).includes(params.type)) {
-        invalidValue('type', params.type, AVN_TYPE_FLAGS);
-      }
-      bag.set(`Typ.SucheIn${params.type}`, 'true');
-    } else if (app === 'KmGer' || app === 'PruefGewO') {
-      bag.set('Typ', params.type);
-    } else unsupported('type', app);
+    const types = ANNOUNCEMENT_TYPES[app];
+    if (!types) unsupported('type', app);
+    const type = enumValue('type', params.type, types, `collection ${params.collection}`);
+    if (type !== undefined) {
+      if (app === 'Avn') bag.set(`Typ.SucheIn${type}`, 'true');
+      else bag.set('Typ', type);
+    }
   }
   if (params.department !== undefined) {
     if (app !== 'Erlaesse') unsupported('department', app);
@@ -956,6 +1000,7 @@ export function buildAnnouncementsRequest(params: AnnouncementsSearchParams): Ri
     if (scope === 'federal') {
       if (params.planState !== undefined) {
         throw validationError('planState applies only to regional (RSG) health-structure plans.', {
+          param: 'planState',
           planScope: scope,
           planState: params.planState,
         });

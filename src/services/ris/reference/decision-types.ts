@@ -36,7 +36,8 @@ export const RIS_DECISION_TYPES = [
   {
     code: 'all',
     germanName: 'Rechtssatz und Entscheidungstext',
-    upstream: 'both flags omitted (upstream searches everything)',
+    upstream:
+      'Dokumenttyp.SucheInRechtssaetzen=true and Dokumenttyp.SucheInEntscheidungstexten=true (with neither flag, RIS serves only headnotes on vfgh, vwgh, and justiz)',
     description:
       'Search headnotes and full texts alike — the default. Not available on gbk, upts, or normenliste.',
   },

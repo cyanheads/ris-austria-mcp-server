@@ -1,7 +1,8 @@
 /**
  * @fileoverview Offline RisService tests: the content-URL SSRF guard, per-application
  * content-URL construction from the path-segment map, the HTTP-500 error-envelope
- * translation (fetch stubbed — no network), and the init/accessor contract.
+ * translation (fetch stubbed — no network), a request-builder rejection failing before any
+ * request is sent, and the init/accessor contract.
  * Network-bound methods are otherwise exercised at build time against the live API.
  * @module tests/services/ris/ris-service
  */
@@ -187,6 +188,28 @@ describe('RisService.buildDocumentContentUrl', () => {
       );
     }
   });
+});
+
+describe('RisService — an announcement type outside the RIS enumeration (#59)', () => {
+  const service = new RisService('ris-austria-mcp-server/test');
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each(['court_rules', 'trade_exam_rules', 'veterinary'] as const)(
+    '%s: type Bogus fails locally, with no request sent to RIS',
+    async (collection) => {
+      const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })));
+      vi.stubGlobal('fetch', fetchMock);
+      const err = await service
+        .searchAnnouncements({ collection, type: 'Bogus' }, createMockContext())
+        .catch((e: unknown) => e);
+      expect((err as McpError).code).toBe(JsonRpcErrorCode.ValidationError);
+      expect((err as McpError).data).toMatchObject({ param: 'type', value: 'Bogus' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('RisService — HTTP 500 carrying a RIS error envelope', () => {

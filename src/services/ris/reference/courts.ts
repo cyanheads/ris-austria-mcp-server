@@ -98,7 +98,7 @@ export const RIS_COURTS = [
     window: 'Decisions 1990 and later, selected',
     successor: null,
     gzExample: '2026-0.092.118',
-    note: 'The issuing_body filter splits the Datenschutzbehörde (2014+) from the historical Datenschutzkommission (up to 2013).',
+    note: 'The issuing_body filter splits the Datenschutzbehörde (2014+), the historical Datenschutzkommission (up to 2013), and the Parlamentarisches Datenschutzkomitee (2025+).',
   },
   {
     code: 'normenliste',

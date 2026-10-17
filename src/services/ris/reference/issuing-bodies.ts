@@ -41,6 +41,12 @@ export const RIS_ISSUING_BODIES = [
     note: 'Data Protection Commission, decisions up to 2013 (schema enum)',
   },
   {
+    value: 'ParlamentarischesDatenschutzkomitee',
+    application: 'Dsk',
+    parameter: 'EntscheidendeBehoerde',
+    note: 'Parliamentary Data Protection Committee — data processing by Parliament, decisions 2025 and later (schema enum)',
+  },
+  {
     value: 'Personalvertretungsaufsichtsbehoerde',
     application: 'Pvak',
     parameter: 'EntscheidendeBehoerde',

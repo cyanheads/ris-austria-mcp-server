@@ -12,6 +12,7 @@ import {
   type IssuingBody,
   type Ministry,
   RIS_CHANGED_SINCE_INTERVALS,
+  RIS_COURTS,
   RIS_ISSUING_BODIES,
   RIS_MINISTRIES,
 } from '@/services/ris/reference/index.js';
@@ -174,11 +175,48 @@ describe('buildCaseLawRequest', () => {
     expect(params['Sortierung.SortedByColumn']).toBe('Entscheidungsdatum');
   });
 
-  it('emits no Dokumenttyp flags for decision_type all', () => {
-    const { params } = buildCaseLawRequest({ court: 'justiz', decisionType: 'all' });
+  it('sets only the full-text flag for decision_type full_text', () => {
+    const { params } = buildCaseLawRequest({ court: 'vwgh', decisionType: 'full_text' });
+    expect(params['Dokumenttyp.SucheInEntscheidungstexten']).toBe('true');
     expect(params['Dokumenttyp.SucheInRechtssaetzen']).toBeUndefined();
-    expect(params['Dokumenttyp.SucheInEntscheidungstexten']).toBeUndefined();
   });
+
+  // Without a flag, RIS serves Rechtssätze only on vfgh, vwgh, and justiz — the default 'all'
+  // has to ask for both document types. Sending both is a no-op on the courts that serve
+  // both unflagged (bvwg, lvwg, dsk, and the historical bodies, measured 2026-10-17).
+  const SPLIT_COURTS = RIS_COURTS.map((court) => court.code).filter(
+    (code) => !['gbk', 'normenliste', 'upts'].includes(code),
+  );
+
+  it.each(
+    SPLIT_COURTS.flatMap(
+      (court) =>
+        [
+          [court, 'all'],
+          [court, undefined],
+        ] as const,
+    ),
+  )('sends both Dokumenttyp flags on %s for decision_type %s (#62)', (court, decisionType) => {
+    const { params } = buildCaseLawRequest({
+      court,
+      ...(decisionType !== undefined && { decisionType }),
+    });
+    expect(params['Dokumenttyp.SucheInRechtssaetzen']).toBe('true');
+    expect(params['Dokumenttyp.SucheInEntscheidungstexten']).toBe('true');
+  });
+
+  it.each(['gbk', 'normenliste', 'upts'] as const)(
+    'sends no Dokumenttyp flag on %s, which has no headnote/text split',
+    (court) => {
+      for (const params of [
+        buildCaseLawRequest({ court }).params,
+        buildCaseLawRequest({ court, decisionType: 'all' }).params,
+      ]) {
+        expect(params['Dokumenttyp.SucheInRechtssaetzen']).toBeUndefined();
+        expect(params['Dokumenttyp.SucheInEntscheidungstexten']).toBeUndefined();
+      }
+    },
+  );
 
   it('maps court-conditional filters with their flat confirmed spellings', () => {
     expect(buildCaseLawRequest({ court: 'lvwg', state: 'tirol' }).params['Bundesland']).toBe(
@@ -378,6 +416,15 @@ describe('buildGazetteRequest', () => {
     expectValidationError(() => buildGazetteRequest({ application: 'LgblNO', number: '61/2026' }));
     expectValidationError(() => buildGazetteRequest({ application: 'Lgbl', issuer: 'BMF' }));
   });
+
+  it('tags each state-coverage rejection with the param it rejects', () => {
+    expect(
+      captureThrow(() => buildGazetteRequest({ application: 'Lgbl', state: 'wien' })).data,
+    ).toMatchObject({ application: 'Lgbl', param: 'state', state: 'wien' });
+    expect(
+      captureThrow(() => buildGazetteRequest({ application: 'Vbl', state: 'wien' })).data,
+    ).toMatchObject({ application: 'Vbl', param: 'state', state: 'wien' });
+  });
 });
 
 describe('buildDraftsRequest', () => {
@@ -508,6 +555,92 @@ describe('buildAnnouncementsRequest', () => {
     expectValidationError(() =>
       buildAnnouncementsRequest({ collection: 'veterinary', type: 'Bogus' }),
     );
+  });
+
+  describe('type against the RIS enumerations (#59)', () => {
+    /** Each collection's `type` values exactly as the OGD v2.6 WSDL spells them. */
+    const TYPES = [
+      ['court_rules', ['Geschaeftsordnung', 'Geschaeftsverteilung']],
+      [
+        'trade_exam_rules',
+        [
+          'Befaehigungspruefungsordnung',
+          'Meisterpruefungsordnung',
+          'HoehereBerufsqualifikation',
+          'Fachdiplom',
+          'HoeheresFachdiplom',
+        ],
+      ],
+      [
+        'veterinary',
+        ['Kundmachungen', 'SonstigeVeroeffentlichungen', 'VeroeffentlichungenAufGrundVEVO'],
+      ],
+    ] as const;
+
+    /** The RIS param one `type` value becomes: the Avn search flag, or KmGer/PruefGewO `Typ`. */
+    function typeParams(collection: string, value: string): Record<string, string> {
+      return collection === 'veterinary' ? { [`Typ.SucheIn${value}`]: 'true' } : { Typ: value };
+    }
+
+    const CASES = TYPES.flatMap(([collection, values]) =>
+      values.flatMap((value) => [
+        [collection, value, value] as const,
+        [collection, value.toLowerCase(), value] as const,
+        [collection, value.toUpperCase(), value] as const,
+        // Surrounding whitespace is not part of the value (#59).
+        [collection, ` ${value}`, value] as const,
+        [collection, `${value.toLowerCase()} \t`, value] as const,
+      ]),
+    );
+
+    it.each(CASES)('%s: type %s is sent as %s', (collection, sent, canonical) => {
+      const { params } = buildAnnouncementsRequest({ collection, type: sent });
+      const bare = buildAnnouncementsRequest({ collection }).params;
+      expect(params).toEqual({ ...bare, ...typeParams(collection, canonical) });
+    });
+
+    it.each(
+      TYPES.flatMap(([collection]) =>
+        ['Undefined', 'undefined', 'UNDEFINED', ' Undefined '].map(
+          (value) => [collection, value] as const,
+        ),
+      ),
+    )(
+      '%s: type %s is RIS’s no-filter member and builds the unfiltered request',
+      (collection, value) => {
+        const { params } = buildAnnouncementsRequest({ collection, query: 'Ordnung', type: value });
+        expect(params).toEqual(buildAnnouncementsRequest({ collection, query: 'Ordnung' }).params);
+      },
+    );
+
+    it.each(
+      TYPES.flatMap(([collection, values]) =>
+        ['Bogus', 'Geschaeftsordnungen', ' Bogus ', 'Kundmachung'].map(
+          (value) => [collection, value, values] as const,
+        ),
+      ),
+    )(
+      '%s: type %j is rejected naming type, the collection, and its values',
+      (collection, value, values) => {
+        const err = captureThrow(() => buildAnnouncementsRequest({ collection, type: value }));
+        expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+        expect(err.message).toBe(
+          `Invalid type value "${value}" for collection ${collection}. Valid values: ${values.join(', ')}.`,
+        );
+        expect(err.data).toEqual({ param: 'type', valid: [...values], value });
+      },
+    );
+  });
+
+  it('tags the plan_state scope conflict with the param it rejects', () => {
+    const err = captureThrow(() =>
+      buildAnnouncementsRequest({
+        collection: 'health_structure_plans',
+        planScope: 'federal',
+        planState: 'wien',
+      }),
+    );
+    expect(err.data).toMatchObject({ param: 'planState' });
   });
 
   it('rejects out-of-matrix params locally', () => {
