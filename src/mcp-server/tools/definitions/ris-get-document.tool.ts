@@ -10,7 +10,9 @@
  * metadata-only) — a text-format request against a non-text application degrades to a
  * `format_unavailable` notice on a success result, never an error. Markdown conversion drops
  * the `.sr-only` screen-reader twin RIS ships beside every abbreviated citation, keeping the
- * visible form; `html` and `xml` pass through untouched. Oversized markdown overflows to a
+ * visible form; renders each Absatz, Ziffer, and litera under its own statutory label, with no
+ * generated list ordinal; and escapes a `N. ` ordinal only where it would open a list item.
+ * `html` and `xml` pass through untouched. Oversized markdown overflows to a
  * retrievable outline rather than a silent truncation — its §/Artikel/Anlage sections, or
  * `Part n of N` byte windows where it carries no such headings; a follow-up call with
  * `sections:[…]` returns just the chosen entries, and a selector matching nothing gets the
@@ -141,28 +143,139 @@ function isCompanionStem(stem: string): boolean {
 }
 
 /**
- * Drop RIS's screen-reader twin, pass every other span through untouched. RIS renditions
- * carry each abbreviated legal reference twice — the visible citation in
- * `<span aria-hidden="true">` and its spelled-out expansion in `<span class="sr-only">` —
- * which a plain translation concatenates with no separator (`§ 0Paragraph 0`) and which
- * inflates every byte figure derived from the rendered text. The visible form is the twin
- * that survives: it is the canonical citation a caller copies back into `norm`, `title`, or
- * `ris_lookup_citation`.
+ * Drop RIS's screen-reader twin, space out an Absatz label, pass every other span through
+ * untouched. RIS renditions carry each abbreviated legal reference twice — the visible
+ * citation in `<span aria-hidden="true">` and its spelled-out expansion in
+ * `<span class="sr-only">` — which a plain translation concatenates with no separator
+ * (`§ 0Paragraph 0`) and which inflates every byte figure derived from the rendered text. The
+ * visible form is the twin that survives: it is the canonical citation a caller copies back
+ * into `norm`, `title`, or `ris_lookup_citation`. The Absatz label (`span.Absatzzahl`) sits
+ * flush against its text in the markup (`(1)Für`), so it gets the one space RIS's stylesheet
+ * supplies.
  */
-const dropScreenReaderTwin: TranslatorConfigFactory = ({ node }) =>
-  node.classList.contains('sr-only') ? { ignore: true } : {};
+const translateSpan: TranslatorConfigFactory = ({ node }) => {
+  if (node.classList.contains('sr-only')) return { ignore: true };
+  return node.classList.contains('Absatzzahl') ? { postfix: ' ' } : {};
+};
+
+/**
+ * The statutory label RIS prints on a list item: `span.Absatzzahl` on an Absatz (`(1a)`,
+ * `„(12)`), `div.SymE1`–`SymE7` on a Ziffer, litera, and each level below (`2.`, `b)`, `aa)`)
+ * — the seven levels RIS's stylesheet defines. Absätze render as
+ * `<ol class="wai-absatz-list">` and Ziffern/litterae as nested `<ol class="wai-list">`, but
+ * the label element is what decides — a list item without one keeps the converter's marker.
+ */
+const STATUTORY_LABEL =
+  'span.Absatzzahl, div.SymE1, div.SymE2, div.SymE3, div.SymE4, div.SymE5, div.SymE6, div.SymE7';
+
+/** A markdown hard line break: two spaces before the newline. */
+const HARD_BREAK = '  ';
+
+/**
+ * Lay out one statutory-labelled list item from its rendered content: blank lines dropped, a
+ * label on its own line (a block `div.SymE*`) joined to the text after it by one space, the
+ * item's own continuation lines — a further sentence, an `(Anm.: …)` note, a Schlussteil after
+ * a nested list — set at `indent`, and every line but the last ending in one hard break (two
+ * spaces), as the converter's own list items do: without the generated list around them, that
+ * break is what keeps a renderer from joining two lines into one paragraph. Lines indented to
+ * `childIndent` or deeper are a nested item's, already laid out at its own level, and pass
+ * through. The first line carries no indentation: the item's prefix supplies it.
+ */
+export function layoutLabelledItem(
+  content: string,
+  indent: string,
+  childIndent: string,
+  labelOnOwnLine: boolean,
+): string {
+  const lines: string[] = [];
+  let joinNext = labelOnOwnLine;
+  for (const raw of content.split('\n')) {
+    const line = raw.trimEnd();
+    const text = line.trimStart();
+    if (text === '') continue;
+    if (lines.length === 0) {
+      lines.push(text);
+      continue;
+    }
+    const nested = line.length - text.length >= childIndent.length;
+    if (joinNext && !nested) lines[0] = `${lines[0]} ${text}`;
+    else lines.push(nested ? line : indent + text);
+    joinNext = false;
+  }
+  return lines.join(`${HARD_BREAK}\n`);
+}
+
+/**
+ * Wrap the converter's `li` translator: an item carrying its own statutory label (see
+ * {@link STATUTORY_LABEL}) renders as indentation (two spaces per nesting level), the label as
+ * RIS prints it, one space, and the text — no generated ordinal, which would number an
+ * inserted `(1a)` as `2.` and every one-item amendment list as `1.`. The label must belong to
+ * the item itself, not to an item of a list nested inside it. An item with a sibling after it
+ * ends in a hard break, which keeps the next item's line apart from its own.
+ */
+function labelledListItem(defaultItem: TranslatorConfigFactory): TranslatorConfigFactory {
+  return (ctx) => {
+    const label = ctx.node.querySelector(STATUTORY_LABEL);
+    if (label === null || label.closest('li') !== ctx.node) return defaultItem(ctx);
+    const indent = ctx.options.indent.repeat(ctx.indentLevel ?? 0);
+    const separator = ctx.node.nextElementSibling === null ? '' : HARD_BREAK;
+    return {
+      surroundingNewlines: 1,
+      prefix: indent,
+      postprocess: ({ content }) =>
+        layoutLabelledItem(content, indent, indent + ctx.options.indent, label.tagName === 'DIV') +
+        separator,
+    };
+  };
+}
+
+/**
+ * Stand-in for the backslash the converter puts before a `N. ` ordinal. A lone UTF-16 high
+ * surrogate: decoded text never holds one (a decoder emits U+FFFD in its place, and the
+ * parser's entity decoder does the same for `&#xD800;`), and {@link toMarkdown} replaces any
+ * in its input the same way. Text does hold U+D800 as the high half of a U+10000–U+103FF pair
+ * (Linear B, Old Italic, Gothic), so both patterns below run in unicode mode, where the mark
+ * matches only as a lone surrogate — every such match is one the converter inserted.
+ */
+const ORDINAL_ESCAPE_MARK = '\uD800';
+
+/**
+ * An {@link ORDINAL_ESCAPE_MARK} after the digits of a `N. ` that opens a line: after
+ * indentation and any blockquote (`>`) or list markers (`*`, `+`, `-`, `N.`, `N)`), where
+ * CommonMark still reads it as a list item. Only `\n` opens a line and indentation is spaces
+ * and tabs, so a run of `\r` or U+2028 cannot make the scan quadratic; the marker run is
+ * bounded because JavaScriptCore drops an unbounded one to its slow regex interpreter.
+ */
+const LINE_START_ORDINAL_MARK = new RegExp(
+  String.raw`(^|\n)([ \t]*(?:>[ \t]*|[*+-][ \t]+|\d{1,9}[.)][ \t]+){0,8}\d+)${ORDINAL_ESCAPE_MARK}`,
+  'gu',
+);
+
+/** Every {@link ORDINAL_ESCAPE_MARK} the converter inserted. */
+const ANY_ORDINAL_MARK = new RegExp(ORDINAL_ESCAPE_MARK, 'gu');
 
 /**
  * HTML→markdown converter for the `markdown` format. Markdown only — `html` and `xml` return
- * the authentic rendition byte-for-byte and never route through here.
+ * the authentic rendition byte-for-byte and never route through here. Read it through
+ * {@link toMarkdown}, which settles the ordinal escapes.
  *
  * node-html-markdown keeps a separate translator collection per nesting context, and a
  * constructor-supplied custom translator only reaches the top-level one. RIS renders its
  * Inhaltsverzeichnis and Anmerkungen as tables, whose cells carry screen-reader twins of
- * their own, so the strip has to be registered on every collection to reach them.
+ * their own, so the span translator has to be registered on every collection to reach them.
+ * Only the top-level collection translates `li` at all, so the label layout goes there.
+ *
+ * The library's `lineStartEscape` escapes `N. ` anywhere in a text node — its ordinal
+ * alternative is unanchored — and a text node often opens mid-line, so a date or enumeration
+ * in running text would come out as `1\. Oktober`. The option keeps the library's other
+ * alternatives verbatim; the ordinal escape moves to `textReplace`, which runs right after it
+ * on the same escaped text and writes {@link ORDINAL_ESCAPE_MARK} where the backslash went.
  */
 const MARKDOWN_CONVERTER = ((): NodeHtmlMarkdown => {
-  const converter = new NodeHtmlMarkdown();
+  const converter = new NodeHtmlMarkdown({
+    lineStartEscape: [/^(\s*?)((?:\+\s)|(?:[=>-])|(?:#{1,6}\s))/gm, '$1\\$2'],
+    textReplace: [[/(\d)(\.\s)/g, `$1${ORDINAL_ESCAPE_MARK}$2`]],
+  });
   for (const collection of [
     converter.translators,
     converter.aTagTranslators,
@@ -171,10 +284,30 @@ const MARKDOWN_CONVERTER = ((): NodeHtmlMarkdown => {
     converter.tableRowTranslators,
     converter.tableCellTranslators,
   ]) {
-    collection.set('span', dropScreenReaderTwin);
+    collection.set('span', translateSpan);
   }
+  converter.translators.set(
+    'li',
+    labelledListItem(converter.translators.get('li') as TranslatorConfigFactory),
+  );
   return converter;
 })();
+
+/**
+ * Settle the ordinal escapes the converter marked: a `N. ` that opens an output line (after
+ * indentation, blockquote, and list markers) keeps its backslash, since there it would read as
+ * a list item; anywhere else the mark is dropped. Touches only a lone
+ * {@link ORDINAL_ESCAPE_MARK}, so a backslash or character the source text carried is never
+ * removed or added.
+ */
+export function resolveOrdinalEscapes(markdown: string): string {
+  return markdown.replace(LINE_START_ORDINAL_MARK, '$1$2\\').replace(ANY_ORDINAL_MARK, '');
+}
+
+/** Convert an RIS HTML rendition to the markdown the `markdown` format returns. */
+export function toMarkdown(html: string): string {
+  return resolveOrdinalEscapes(MARKDOWN_CONVERTER.translate(html.toWellFormed()));
+}
 
 /** Map an empty string from a form-based client to `undefined`. */
 function meaningful(value: string | undefined): string | undefined {
@@ -727,8 +860,7 @@ export async function renderDocument(
   const fetchFormat: RisContentFormat = format === 'xml' ? 'xml' : 'html';
   const url = service.buildDocumentContentUrl(app.code, documentNumber, fetchFormat, contentName);
   const fetched = await service.fetchDocumentContent(url, ctx);
-  const rendered =
-    format === 'markdown' ? MARKDOWN_CONVERTER.translate(fetched.text) : fetched.text;
+  const rendered = format === 'markdown' ? toMarkdown(fetched.text) : fetched.text;
   const encoded = new TextEncoder().encode(rendered);
   ctx.log.info('Document rendered', {
     application: app.code,
@@ -752,7 +884,7 @@ const ContentUrlsSchema = z
 export const risGetDocument = tool('ris_get_document', {
   title: 'Get RIS Document',
   description:
-    'Fetch one RIS document’s full text or its rendition URLs, with explicit binding status and the amtssigniert authentic PDF surfaced wherever it exists. Address the document exactly one of two ways: document_number plus application (both copied verbatim from a ris_search_* or ris_lookup_citation result), or a document_url from a result’s content_urls — or, for a draft’s companion documents (Erläuterungen, Textgegenüberstellung, WFA, cover letter, annexes), a ris_search_drafts record’s materials[].url, which is the only route to them. format: markdown (default — the HTML rendition converted to markdown), html (raw HTML rendition), xml (the RIS Nutzdaten XML), or urls_only (no fetch — every rendition URL, including the Authentisch PDF). Format availability varies by application and the tool degrades explicitly, never silently: consolidated law, gazettes, case law, drafts, and most sectoral collections carry full text; district and municipal promulgations and court rules (Bvb, GrA, KmGer) publish only the signed authentic PDF; party-transparency decisions and council minutes (Upts, Mrp) are PDF-only; the 1848–1940 imperial gazettes (BgblAlt) are metadata-only — for these a text-format request returns a format_unavailable notice with the usable URL, not an error. Every result carries binding_status; only authentic (amtssigniert) publications are legally binding. This tool returns content, not fresh metadata — the metadata rides the search/lookup step that produced the document number. When the markdown text overflows the 40,000-byte budget the tool returns an outline (kind: outline) instead of truncating: the document’s §/Artikel/Anlage sections where it carries at least two such headings, otherwise contiguous byte windows named Part 1 of N … Part N of N covering the whole text and listed in document order. Re-call with sections:[…] naming outline entries to retrieve just those; a name matching no entry returns the outline again with a notice rather than the whole document. Windows are cut at line breaks, not at sentence or § boundaries, so one can open mid-sentence — read them in order and pull the neighbour when a passage straddles a cut. Raw html and xml renditions are never sliced: at or under the 40,000-byte budget they return whole; over it the result is kind: link — no text, truncated: true, the full byte_size, and content_urls, whose html or xml entry fetches the whole artifact in one GET. Every HTML rendition opens with a 40–70 KB stylesheet, so html practically always returns kind: link — read with markdown, parse with xml, and fetch content_urls.html for the authentic markup. Markdown drops the screen-reader expansions RIS ships alongside each abbreviated citation, keeping the visible citation form; raw html/xml renditions are returned exactly as published.',
+    'Fetch one RIS document’s full text or its rendition URLs, with explicit binding status and the amtssigniert authentic PDF surfaced wherever it exists. Address the document exactly one of two ways: document_number plus application (both copied verbatim from a ris_search_* or ris_lookup_citation result), or a document_url from a result’s content_urls — or, for a draft’s companion documents (Erläuterungen, Textgegenüberstellung, WFA, cover letter, annexes), a ris_search_drafts record’s materials[].url, which is the only route to them. format: markdown (default — the HTML rendition converted to markdown), html (raw HTML rendition), xml (the RIS Nutzdaten XML), or urls_only (no fetch — every rendition URL, including the Authentisch PDF). Format availability varies by application and the tool degrades explicitly, never silently: consolidated law, gazettes, case law, drafts, and most sectoral collections carry full text; district and municipal promulgations and court rules (Bvb, GrA, KmGer) publish only the signed authentic PDF; party-transparency decisions and council minutes (Upts, Mrp) are PDF-only; the 1848–1940 imperial gazettes (BgblAlt) are metadata-only — for these a text-format request returns a format_unavailable notice with the usable URL, not an error. Every result carries binding_status; only authentic (amtssigniert) publications are legally binding. This tool returns content, not fresh metadata — the metadata rides the search/lookup step that produced the document number. When the markdown text overflows the 40,000-byte budget the tool returns an outline (kind: outline) instead of truncating: the document’s §/Artikel/Anlage sections where it carries at least two such headings, otherwise contiguous byte windows named Part 1 of N … Part N of N covering the whole text and listed in document order. Re-call with sections:[…] naming outline entries to retrieve just those; a name matching no entry returns the outline again with a notice rather than the whole document. Windows are cut at line breaks, not at sentence or § boundaries, so one can open mid-sentence — read them in order and pull the neighbour when a passage straddles a cut. Raw html and xml renditions are never sliced: at or under the 40,000-byte budget they return whole; over it the result is kind: link — no text, truncated: true, the full byte_size, and content_urls, whose html or xml entry fetches the whole artifact in one GET. Every HTML rendition opens with a 40–70 KB stylesheet, so html practically always returns kind: link — read with markdown, parse with xml, and fetch content_urls.html for the authentic markup. Markdown drops the screen-reader expansions RIS ships alongside each abbreviated citation, keeping the visible citation form, and prints each Absatz, Ziffer, and litera under its own statutory label — (1a), 2., b) — with no generated list number in front; raw html/xml renditions are returned exactly as published.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     document_number: z

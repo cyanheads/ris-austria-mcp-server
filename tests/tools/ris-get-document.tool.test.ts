@@ -27,10 +27,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   addressableSections,
+  layoutLabelledItem,
   OUTLINE_BUDGET_BYTES,
   parseDocumentUrl,
+  resolveOrdinalEscapes,
   risGetDocument,
+  segmentDocument,
   selectDocumentSections,
+  toMarkdown,
   windowDocument,
 } from '@/mcp-server/tools/definitions/ris-get-document.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
@@ -112,6 +116,18 @@ const SR_ONLY_HTML = fixture('document-brkons-sr-only.html');
  * The arm where an unmatched `sections` selector used to return the whole document silently.
  */
 const ARTIKEL_SECTIONS_HTML = fixture('document-regv-artikel-sections.html');
+
+/**
+ * A real BrKons rendition excerpt (NOR40262455, DSG § 9): an Absatz list with an inserted
+ * (1a), a nested Ziffer list with gaps in its numbering, a litera list, and a Schlussteil.
+ */
+const ABSATZ_LISTS_HTML = fixture('document-brkons-absatz-lists.html');
+
+/**
+ * A real BgblAuth rendition (BGBLA_2026_I_82): ordinals in running text, behind a heading and
+ * a table-cell boundary, and amendment Absätze rendered as one-item lists.
+ */
+const ORDINALS_HTML = fixture('document-bgblauth-ordinals.html');
 
 /** Resolve the tool against canned rendition text. */
 async function callTool(html: string, input: Record<string, unknown>) {
@@ -769,6 +785,307 @@ describe('risGetDocument — screen-reader twins (markdown only)', () => {
   });
 });
 
+/** Indentation plus first token of every non-blank line — the label column of a list. */
+function lineHeads(text: string): string[] {
+  return text
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .map((line) => /^\s*\S+/u.exec(line)?.[0] ?? '');
+}
+
+/** A generated list ordinal standing in front of a statutory label (`1. (2)`, `3. 6.`, `2. b)`). */
+const ORDINAL_BEFORE_LABEL = /^\s*\d+\. („?\(\d+[a-z]*\)|„?\d+[a-z]*\.|„?[a-z]{1,2}\))/mu;
+
+describe('risGetDocument — statutory list labels in markdown (#52)', () => {
+  // RIS labels every Absatz (span.Absatzzahl) and Ziffer/litera (div.SymE1/2/3) itself; the
+  // generated list ordinal in front of it numbered (1a) as "2." and every one-item amendment
+  // list as "1.", so a caller quoting "Abs. 2" read a competing "3.".
+  it('renders each label once, then one space, then its text, indented by nesting level', async () => {
+    const { result } = await callTool(ABSATZ_LISTS_HTML, {});
+    const text = result.text as string;
+    const paragraph = text.slice(text.indexOf('### § 9.'));
+
+    expect(lineHeads(paragraph)).toEqual([
+      '###',
+      '(1)',
+      '  1.',
+      '  2.',
+      '  6.',
+      '    a)',
+      '    b)',
+      '    c)',
+      // Ziffer 6's Schlussteil, after its litera list, at Ziffer 6's indentation.
+      '  In',
+      '  7.',
+      '(1a)',
+      '(2)',
+    ]);
+    expect(paragraph).toContain('\n(1) Für die Verarbeitung personenbezogener Daten');
+    expect(paragraph).toContain('\n  6. Art. 16 (Recht auf Berichtigung)');
+    expect(paragraph).toContain(
+      '\n    a) in Bezug auf personenbezogene Daten, auf deren Grundlage',
+    );
+    expect(paragraph).toContain('\n  In allen anderen Fällen ist der Verantwortliche');
+    expect(paragraph).toContain('\n(1a) Für die nicht von Abs. 1 erfasste Verarbeitung');
+    // No break of any kind between a label and its text.
+    for (const line of paragraph.split('\n').slice(1)) {
+      if (line.trim() !== '') expect(line).toMatch(/^\s*\S+ \S/u);
+    }
+  });
+
+  it('never puts a generated ordinal in front of a label', async () => {
+    for (const html of [ABSATZ_LISTS_HTML, ORDINALS_HTML, ARTIKEL_SECTIONS_HTML]) {
+      const { result } = await callTool(html, {});
+      expect(result.text).not.toMatch(ORDINAL_BEFORE_LABEL);
+    }
+  });
+
+  it('renders one-item amendment lists with their quoted label, Schlussteil at the item indent', async () => {
+    const { result } = await callTool(ORDINALS_HTML, {});
+    const text = result.text as string;
+    const amendments = text.slice(text.indexOf('\n1. Dem § 63'));
+
+    expect(lineHeads(amendments)).toEqual([
+      '1.',
+      '„(12)',
+      '2.',
+      '„(5)',
+      '  a)',
+      '  b)',
+      'ermäßigen,',
+      'Van',
+      'Stocker',
+    ]);
+    expect(amendments).toContain('\n„(12) § 64 Abs. 5 in der Fassung');
+    expect(amendments).toContain('\n„(5) Abweichend von Abs. 1 und 2');
+    expect(amendments).toContain('\n  a) 67 Euro je 1 000 l bei Benzin');
+  });
+
+  // The rule keys on the label element. A list item without one keeps the converter's
+  // marker, whatever its list's class; a labelled item drops it, whatever its list's class.
+  it('keeps the generated marker on an item with no statutory label', async () => {
+    const { result } = await callTool(
+      '<ol class="wai-list"><li><div class="content"><div>Erstens</div></div></li><li><div class="content"><div>Zweitens</div></div></li></ol><ul><li>Punkt</li></ul>',
+      {},
+    );
+    expect(result.text).toBe('1. Erstens\n2. Zweitens\n* Punkt');
+  });
+
+  it('drops the generated marker on a labelled item in a list of any class', async () => {
+    const { result } = await callTool(
+      '<ol><li><div class="SymE1"><div><span aria-hidden="true">4.</span><span class="sr-only">Ziffer 4</span></div></div><div class="content"><div>Vierte Ziffer</div></div></li></ol>',
+      {},
+    );
+    expect(result.text).toBe('4. Vierte Ziffer');
+  });
+
+  // RIS's stylesheet defines SymE1–SymE7, one per nesting level below the Absatz.
+  it('drops the generated marker below the third nesting level (div.SymE4–SymE7)', async () => {
+    for (const [level, label] of [
+      [4, 'aaa)'],
+      [7, 'aaaaaa)'],
+    ] as const) {
+      const { result } = await callTool(
+        `<ol class="wai-list"><li><div class="SymE${level}"><div>${label}</div></div><div class="content"><div>Tiefe Ebene</div></div></li></ol>`,
+        {},
+      );
+      expect(result.text).toBe(`${label} Tiefe Ebene`);
+    }
+  });
+
+  it('leaves an item labelled by any other SymE class to the converter', async () => {
+    const { result } = await callTool(
+      '<ol class="wai-list"><li><div class="SymE0"><div>x)</div></div><div class="content"><div>Text</div></div></li></ol>',
+      {},
+    );
+    expect(result.text).toMatch(/^1\. x\)/u);
+  });
+
+  // The generated list used to keep every line apart; without it, a renderer joins two lines
+  // that are not separated by a hard break (two trailing spaces) into one paragraph.
+  it('keeps every line of a labelled list on its own rendered line', async () => {
+    const { result } = await callTool(ABSATZ_LISTS_HTML, {});
+    const text = result.text as string;
+    const lines = text.slice(text.indexOf('\n(1) Für') + 1).split('\n');
+
+    expect(lines).toHaveLength(11);
+    for (const line of lines.slice(0, -1)) expect(line).toMatch(/\S {2}$/u);
+    expect(lines.at(-1)).toMatch(/anzuwenden\.$/u);
+    expect(text).toContain('besteht.  \n  In allen anderen Fällen');
+  });
+
+  it('keeps the hard breaks between the sentences, Ziffern, and notes of one Absatz', async () => {
+    const { result } = await callTool(
+      '<ol class="wai-absatz-list"><li><div class="content"><div class="Abs"><span class="Absatzzahl">(2)</span>Dazu gehören:</div><ol class="wai-list"><li><div class="SymE1"><div>1.</div></div><div class="content"><div>Satz eins.</div><div>Satz zwei.</div></div></li><li><div class="SymE1"><div>2.</div></div><div class="content"><div>Letzte Ziffer.</div></div></li></ol><p>(Anm.: Abs. 3 aufgehoben)</p></div></li><li><div class="content"><div class="Abs"><span class="Absatzzahl">(4)</span>Weiter.</div></div></li></ol>',
+      {},
+    );
+    expect(result.text).toBe(
+      '(2) Dazu gehören:  \n  1. Satz eins.  \n  Satz zwei.  \n  2. Letzte Ziffer.  \n(Anm.: Abs. 3 aufgehoben)  \n(4) Weiter.',
+    );
+  });
+
+  it('carries the labels and unescaped ordinals into content[] as well', async () => {
+    for (const [html, expected] of [
+      [ABSATZ_LISTS_HTML, '\n(1a) Für die nicht von Abs. 1'],
+      [ORDINALS_HTML, 'tritt mit 1. Oktober 2026 in Kraft'],
+    ] as const) {
+      fetchDocumentContent.mockResolvedValue({ text: html, byteSize: 1, url: 'https://x' });
+      const result = await runToolContract(risGetDocument, {
+        document_number: 'NOR40262455',
+        application: 'BrKons',
+      });
+      const text = (result.structuredContent as { text: string }).text;
+      expect(text).toContain(expected);
+      expect(contentText(result)).toContain(text);
+      expect(contentText(result)).not.toMatch(ORDINAL_BEFORE_LABEL);
+    }
+  });
+
+  it('keeps html and xml byte-identical for a list-bearing document', async () => {
+    for (const format of ['html', 'xml'] as const) {
+      const { result } = await callTool(ABSATZ_LISTS_HTML, { format });
+      expect(result.text).toBe(ABSATZ_LISTS_HTML);
+    }
+  });
+
+  it('still drops the screen-reader twins inside list items', async () => {
+    const { result } = await callTool(ABSATZ_LISTS_HTML, {});
+    const text = result.text as string;
+    expect(text).not.toContain('Absatz eins');
+    expect(text).not.toContain('Ziffer eins');
+    expect(text).toContain('MedienG, BGBl. Nr. 314/1981');
+    expect(text).not.toContain('Bundesgesetzblatt Nr. 314 aus 1981');
+  });
+
+  it('leaves the §/Artikel/Anlage section names of list-bearing documents unchanged', async () => {
+    const names = async (html: string) => {
+      const { result } = await callTool(html, {});
+      return segmentDocument(result.text as string).map((section) => section.name);
+    };
+    expect(await names(ABSATZ_LISTS_HTML)).toEqual(['Präambel', '§ 9']);
+    expect(await names(ORDINALS_HTML)).toEqual([]);
+    expect(await names(ARTIKEL_SECTIONS_HTML)).toEqual(['Artikel 1', 'Artikel 2', 'Artikel 3']);
+  });
+
+  // byte_size and every outline entry's size are measured on the text the caller receives.
+  it('sizes byte_size and outline entries from the rendered labels', async () => {
+    const block = ABSATZ_LISTS_HTML.slice(
+      ABSATZ_LISTS_HTML.indexOf('<ol class="wai-absatz-list">'),
+      ABSATZ_LISTS_HTML.lastIndexOf('</ol>') + '</ol>'.length,
+    );
+    const html = Array.from({ length: 12 }, (_, i) => `<h2>Artikel ${i + 1}</h2>${block}`).join('');
+
+    const { result: outline } = await callTool(html, {});
+    expect(outline.kind).toBe('outline');
+    const entry = outline.sections?.find((section) => section.name === 'Artikel 3');
+    const { result: picked } = await callTool(html, { sections: ['Artikel 3'] });
+    const text = picked.text as string;
+
+    expect(text).toContain('\n(1a) Für die nicht von Abs. 1');
+    expect(text).not.toMatch(ORDINAL_BEFORE_LABEL);
+    expect(entry?.bytes).toBe(new TextEncoder().encode(text).length);
+    expect(picked.byte_size).toBe(new TextEncoder().encode(text).length);
+  });
+});
+
+describe('risGetDocument — ordinal escapes in markdown (#60)', () => {
+  // node-html-markdown escapes every "N. " in a text node, not just one that starts a line, so
+  // quoted dates and enumerations carried a stray backslash: "mit 1\. Oktober 2026".
+  it('leaves no backslash in an ordinal that does not start a line', async () => {
+    const { result } = await callTool(ORDINALS_HTML, {});
+    const text = result.text as string;
+
+    expect(text).toContain('Ausgegeben am 30. September 2026');
+    expect(text).toContain(
+      'tritt mit 1. Oktober 2026 in Kraft und mit Ablauf des 30. November 2026 außer Kraft',
+    );
+    expect(text).toContain('vor dem 1. Dezember 2026 entsteht');
+    // A text node that opens behind a heading marker or a table-cell boundary.
+    expect(text).toContain('\n# 82. Bundesgesetz, mit dem das Bundesgesetz');
+    expect(text).toContain('| 82. Bundesgesetz:');
+    expect(text).toContain('S. 99. BR: AB 11867');
+    expect(text).not.toMatch(/\d\\\./u);
+  });
+
+  it('leaves no backslash in an ordinal behind an inline element', async () => {
+    const { result } = await callTool(
+      '<p>Kundgemacht in <span class="Fett">BGBl. I Nr. 82/2026</span> 1. Oktober 2026</p>',
+      {},
+    );
+    expect(result.text).toBe('Kundgemacht in BGBl. I Nr. 82/2026 1. Oktober 2026');
+  });
+
+  // A "N. " that does start an output line would read as a list item, so it keeps its escape.
+  it('keeps the escape on an ordinal that starts a line', async () => {
+    const { result } = await callTool(
+      '<p class="ErlText AlignLeft"><span>30. Juli 2026</span></p>',
+      {},
+    );
+    expect(result.text).toBe('30\\. Juli 2026');
+  });
+
+  it('escapes only the line-start ordinal in a document holding both', async () => {
+    const { result } = await callTool(
+      '<p class="ErlText AlignLeft">Am 8. Juli 2026 beschloss der Nationalrat</p><p class="ErlText AlignLeft"><span>30. Juli 2026</span></p>',
+      {},
+    );
+    expect(result.text).toBe('Am 8. Juli 2026 beschloss der Nationalrat\n\n30\\. Juli 2026');
+  });
+
+  it('leaves the other escapes and every backslash from the source as they were', async () => {
+    const { result } = await callTool(
+      '<p>- Strich</p><p>+ Plus</p><p># Raute</p><p>&gt; Zitat</p><p>= Gleich</p><p>Pfad 1\\. Teil</p><pre>1\\. roh</pre><p>Code <code>2\\. x</code> Ende</p>',
+      {},
+    );
+    expect(result.text).toBe(
+      '\\- Strich\n\n\\+ Plus\n\n\\# Raute\n\n\\> Zitat\n\n\\= Gleich\n\nPfad 1\\\\. Teil\n\n1\\. roh\n\nCode `2\\. x` Ende',
+    );
+  });
+
+  // Decoded text never holds a lone surrogate; one passed in anyway is read as decoding would
+  // read it (U+FFFD), never as an escape the converter inserted.
+  it('treats a lone surrogate in the input as text, not as an inserted escape', async () => {
+    const { result } = await callTool('<p>1\uD800. Oktober</p>', {});
+    expect(result.text).toBe('1�. Oktober');
+  });
+
+  // U+10000–U+103FF encode with U+D800 as their high surrogate; the escape mark is a lone one.
+  it('keeps a character whose high surrogate is U+D800 intact, mid-line and at a line start', async () => {
+    for (const [html, expected] of [
+      ['<p>1\u{10330} x and 2\u{10000}. y</p>', '1\u{10330} x and 2\u{10000}. y'],
+      ['<p>x<br>1\u{10000} b</p>', 'x  \n1\u{10000} b'],
+    ] as const) {
+      const { result } = await callTool(html, {});
+      expect(result.text).toBe(expected);
+      expect((result.text as string).isWellFormed()).toBe(true);
+    }
+  });
+
+  // Behind a blockquote or list marker, CommonMark still reads `N. ` as a list item.
+  it('keeps the escape on an ordinal behind a blockquote or list marker', async () => {
+    for (const [html, expected] of [
+      ['<ul><li>1. foo</li></ul>', '* 1\\. foo'],
+      ['<ol><li>1. foo</li></ol>', '1. 1\\. foo'],
+      ['<blockquote><p>1. foo</p></blockquote>', '> 1\\. foo'],
+      [
+        '<ol class="wai-list"><li><div class="SymE1"><div>3.</div></div><div class="content"><div>1. Jänner 2027</div></div></li></ol>',
+        '3. 1\\. Jänner 2027',
+      ],
+    ] as const) {
+      const { result } = await callTool(html, {});
+      expect(result.text).toBe(expected);
+    }
+  });
+
+  it('leaves an ordinal behind a heading marker or a litera label unescaped', async () => {
+    const { result } = await callTool(
+      '<h2>1. Abschnitt</h2><ol class="wai-list"><li><div class="SymE2"><div>a)</div></div><div class="content"><div>1. Jänner 2027</div></div></li></ol>',
+      {},
+    );
+    expect(result.text).toBe('## 1. Abschnitt\n\na) 1. Jänner 2027');
+  });
+});
+
 describe('risGetDocument — format_unavailable degradation (notice, not error)', () => {
   it('surfaces authentic_pdf_url and a notice for an authentic_pdf_only application', async () => {
     const ctx = createMockContext({ errors: risGetDocument.errors });
@@ -1262,16 +1579,19 @@ describe('risGetDocument — raw html/xml output budget (#36)', () => {
 });
 
 // Every markdown arm — whole, selected, selector miss, selector ignored, section outline,
-// window outline — digested on both surfaces from the output this code produced before the
-// raw-format budget existed. Any byte that moves on the markdown path fails here.
+// window outline — digested on both surfaces. Any byte that moves on the markdown path fails
+// here. The sr-only and synthetic rows are the output this code produced before the
+// raw-format budget existed; the four RegV rows carry the statutory list labels (#52) and
+// mid-line ordinals without a backslash (#60) of that fixture's Absatz and Ziffer lists, and
+// the two that include Artikel 1 carry the hard breaks between its Absatz (72) list lines.
 describe('risGetDocument — markdown output unchanged by the raw-format budget (#36)', () => {
   const digest = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 16);
   const BASELINE: Record<string, [structured: string, content: string]> = {
     'whole, sr-only twins': ['99cba55643aa6270', '408d3da17dbaf608'],
-    'whole, Artikel sections under budget': ['e2c5759422fce68d', '9cb81ab3f00ab3c5'],
-    'selected section': ['ab9fd627b82fa6e6', 'f2e8af106b166315'],
-    'partial selector miss': ['4c1a17af847aa14d', 'cf271c9f09689c94'],
-    'total selector miss': ['b2b5fde7cd2724d4', 'e606c8765c9d625b'],
+    'whole, Artikel sections under budget': ['29a9d583780ac5a3', '626e07c6eac9a94a'],
+    'selected section': ['41c3909823098680', 'f83348e8afaa81e5'],
+    'partial selector miss': ['61c7d6f505cb8c67', '81c4974a049421c2'],
+    'total selector miss': ['0307654a50498359', 'b8c99c82abc50204'],
     'section outline': ['353a4fa79173ce10', 'c04c529f97cc110e'],
     'window outline': ['abc2c3d56e0a8260', 'c9a32de64890a501'],
     'selector ignored': ['78251c0ea7676a3f', '8ad18359c21c0908'],
@@ -1560,6 +1880,137 @@ describe('windowDocument', () => {
     const roster = addressableSections(text, 'markdown');
     expect(roster.map((entry) => entry.kind)).toEqual(['section', 'section']);
     expect(roster.map((entry) => entry.name)).toEqual(['Artikel 1', 'Artikel 2']);
+  });
+});
+
+describe('layoutLabelledItem', () => {
+  it('joins a label on its own line to its text and indents the item’s own lines', () => {
+    const content = '6.\n\nArt. 16 gilt.  \n\n    a) erstens\n    b) zweitens\nSchlussteil.  ';
+    expect(layoutLabelledItem(content, '  ', '    ', true)).toBe(
+      '6. Art. 16 gilt.  \n    a) erstens  \n    b) zweitens  \n  Schlussteil.',
+    );
+  });
+
+  it('keeps a label alone when a nested list follows it directly', () => {
+    expect(layoutLabelledItem('(1)\n\n  1. erstens', '', '  ', false)).toBe('(1)  \n  1. erstens');
+    expect(layoutLabelledItem('a)\n\n    aa) erstens', '  ', '    ', true)).toBe(
+      'a)  \n    aa) erstens',
+    );
+  });
+
+  it('ends every line but the last in exactly one hard break', () => {
+    expect(
+      layoutLabelledItem('1.\nSatz eins. \nSatz zwei.   \n\n\n(Anm.: x)', '', '  ', true),
+    ).toBe('1. Satz eins.  \nSatz zwei.  \n(Anm.: x)');
+  });
+});
+
+describe('resolveOrdinalEscapes', () => {
+  const MARK = '\uD800';
+
+  it('keeps the escape at a line start, drops it everywhere else', () => {
+    expect(
+      resolveOrdinalEscapes(`30${MARK}. Juli\nam 8${MARK}. Juli\n  1${MARK}. x\n| 82${MARK}. B |`),
+    ).toBe('30\\. Juli\nam 8. Juli\n  1\\. x\n| 82. B |');
+  });
+
+  it('leaves every backslash it did not mark', () => {
+    const text = '1\\. roh\nPfad 1\\\\. Teil\n`2\\. x`';
+    expect(resolveOrdinalEscapes(text)).toBe(text);
+  });
+
+  it('keeps the escape behind blockquote and list markers, where a list item still starts', () => {
+    expect(
+      resolveOrdinalEscapes(
+        `* 1${MARK}. a\n+ 2${MARK}. b\n- 3${MARK}. c\n> 4${MARK}. d\n> > 5${MARK}. e\n1. 6${MARK}. f\n1) 7${MARK}. g\n  * 8${MARK}. h`,
+      ),
+    ).toBe('* 1\\. a\n+ 2\\. b\n- 3\\. c\n> 4\\. d\n> > 5\\. e\n1. 6\\. f\n1) 7\\. g\n  * 8\\. h');
+  });
+
+  it('drops the escape behind a heading, a table pipe, a litera, or an Absatz label', () => {
+    expect(
+      resolveOrdinalEscapes(`## 1${MARK}. a\n| 2${MARK}. b |\na) 3${MARK}. c\n(1) 4${MARK}. d`),
+    ).toBe('## 1. a\n| 2. b |\na) 3. c\n(1) 4. d');
+  });
+
+  // U+10000–U+103FF encode with U+D800 as their high surrogate.
+  it('never touches the high surrogate of a character in U+10000–U+103FF', () => {
+    const text = `1\u{10000} a\n2\u{10330}. b\nc 3\u{103FF}`;
+    expect(resolveOrdinalEscapes(text)).toBe(text);
+    expect(resolveOrdinalEscapes(`1${MARK}. \u{10000}\nx 2${MARK}. \u{10330}`)).toBe(
+      `1\\. \u{10000}\nx 2. \u{10330}`,
+    );
+  });
+});
+
+// Both run over a whole rendition (to ~200 KB of markdown) or one list item's share of it.
+describe('markdown post-passes — time on adversarial input', () => {
+  const SIZES = [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 320_000];
+  /** Bound on one call at 320,000 characters; linear work there takes about a millisecond. */
+  const BOUND_MS = 50;
+
+  /** Thread-CPU milliseconds of one call, the fastest of three samples of ≥ 10 ms each. */
+  function cpuMs(run: () => void): number {
+    let best = Number.POSITIVE_INFINITY;
+    for (let sample = 0; sample < 3; sample++) {
+      const start = process.threadCpuUsage();
+      let runs = 0;
+      let ms = 0;
+      do {
+        run();
+        runs++;
+        const { user, system } = process.threadCpuUsage(start);
+        ms = (user + system) / 1_000;
+      } while (ms < 10);
+      best = Math.min(best, ms / runs);
+    }
+    return best;
+  }
+
+  /** Time `run` on each doubling size, bounding every size before the next, then the span. */
+  function expectLinear(make: (size: number) => string, run: (input: string) => unknown): void {
+    const times: number[] = [];
+    for (const size of SIZES) {
+      const input = make(size);
+      const ms = cpuMs(() => run(input));
+      expect(ms, `${size} characters`).toBeLessThan(BOUND_MS);
+      times.push(ms);
+    }
+    expect((times.at(-1) ?? 0) / (times[0] ?? 1)).toBeLessThan(256);
+  }
+
+  const MARK = '\uD800';
+  it.each<[string, (size: number) => string]>([
+    ['a long digit run with no mark', (size) => '1'.repeat(size)],
+    [
+      'a whitespace run, then digits, with no mark',
+      (size) => `${' '.repeat(size / 2)}${'1'.repeat(size / 2)}`,
+    ],
+    ['indented digits on every line, no mark', (size) => '\n  12'.repeat(size / 5)],
+    ['marks inside running text', (size) => `a 1${MARK}. `.repeat(size / 6)],
+    ['marks at every line start', (size) => `\n1${MARK}. x`.repeat(size / 6)],
+    // `\r`, U+2028, and U+2029 end a line for a multiline `^`, so a scan anchored that way
+    // re-reads the rest of the run from every position in it.
+    ['a carriage-return run', (size) => '\r'.repeat(size)],
+    ['a line-separator run', (size) => String.fromCharCode(0x2028).repeat(size)],
+    ['nested list markers on one line, no mark', (size) => `${'> 1. '.repeat(size / 5)}x`],
+  ])('resolveOrdinalEscapes stays linear on %s', (_shape, make) => {
+    expectLinear(make, resolveOrdinalEscapes);
+  });
+
+  // The converter's own escape pass runs over every text node of the rendition.
+  it('toMarkdown stays linear on a long digit run', () => {
+    expectLinear((size) => `<p>${'1'.repeat(size)}</p>`, toMarkdown);
+  });
+
+  it.each<[string, (size: number) => string]>([
+    ['one long line', (size) => 'x'.repeat(size)],
+    ['a whitespace run with no text', (size) => ' '.repeat(size)],
+    ['blank and whitespace-only lines', (size) => ' \n\n'.repeat(size / 3)],
+    ['short own lines', (size) => 'Text\n'.repeat(size / 5)],
+    ['nested item lines', (size) => '    a) x\n'.repeat(size / 9)],
+  ])('layoutLabelledItem stays linear on %s', (_shape, make) => {
+    expectLinear(make, (input) => layoutLabelledItem(`1.\n${input}`, '  ', '    ', true));
   });
 });
 

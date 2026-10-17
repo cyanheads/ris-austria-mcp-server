@@ -160,6 +160,41 @@ describe('risDocumentResource — resolves via the shared renderDocument helper'
     expect(result).not.toContain('Paragraph 0');
   });
 
+  // Same converter as the tool: statutory labels without a generated ordinal in front (#52),
+  // ordinals inside running text without a backslash (#60).
+  it('renders statutory list labels and mid-sentence ordinals as the tool does', async () => {
+    const read = async (name: string) => {
+      const html = readFileSync(new URL(`../fixtures/ris/${name}`, import.meta.url), 'utf8');
+      fetchDocumentContent.mockResolvedValue({
+        text: html,
+        byteSize: html.length,
+        url: 'https://x',
+      });
+      const ctx = createMockContext({
+        errors: risDocumentResource.errors,
+        uri: new URL('ris://document/BrKons/NOR40262455'),
+      });
+      const params = risDocumentResource.params!.parse({
+        application: 'BrKons',
+        documentNumber: 'NOR40262455',
+      });
+      return (await risDocumentResource.handler(params, ctx)) as string;
+    };
+
+    const lists = await read('document-brkons-absatz-lists.html');
+    expect(lists).toContain('\n(1) Für die Verarbeitung personenbezogener Daten');
+    expect(lists).toContain('\n  6. Art. 16 (Recht auf Berichtigung)');
+    expect(lists).toContain('\n    a) in Bezug auf personenbezogene Daten');
+    expect(lists).toContain('besteht.  \n  In allen anderen Fällen');
+    expect(lists).toContain('zu erheben.  \n(1a) Für die nicht von Abs. 1');
+    expect(lists).not.toMatch(/^\s*\d+\. („?\(\d+[a-z]*\)|„?\d+[a-z]*\.|„?[a-z]{1,2}\))/mu);
+
+    const ordinals = await read('document-bgblauth-ordinals.html');
+    expect(ordinals).toContain('\n„(12) § 64 Abs. 5');
+    expect(ordinals).toContain('tritt mit 1. Oktober 2026 in Kraft');
+    expect(ordinals).not.toMatch(/\d\\\./u);
+  });
+
   it('falls back to the unavailable-format notice text for an authentic_pdf_only application', async () => {
     const ctx = createMockContext({
       errors: risDocumentResource.errors,
