@@ -1,0 +1,145 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "100",
+        "#text": "70"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "LST40036626",
+                "Applikation": "LrKons",
+                "Organ": "LReg Steiermark",
+                "ImportTimestamp": "2026-10-15T10:33:34"
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2026-10-15",
+                "Geaendert": "2026-10-15",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/lgbl/ST/2026/85/ANL1/LST40036626"
+              },
+              "Landesrecht": {
+                "Kurztitel": "Geschäftsordnung der Steiermärkischen Landesregierung – GeOLR",
+                "Bundesland": "Steiermark",
+                "LrKons": {
+                  "Kundmachungsorgan": "LGBl. Nr. 85/2026 zuletzt geändert durch LGBl. Nr. 93/2026 ",
+                  "Typ": "VO",
+                  "Dokumenttyp": "Paragraph",
+                  "ArtikelParagraphAnlage": "Anl. 1",
+                  "Anlagennummer": "1",
+                  "StammnormPublikationsorgan": "LGBl. Nr.",
+                  "StammnormBgblnummer": "85/2026",
+                  "NovellenPublikationsorgan": "LGBl. Nr.",
+                  "NovellenBgblnummer": "93/2026",
+                  "NovellenBeziehung": "zuletzt geändert durch",
+                  "Inkrafttretensdatum": "2027-01-01",
+                  "Abkuerzung": "GeOLR",
+                  "Indizes": {
+                    "item": "0002 Landesregierung"
+                  },
+                  "Aenderung": "",
+                  "Gesetzesnummer": "20001950",
+                  "GesamteRechtsvorschriftUrl": "https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=LrStmk&Gesetzesnummer=20001950",
+                  "Eli": "https://ris.bka.gv.at/eli/lgbl/ST/2026/85/ANL1/LST40036626"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LST40036626/LST40036626.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LST40036626/LST40036626.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LST40036626/LST40036626.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LST40036626/LST40036626.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "LOO40027136",
+                "Applikation": "LrKons",
+                "Organ": "LReg Oberösterreich",
+                "ImportTimestamp": "2026-10-16T09:19:40"
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2026-10-16",
+                "Geaendert": "2026-10-16",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/lgbl/OB/2026/76/P1/LOO40027136"
+              },
+              "Landesrecht": {
+                "Kurztitel": "Oö. Archiv-Übergabeform-Verordnung 2026",
+                "Bundesland": "Oberösterreich",
+                "LrKons": {
+                  "Kundmachungsorgan": "LGBl.Nr. 76/2026",
+                  "Typ": "V",
+                  "Dokumenttyp": "Paragraph",
+                  "ArtikelParagraphAnlage": "§ 1",
+                  "Paragraphnummer": "1",
+                  "StammnormPublikationsorgan": "LGBl.Nr.",
+                  "StammnormBgblnummer": "76/2026",
+                  "Inkrafttretensdatum": "2026-10-16",
+                  "Indizes": {
+                    "item": "28 Statistik und Datenschutz"
+                  },
+                  "Aenderung": "",
+                  "Gesetzesnummer": "20001395",
+                  "GesamteRechtsvorschriftUrl": "https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=LrOO&Gesetzesnummer=20001395",
+                  "Eli": "https://ris.bka.gv.at/eli/lgbl/OB/2026/76/P1/LOO40027136"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LOO40027136/LOO40027136.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LOO40027136/LOO40027136.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LOO40027136/LOO40027136.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LOO40027136/LOO40027136.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

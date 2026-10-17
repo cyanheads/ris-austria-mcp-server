@@ -19,11 +19,14 @@ import {
 import { createMockContext, getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { risSearchCaseLaw } from '@/mcp-server/tools/definitions/ris-search-case-law.tool.js';
+import {
+  type CaseLawRecord,
+  risSearchCaseLaw,
+} from '@/mcp-server/tools/definitions/ris-search-case-law.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import { buildCaseLawRequest, type CaseLawSearchParams } from '@/services/ris/request-builder.js';
 
-import { contractError, expectArgumentRejection } from './_wire.js';
+import { contentText, contractError, expectArgumentRejection, type WireError } from './_wire.js';
 
 const { searchCaseLaw } = vi.hoisted(() => ({ searchCaseLaw: vi.fn() }));
 
@@ -144,6 +147,112 @@ describe('risSearchCaseLaw — local guards (no service call)', () => {
     expect(err.message).toContain('justiz_subject_areas');
     expect(searchCaseLaw).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [
+      { court: 'vfgh', decision_kind: 'NotARealKind' } as const,
+      'Set decision_kind to one of: Beschluss, Erkenntnis, Vergleich, KeineAngabe — or omit decision_kind.',
+    ],
+    [
+      { court: 'justiz', subject_area: 'NotARealArea' } as const,
+      'Change or drop subject_area, as the message describes.',
+    ],
+  ])(
+    'recovers from a local value rejection by naming the field, never the page: %j',
+    async (input, hint) => {
+      const result = await runToolContract(risSearchCaseLaw, input);
+      const err = (result.structuredContent as { error: WireError }).error;
+      expect(err.data).toMatchObject({ reason: 'invalid_query' });
+      expect(err.data?.recovery).toEqual({ hint });
+      expect(contentText(result)).toContain(hint);
+      expect(contentText(result)).not.toMatch(/page/iu);
+    },
+  );
+});
+
+describe('risSearchCaseLaw — issuing_body against the dsk/pvak enumerations (#61)', () => {
+  /** Each court's EntscheidendeBehoerde enumeration (OGD v2.6 WSDL), in reference-table order. */
+  const BODIES = {
+    dsk: ['Datenschutzbehoerde', 'Datenschutzkommission', 'ParlamentarischesDatenschutzkomitee'],
+    pvak: ['Personalvertretungsaufsichtsbehoerde', 'PersonalvertretungsAufsichtskommission'],
+  } as const;
+
+  beforeEach(() => {
+    searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
+  });
+
+  it.each(
+    (['dsk', 'pvak'] as const).flatMap((court) =>
+      BODIES[court].flatMap((value) =>
+        // Surrounding whitespace is not part of the value.
+        [value, value.toLowerCase(), value.toUpperCase(), ` ${value}`, `${value} \t`].map(
+          (sent) => [court, sent, value] as const,
+        ),
+      ),
+    ),
+  )('%s: issuing_body %s is sent as %s', async (court, sent, canonical) => {
+    const result = await runToolContract(risSearchCaseLaw, { court, issuing_body: sent });
+    expect(result.isError).not.toBe(true);
+    expect(searchCaseLaw.mock.calls[0]![0]).toMatchObject({ issuingBody: canonical });
+  });
+
+  it.each(
+    (['dsk', 'pvak'] as const).flatMap((court) =>
+      ['Undefined', 'undefined', ' Undefined '].map((value) => [court, value] as const),
+    ),
+  )(
+    '%s: issuing_body %s is RIS’s no-filter member and is sent as no filter',
+    async (court, value) => {
+      const result = await runToolContract(risSearchCaseLaw, { court, issuing_body: value });
+      expect(result.isError).not.toBe(true);
+      expect(searchCaseLaw.mock.calls[0]![0]).not.toHaveProperty('issuingBody');
+    },
+  );
+
+  it.each(
+    (['dsk', 'pvak'] as const).flatMap((court) =>
+      ['Bogus', 'Datenschutzbehörde', 'Datenschutz'].map((value) => [court, value] as const),
+    ),
+  )(
+    '%s: issuing_body %s is rejected before any RIS call, naming the field to correct',
+    async (court, value) => {
+      const result = await runToolContract(risSearchCaseLaw, { court, issuing_body: value });
+      const err = (result.structuredContent as { error: WireError }).error;
+      const values = BODIES[court];
+      expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+      expect(err.data).toMatchObject({ reason: 'invalid_query' });
+      expect(err.message).toBe(
+        `issuing_body '${value}' is not a valid EntscheidendeBehoerde for court '${court}'. Valid values: ${values.join(' | ')}.`,
+      );
+      const hint = `Set issuing_body to one of: ${values.join(', ')} — or omit issuing_body.`;
+      expect(err.data?.recovery).toEqual({ hint });
+      expect(contentText(result)).toContain(hint);
+      expect(contentText(result)).not.toMatch(/page/iu);
+      expect(searchCaseLaw).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['dok', 'Bogus'],
+    ['verg', 'undefined'],
+  ] as const)('%s keeps forwarding issuing_body %s as free text', async (court, value) => {
+    const result = await runToolContract(risSearchCaseLaw, { court, issuing_body: value });
+    expect(result.isError).not.toBe(true);
+    expect(searchCaseLaw.mock.calls[0]![0]).toMatchObject({ issuingBody: value });
+  });
+
+  it('lists the issuing_body values per court in its description', () => {
+    const description = risSearchCaseLaw.input.shape.issuing_body.description ?? '';
+    for (const value of [...BODIES.dsk, ...BODIES.pvak]) expect(description).toContain(value);
+  });
+});
+
+describe('risSearchCaseLaw — description routes a known cite to ris_lookup_citation', () => {
+  it('names the ECLI among the cites ris_lookup_citation resolves directly', () => {
+    expect(risSearchCaseLaw.description).toContain(
+      'For a known Geschäftszahl, ECLI, or VfSlg/VwSlg cite, ris_lookup_citation resolves it directly.',
+    );
+  });
 });
 
 describe('risSearchCaseLaw — error mapping', () => {
@@ -209,8 +318,9 @@ describe('risSearchCaseLaw — error mapping', () => {
     expect(err.message).not.toContain('sortBy');
     expect(err.message).not.toContain('Normenliste');
     expect(err.message).not.toContain('silently ignored upstream');
-    expect(err.data?.recovery).toMatchObject({
-      hint: expect.stringContaining('correct the parameter named in the message'),
+    // A local rejection is never a page past the end: its recovery names the field (#59).
+    expect(err.data?.recovery).toEqual({
+      hint: 'Change or drop sort_by, as the message describes.',
     });
   });
 
@@ -408,6 +518,49 @@ describe('risSearchCaseLaw — record mapping and format() parity', () => {
     for (const gz of record.case_numbers) expect(text).toContain(gz);
   });
 
+  it('asks RIS for both document types by default, through the real service (#62)', async () => {
+    // RIS serves Rechtssätze only on vfgh, vwgh, and justiz unless a Dokumenttyp flag is set,
+    // so the default decision_type: all has to reach the wire as both flags.
+    const actual = await vi.importActual<typeof import('@/services/ris/ris-service.js')>(
+      '@/services/ris/ris-service.js',
+    );
+    const realService = new actual.RisService('ris-austria-mcp-server/test');
+    const fetchMock = vi.fn((_url: unknown) =>
+      Promise.resolve(new Response(JSON.stringify(fixture('search-zero-hits.json')))),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    searchCaseLaw.mockImplementation((params, ctx) => realService.searchCaseLaw(params, ctx));
+
+    const result = await runToolContract(risSearchCaseLaw, {
+      court: 'vfgh',
+      decided_from: '2026-09-01',
+      decided_to: '2026-09-30',
+    });
+    vi.unstubAllGlobals();
+
+    expect(result.isError).not.toBe(true);
+    const url = new URL(String(fetchMock.mock.calls[0]![0]));
+    expect(url.searchParams.get('Applikation')).toBe('Vfgh');
+    expect(url.searchParams.get('Dokumenttyp.SucheInRechtssaetzen')).toBe('true');
+    expect(url.searchParams.get('Dokumenttyp.SucheInEntscheidungstexten')).toBe('true');
+  });
+
+  it('returns a joined Justiz headnote as one case number per element, on both surfaces (#53)', async () => {
+    searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-justiz-gz-joined.json')));
+    const result = await runToolContract(risSearchCaseLaw, {
+      court: 'justiz',
+      case_number: '6Ob236/23h',
+    });
+    expect(result.isError).not.toBe(true);
+    const [record] = (result.structuredContent as { results: CaseLawRecord[] }).results;
+    expect(record!.case_numbers).toHaveLength(52);
+    expect(record!.case_numbers[0]).toBe('1Ob948/52');
+    expect(record!.case_numbers).toEqual(expect.arrayContaining(['6Ob236/23h', '3Ob761/53']));
+    expect(contentText(result)).toContain(
+      '## 1Ob948/52, 2Ob398/53, 3Ob760/53, 3Ob761/53, 3Ob15/54,',
+    );
+  });
+
   it('renders every populated field for a multi-hit result', async () => {
     searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-vfgh.json')));
     const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
@@ -500,5 +653,22 @@ describe('risSearchCaseLaw — record mapping and format() parity', () => {
     const text = (risSearchCaseLaw.format!(result)[0] as { type: 'text'; text: string }).text;
     expect(text).toContain('**Guiding principle:**');
     expect(text).toContain(withPrinciple!.guiding_principle!);
+  });
+});
+
+// The fold itself is swept across every state parameter in _shared.test.ts; this pins that a
+// result's own state value works as the next call's state filter on the wire path.
+describe('risSearchCaseLaw — state names in state (#58)', () => {
+  it('accepts the German state name a result carries as the next call’s state', async () => {
+    searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-lvwg-tirol.json')));
+    const first = await runToolContract(risSearchCaseLaw, { court: 'lvwg', state: 'tirol' });
+    const { results } = first.structuredContent as { results: { state?: string }[] };
+    const carried = results[0]?.state;
+    expect(carried).toBe('Tirol');
+
+    searchCaseLaw.mockClear();
+    const second = await runToolContract(risSearchCaseLaw, { court: 'lvwg', state: carried });
+    expect(second.isError).not.toBe(true);
+    expect(searchCaseLaw.mock.calls[0]?.[0]).toMatchObject({ state: 'tirol' });
   });
 });

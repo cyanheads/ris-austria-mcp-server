@@ -8,6 +8,7 @@ import type { TypedFail } from '@cyanheads/mcp-ts-core';
 import { z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError, validationError } from '@cyanheads/mcp-ts-core/errors';
 
+import { foldStateName } from '@/services/ris/reference/index.js';
 import { UNRESOLVED_MINISTRY_REASON } from '@/services/ris/request-builder.js';
 
 /** Months with 30 days — the only non-February lengths a day of 31 can overshoot. */
@@ -78,6 +79,23 @@ export const pageSizeParam = z
   );
 
 /**
+ * A state-valued enum parameter that also accepts the state's German or English name in any
+ * capitalization ({@link foldStateName}), folded to the code before the enum validates it.
+ *
+ * Pass the enum with its `.default()` or `.optional()` already applied and chain `.describe()`
+ * on the result: the advertised JSON Schema is the inner enum's, so `enum`, `default`, and the
+ * absence from `required` stay as before — a `.default()` outside the preprocess is dropped from
+ * the schema, and a `.describe()` only inside it trips the `describe-on-fields` lint. The
+ * description keeps offering only the codes, since that is what the schema advertises.
+ */
+export function foldStateNames<T extends z.ZodDefault<z.ZodEnum> | z.ZodOptional<z.ZodEnum>>(
+  field: T,
+) {
+  const accepted = new Set(field.unwrap().options.map(String));
+  return z.preprocess((value) => foldStateName(value, accepted), field);
+}
+
+/**
  * The three reasons every search-family tool declares for a failure raised below the
  * handler — in the request builder or in `RisService`. Each tool still declares its own
  * full `errors[]` inline (the contract is part of its public surface); this union is only
@@ -107,17 +125,62 @@ const REASON_BY_CODE = new Map<JsonRpcErrorCode, SearchFailureReason>([
 ]);
 
 /**
+ * Input fields a tool routes to a request-builder param of another name, keyed by the builder
+ * param — e.g. `{ state: 'state_era' }` where a state-scope rejection is cured by the era.
+ * Every other builder param is its snake_case input field written in camelCase.
+ */
+export type BuilderParamFields = Readonly<Record<string, string>>;
+
+/**
+ * The `invalid_query` recovery for a parameter rejected locally, before any RIS request: it
+ * names the input field to correct and, when given, the values that field takes. A local
+ * rejection is never a page past the end, so it overrides the declared `invalid_query`
+ * recovery, which leads with paging because RIS answers an out-of-range page with an error
+ * indistinguishable from a bad value. Spread it into `ctx.fail`'s data.
+ */
+export function localRejectionRecovery(
+  field: string,
+  accepted: readonly unknown[] = [],
+): { recovery: { hint: string } } {
+  return {
+    recovery: {
+      hint:
+        accepted.length > 0
+          ? `Set ${field} to one of: ${accepted.join(', ')} — or omit ${field}.`
+          : `Change or drop ${field}, as the message describes.`,
+    },
+  };
+}
+
+/**
  * Map a request-builder or service failure onto the declared contract, so `reason` reaches
  * the wire and the framework fills the entry's `recovery` from it — neither the builder's
- * `validationError` nor the service's framework errors carry a reason on their own. An
- * unmapped code is returned untouched for the framework to classify.
+ * `validationError` nor the service's framework errors carry a reason on their own. A builder
+ * rejection carries `data.param` (nothing RIS returns does), and gets a recovery naming that
+ * field in the caller's vocabulary instead. An unmapped code is returned untouched for the
+ * framework to classify.
  *
  * Returns the error for the caller to `throw`, keeping the throw visible at the call site.
  */
-export function failSearchError(error: unknown, ctx: SearchFailureContext): unknown {
+export function failSearchError(
+  error: unknown,
+  ctx: SearchFailureContext,
+  fields?: BuilderParamFields,
+): unknown {
   if (!(error instanceof McpError)) return error;
   const reason = REASON_BY_CODE.get(error.code);
-  return reason === undefined ? error : ctx.fail(reason, error.message);
+  if (reason === undefined) return error;
+  const param = error.data?.param;
+  if (reason !== 'invalid_query' || typeof param !== 'string') {
+    return ctx.fail(reason, error.message);
+  }
+  const field = fields?.[param] ?? param.replace(/[A-Z]/gu, (c) => `_${c.toLowerCase()}`);
+  const accepted = error.data?.valid ?? error.data?.alternatives;
+  return ctx.fail(
+    reason,
+    error.message,
+    localRejectionRecovery(field, Array.isArray(accepted) ? accepted : []),
+  );
 }
 
 /**
@@ -129,11 +192,12 @@ export function failSearchError(error: unknown, ctx: SearchFailureContext): unkn
 export function failMinistrySearchError(
   error: unknown,
   ctx: SearchFailureContext<SearchFailureReason | typeof UNRESOLVED_MINISTRY_REASON>,
+  fields?: BuilderParamFields,
 ): unknown {
   if (error instanceof McpError && error.data?.reason === UNRESOLVED_MINISTRY_REASON) {
     return ctx.fail(UNRESOLVED_MINISTRY_REASON, error.message);
   }
-  return failSearchError(error, ctx);
+  return failSearchError(error, ctx, fields);
 }
 
 /** A request-builder unsupported-parameter rejection, as the builder recorded it. */

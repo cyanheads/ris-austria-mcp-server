@@ -16,13 +16,14 @@ import {
   timeout,
   validationError,
 } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { toRecord as toCaseLawRecord } from '@/mcp-server/tools/definitions/ris-search-case-law.tool.js';
 import { risTrackChanges } from '@/mcp-server/tools/definitions/ris-track-changes.tool.js';
 import { parseHistoryResponse } from '@/services/ris/normalizer.js';
 
-import { contractError } from './_wire.js';
+import { contentText, contractError } from './_wire.js';
 
 const { trackChanges } = vi.hoisted(() => ({ trackChanges: vi.fn() }));
 
@@ -308,5 +309,185 @@ describe('risTrackChanges — format() parity', () => {
   it('renders the empty-page fallback when results is empty', () => {
     const blocks = risTrackChanges.format!({ results: [] });
     expect((blocks[0] as { type: 'text'; text: string }).text).toBe('_No changes on this page._');
+  });
+});
+
+describe('risTrackChanges — row identity: section label, law id, case numbers (#56)', () => {
+  /** Run one call over the wire; return the parsed records by id and the text block per id. */
+  async function callWire(fixtureName: string, input: Record<string, unknown>) {
+    trackChanges.mockResolvedValue(parseHistoryResponse(fixture(fixtureName)));
+    const result = await runToolContract(risTrackChanges, input as never);
+    expect(result.isError).not.toBe(true);
+    const { results } = risTrackChanges.output.parse(result.structuredContent);
+    const text = contentText(result);
+    const blockFor = (documentNumber: string) =>
+      text.split('\n\n').find((block) => block.includes(`**Document:** ${documentNumber}`)) ?? '';
+    return { blockFor, byId: new Map(results.map((r) => [r.document_number, r])) };
+  }
+
+  it('keeps deletion rows and other applications’ rows unchanged', async () => {
+    const deletions = await callWire('history-with-deleted.json', {
+      application: 'BrKons',
+      include_deleted: true,
+    });
+    expect(Object.keys(deletions.byId.get('NOR30003318')!).sort()).toEqual([
+      'binding_status',
+      'content_urls',
+      'deleted',
+      'deleted_at',
+      'document_number',
+      'organ',
+    ]);
+    // Gr rows carry a Geschaeftszahl, but only court-decision rows gain case_numbers.
+    const gr = await callWire('history-gr.json', { application: 'Gr' });
+    expect(Object.keys(gr.byId.get('GEMRE_KA_20914_902_2_2_2026')!).sort()).toEqual([
+      'binding_status',
+      'changed',
+      'content_urls',
+      'deleted',
+      'document_number',
+      'document_url',
+      'organ',
+      'short_title',
+      'title',
+    ]);
+  });
+
+  it('gives a BrKons row its section label and law id, and appends the label to the heading', async () => {
+    const { blockFor, byId } = await callWire('history-brkons.json', {
+      application: 'BrKons',
+      changed_from: '2026-10-16',
+      changed_to: '2026-10-17',
+    });
+    expect(byId.get('NOR40264172')).toMatchObject({
+      law_id: '20012655',
+      section_label: '§ 16',
+      short_title: 'DORA-Vollzugsgesetz',
+    });
+    expect(blockFor('NOR40264172')).toContain('## DORA-Vollzugsgesetz § 16\n');
+    expect(blockFor('NOR40264172')).toContain('**Law ID:** 20012655');
+    // RIS's heading-document label is relayed verbatim; that row's multi-line long title moves
+    // out of the heading onto its own line.
+    const headingDocument = byId.get('NOR40264174')!;
+    expect(headingDocument.section_label).toBe('§ 0');
+    expect(blockFor('NOR40264174')).toContain('## DORA-Vollzugsgesetz § 0\n');
+    expect(blockFor('NOR40264174')).toContain(`**Title:** ${headingDocument.title}`);
+    expect(byId.get('NOR40264172')).not.toHaveProperty('case_numbers');
+  });
+
+  it('gives an LrKons row its section label and law id, Anlage labels included', async () => {
+    const { blockFor, byId } = await callWire('history-lrkons.json', { application: 'LrKons' });
+    expect(byId.get('LST40036626')).toMatchObject({ law_id: '20001950', section_label: 'Anl. 1' });
+    expect(blockFor('LST40036626')).toContain(
+      '## Geschäftsordnung der Steiermärkischen Landesregierung – GeOLR Anl. 1\n',
+    );
+    expect(byId.get('LOO40027136')).toMatchObject({ law_id: '20001395', section_label: '§ 1' });
+  });
+
+  it('gives a court-decision row its case numbers and decision date, and heads it by case number', async () => {
+    const { blockFor, byId } = await callWire('history-vwgh.json', {
+      application: 'Vwgh',
+      changed_from: '2026-10-10',
+      changed_to: '2026-10-17',
+    });
+    const row = byId.get('JWR_1983160049_19850221X07')!;
+    expect(row).toMatchObject({ case_numbers: ['83/16/0049'], decision_date: '1985-02-21' });
+    expect(row.title).toBeUndefined();
+    expect(row).not.toHaveProperty('section_label');
+    const block = blockFor('JWR_1983160049_19850221X07');
+    expect(block).toContain('## 83/16/0049\n');
+    expect(block).toContain('**Decided:** 1985-02-21');
+    expect(block).toContain('**Document:** JWR_1983160049_19850221X07');
+  });
+
+  it('carries the same identity on Justiz rows', async () => {
+    const { blockFor, byId } = await callWire('history-justiz.json', { application: 'Justiz' });
+    const id = 'JJT_20260820_OLG0639_0100BS00052_26M0000_000';
+    expect(byId.get(id)).toMatchObject({
+      case_numbers: ['10Bs52/26m'],
+      decision_date: '2026-08-20',
+    });
+    expect(blockFor(id)).toContain('## 10Bs52/26m\n');
+  });
+
+  /*
+   * A Justiz headnote names every decision it covers in one `;`-joined item, companions in
+   * parentheses. The change feed and ris_search_case_law read it through the same normalizer,
+   * so a row's case_numbers are the elements the case-law record carries — one splitting rule.
+   */
+  it('splits a joined Justiz headnote row exactly as ris_search_case_law does', async () => {
+    const page = fixture('history-justiz.json') as {
+      OgdSearchResult: { OgdDocumentResults: { OgdDocumentReference: unknown[] } };
+    };
+    const [text] = page.OgdSearchResult.OgdDocumentResults.OgdDocumentReference as {
+      Data: { Metadaten: { Judikatur: Record<string, unknown>; Technisch: { ID: string } } };
+    }[];
+    const headnote = structuredClone(text!);
+    headnote.Data.Metadaten.Technisch.ID = 'JJR_19521210_OGH0002_0010OB00948_5200000_001';
+    headnote.Data.Metadaten.Judikatur.Dokumenttyp = 'Rechtssatz';
+    headnote.Data.Metadaten.Judikatur.Geschaeftszahl = {
+      item: '1Ob948/52; 3Ob760/53 (3Ob761/53); 6Ob236/23h',
+    };
+    page.OgdSearchResult.OgdDocumentResults.OgdDocumentReference = [headnote];
+    const changes = parseHistoryResponse(page);
+    trackChanges.mockResolvedValue(changes);
+
+    const result = await runToolContract(risTrackChanges, { application: 'Justiz' });
+    const { results } = risTrackChanges.output.parse(result.structuredContent);
+    const expected = ['1Ob948/52', '3Ob760/53', '3Ob761/53', '6Ob236/23h'];
+    expect(results[0]?.case_numbers).toEqual(expected);
+
+    const [change] = changes.changes;
+    if (change?.kind !== 'document') throw new Error('expected a changed document');
+    expect(toCaseLawRecord(change.hit, 'Justiz').case_numbers).toEqual(expected);
+
+    // The heading names the leading decision and counts the rest; the text still lists all.
+    const block = contentText(result);
+    expect(block).toContain('## 1Ob948/52 (+3 more)\n**Document:** ');
+    expect(block).toContain(`**Case numbers:** ${expected.join(', ')}`);
+  });
+
+  it('keeps a long headnote row’s heading to its leading decision', () => {
+    const caseNumbers = Array.from({ length: 52 }, (_, i) => `${i + 1}Ob${i + 1}/52`);
+    const text = (
+      risTrackChanges.format!({
+        results: [
+          {
+            binding_status: 'decision',
+            case_numbers: caseNumbers,
+            content_urls: {},
+            deleted: false,
+            document_number: 'JJR_X',
+          },
+        ],
+      })[0] as { type: 'text'; text: string }
+    ).text;
+    const [heading] = text.split('\n');
+    expect(heading).toBe('## 1Ob1/52 (+51 more)');
+    expect(text).toContain(`**Case numbers:** ${caseNumbers.join(', ')}`);
+  });
+
+  it('describes case_numbers in the case-law vocabulary — a headnote row lists every decision', () => {
+    const field = risTrackChanges.output.shape.results.element.shape.case_numbers;
+    expect(field.description).toContain('one per element in upstream order');
+    expect(field.description).toContain('a headnote row lists every decision it covers');
+  });
+
+  it('states case numbers and labels on their own line when the heading cannot carry them', () => {
+    const base = {
+      binding_status: 'decision',
+      content_urls: {},
+      deleted: false,
+    } as const;
+    const text = (
+      risTrackChanges.format!({
+        results: [
+          { ...base, document_number: 'A', title: 'Normenliste DSG', case_numbers: ['1 Ob 2/26x'] },
+          { ...base, document_number: 'B', section_label: '§ 3', law_id: '20000001' },
+        ],
+      })[0] as { type: 'text'; text: string }
+    ).text;
+    expect(text).toContain('## Normenliste DSG\n**Document:** A\n**Case numbers:** 1 Ob 2/26x');
+    expect(text).toContain('## B\n**Document:** B\n**Section:** § 3\n**Law ID:** 20000001');
   });
 });

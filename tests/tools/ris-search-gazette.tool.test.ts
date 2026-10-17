@@ -25,7 +25,7 @@ import { risSearchGazette } from '@/mcp-server/tools/definitions/ris-search-gaze
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import { buildGazetteRequest, type GazetteSearchParams } from '@/services/ris/request-builder.js';
 
-import { contractError, expectArgumentRejection } from './_wire.js';
+import { contentText, contractError, expectArgumentRejection, type WireError } from './_wire.js';
 
 const { searchGazette } = vi.hoisted(() => ({ searchGazette: vi.fn() }));
 
@@ -630,35 +630,41 @@ describe('risSearchGazette — error mapping', () => {
       'sort_by on the current federal tier',
       { scope: 'federal', sort_by: 'number' },
       "sort_by: 'number' is not available for the 2004-and-later federal gazette. Use sort_by: 'published', or drop sort_by.",
+      'Set sort_by to one of: published — or omit sort_by.',
     ],
     [
       'type on district gazettes',
       { scope: 'district', type: 'laws' },
       "type is not available for scope 'district'. Drop type — it filters the federal gazette from 1945 on and state law gazettes.",
+      'Change or drop type, as the message describes.',
     ],
     [
       'number on the Niederösterreich legacy series',
       { scope: 'niederoesterreich', state_era: 'legacy', number: '61/2026' },
       "number is not available for the Niederösterreich systematic collection (scope 'niederoesterreich', state_era 'legacy'). Drop number, or set state_era: 'current' to search Niederösterreich's authentic Landesgesetzblatt by number.",
+      'Change or drop number, as the message describes.',
     ],
     [
       'part on the imperial tier a pre-1941 number routed to',
       { scope: 'federal', number: '189/1902', part: 'part1' },
       "part is not available for the 1848–1940 federal gazette, which number '189/1902' selected — federal gazette parts I/II/III exist only from 1997. Drop part.",
+      'Change or drop part, as the message describes.',
     ],
     [
       'issuer on the post-war tier a pre-2004 number routed to',
       { scope: 'federal', number: '171/1980', issuer: 'BMF' },
       "issuer is not available for the 1945–2003 federal gazette, which number '171/1980' selected — the issuing-body filter covers the 2004-and-later federal gazette and ordinance gazettes. Drop issuer.",
+      'Change or drop issuer, as the message describes.',
     ],
     [
       'issuer on the post-war tier a pre-2004 date range routed to',
       { scope: 'federal', published_from: '1980-01-01', published_to: '1980-12-31', issuer: 'BMF' },
       'issuer is not available for the 1945–2003 federal gazette, which published_from 1980-01-01 / published_to 1980-12-31 selected — the issuing-body filter covers the 2004-and-later federal gazette and ordinance gazettes. Drop issuer.',
+      'Change or drop issuer, as the message describes.',
     ],
   ])(
     'states a builder rejection of %s in the caller’s vocabulary',
-    async (_label, raw, message) => {
+    async (_label, raw, message, hint) => {
       searchGazette.mockImplementation(async (params: GazetteSearchParams) => {
         buildGazetteRequest(params);
         throw new Error('unreachable — the builder was expected to reject these params');
@@ -670,9 +676,8 @@ describe('risSearchGazette — error mapping', () => {
       // Nothing the caller could not have written itself survives into the message.
       expect(err.message).not.toMatch(/BgblAuth|BgblPdf|BgblAlt|LgblNO|Bvb|sortBy/u);
       expect(err.message).not.toContain('silently ignored upstream');
-      expect(err.data?.recovery).toMatchObject({
-        hint: expect.stringContaining('correct the parameter named in the message'),
-      });
+      // A local rejection is never a page past the end: its recovery names the field (#59).
+      expect(err.data?.recovery).toEqual({ hint });
     },
   );
 
@@ -698,11 +703,16 @@ describe('risSearchGazette — error mapping', () => {
       buildGazetteRequest(params);
       throw new Error('unreachable — the builder was expected to reject these params');
     });
-    const err = await contractError(risSearchGazette, { scope: 'wien', state_era: 'legacy' });
+    const result = await runToolContract(risSearchGazette, { scope: 'wien', state_era: 'legacy' });
+    const err = (result.structuredContent as { error: WireError }).error;
     expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
     expect(err.message).toContain('The historical Lgbl gazette has no Wien');
-    expect(err.data?.recovery).toBeDefined();
+    // The builder rejects its `state`; the caller cures it through state_era (#59).
+    const hint = 'Change or drop state_era, as the message describes.';
+    expect(err.data?.recovery).toEqual({ hint });
+    expect(contentText(result)).toContain(hint);
+    expect(contentText(result)).not.toMatch(/page/iu);
   });
 });
 
@@ -879,5 +889,162 @@ describe('risSearchGazette — record mapping, binding labels, and format() pari
     const result = await risSearchGazette.handler(input, ctx);
     expect(result.results[0]!.binding).toBe('historical_record');
     expect(getEnrichment(ctx).servedApplication).toBe('Lgbl');
+  });
+});
+
+// The fold itself is swept across every state parameter in _shared.test.ts; this pins that the
+// folded code is what routes the gazette and reaches the request on the wire path.
+describe('risSearchGazette — state names in scope (#58)', () => {
+  it.each([
+    ['Niederösterreich', 'niederoesterreich'],
+    ['CARINTHIA', 'kaernten'],
+  ])('searches the Landesgesetzblatt of the state named %j (%s)', async (scope, code) => {
+    searchGazette.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
+    const result = await runToolContract(risSearchGazette, { scope });
+    expect(result.isError).not.toBe(true);
+    expect(searchGazette.mock.calls[0]?.[0]).toMatchObject({
+      application: 'LgblAuth',
+      state: code,
+    });
+    expect(result.structuredContent).toMatchObject({ servedApplication: 'LgblAuth' });
+  });
+});
+
+/** Run one call over the wire; return the parsed records, keyed by id too, and each id's text block. */
+async function callWire(fixtureName: string, input: Record<string, unknown>) {
+  searchGazette.mockResolvedValue(parseSearchResponse(fixture(fixtureName)));
+  const result = await runToolContract(risSearchGazette, input as never);
+  expect(result.isError).not.toBe(true);
+  const { results } = risSearchGazette.output.parse(result.structuredContent);
+  const text = contentText(result);
+  const blockFor = (documentNumber: string) =>
+    text.split('\n\n').find((block) => block.includes(`**Document:** ${documentNumber}`)) ?? '';
+  const byId = new Map(results.map((record) => [record.document_number, record]));
+  return { blockFor, byId, results };
+}
+
+describe('risSearchGazette — CELEX references, Gliederungszahl, issue and start page (#55)', () => {
+  it('surfaces the BgblAuth CELEX list, and [] with no CELEX line when an entry has none', async () => {
+    const { blockFor, byId } = await callWire('search-bgblauth-celex.json', {
+      scope: 'federal',
+      number: '8/2026',
+      part: 'part1',
+    });
+    const seven = [
+      '32019L0633',
+      '32019L1161',
+      '32022L2041',
+      '32022L2381',
+      '32023L0970',
+      '32023L1791',
+      '32024L1760',
+    ];
+    expect(byId.get('BGBLA_2026_I_8')!.celex_references).toEqual(seven);
+    expect(blockFor('BGBLA_2026_I_8')).toContain(`**CELEX:** ${seven.join(', ')}`);
+    expect(byId.get('BGBLA_2026_I_81')!.celex_references).toEqual(['32024L1233']);
+    expect(byId.get('BGBLA_2026_I_88')!.celex_references).toEqual([]);
+    expect(blockFor('BGBLA_2026_I_88')).not.toContain('**CELEX:**');
+  });
+
+  it('splits the comma-joined BgblPdf CELEX string into separate entries', async () => {
+    const { blockFor, byId } = await callWire('search-bgblpdf-celex.json', {
+      scope: 'federal',
+      published_from: '2003-01-01',
+      published_to: '2003-12-31',
+    });
+    const nine = byId.get('2003_570_2')!.celex_references;
+    expect(nine).toHaveLength(9);
+    expect(nine.filter((entry) => entry.includes(','))).toEqual([]);
+    expect(blockFor('2003_570_2')).toContain(`**CELEX:** ${nine.join(', ')}`);
+    expect(byId.get('2003_130_1')!.celex_references).toEqual(['31999L0070', '32001L0019']);
+  });
+
+  it('gives an LgblNO entry its Gliederungszahl, issue, and CELEX list', async () => {
+    const { blockFor, byId } = await callWire('search-lgblno.json', {
+      scope: 'niederoesterreich',
+      state_era: 'legacy',
+    });
+    expect(byId.get('LRNI_2007006')).toMatchObject({
+      celex_references: [],
+      issue: '6',
+      systematic_number: '0001/1-62',
+    });
+    expect(byId.get('LRNI_2007006')!.gazette_number).toBeUndefined();
+    expect(blockFor('LRNI_2007006')).toContain('**Gliederungszahl:** 0001/1-62');
+    expect(blockFor('LRNI_2007006')).toContain('**Issue:** 6');
+    const lrni86 = byId.get('LRNI_2007086')!;
+    expect(lrni86.celex_references).toHaveLength(6);
+    expect(lrni86.celex_references).toContain('394L0010R(01)');
+    expect(blockFor('LRNI_2007086')).toContain(
+      '**CELEX:** 383L0189, 388L0182, 394L0010, 394L0010R(01), 398L0034, 398L0048',
+    );
+  });
+
+  it('gives a BgblAlt entry its issue and start page', async () => {
+    const { blockFor, byId } = await callWire('search-bgblalt.json', {
+      published_from: '1940-01-01',
+      published_to: '1940-12-31',
+    });
+    expect(byId.get('glo1940_0049_00357')).toMatchObject({
+      celex_references: [],
+      issue: '25',
+      start_page: '357',
+    });
+    expect(blockFor('glo1940_0049_00357')).toContain('**Issue:** 25');
+    expect(blockFor('glo1940_0049_00357')).toContain('**Start page:** 357');
+  });
+
+  it.each([
+    ['search-bvb.json', { scope: 'district' }],
+    ['search-gra.json', { scope: 'municipal' }],
+    ['search-vbl.json', { scope: 'tirol', series: 'ordinance_gazette' }],
+  ] as const)('%s records gain celex_references: [] and no other key', async (name, input) => {
+    const { results } = await callWire(name, input);
+    expect(results.length).toBeGreaterThan(0);
+    for (const record of results) {
+      expect(record.celex_references).toEqual([]);
+      expect(record).not.toHaveProperty('systematic_number');
+      expect(record).not.toHaveProperty('issue');
+      expect(record).not.toHaveProperty('start_page');
+    }
+  });
+});
+
+describe('risSearchGazette — each entry names the gazette that carried it (#65)', () => {
+  it('tells apart the 1945 StGBl. and BGBl. entries that share number "1/1945" (BgblPdf Fundstelle)', async () => {
+    const { blockFor, byId } = await callWire('search-bgblpdf-1-1945.json', { number: '1/1945' });
+    expect(searchGazette.mock.calls[0]?.[0]).toMatchObject({ application: 'BgblPdf' });
+    expect(byId.get('1945_1_0')).toMatchObject({
+      gazette_number: '1/1945',
+      promulgation: 'StGBl. Nr. 1/1945',
+    });
+    expect(byId.get('1945_0_0')).toMatchObject({
+      gazette_number: '1/1945',
+      promulgation: 'BGBl. Nr. 1/1945',
+    });
+    expect(blockFor('1945_1_0')).toContain('**Promulgation:** StGBl. Nr. 1/1945');
+    expect(blockFor('1945_0_0')).toContain('**Promulgation:** BGBl. Nr. 1/1945');
+  });
+
+  it('names the gazette of a 1848–1940 entry (BgblAlt Kundmachungsorgan)', async () => {
+    const { blockFor, byId } = await callWire('search-bgblalt-1-1920.json', { number: '1/1920' });
+    expect(byId.get('sgb1920_0001_00001')!.promulgation).toBe(
+      'Staatsgesetzblatt für die Republik Österreich',
+    );
+    expect(byId.get('bgb1920_0001_00001')!.promulgation).toBe(
+      'Bundesgesetzblatt für die Republik Österreich',
+    );
+    expect(blockFor('sgb1920_0001_00001')).toContain(
+      '**Promulgation:** Staatsgesetzblatt für die Republik Österreich',
+    );
+  });
+
+  it('adds no promulgation to an entry whose gazette records none', async () => {
+    const { blockFor, byId } = await callWire('search-bgblauth-celex.json', {
+      number: '8/2026',
+      part: 'part1',
+    });
+    expect(byId.get('BGBLA_2026_I_8')).not.toHaveProperty('promulgation');
+    expect(blockFor('BGBLA_2026_I_8')).not.toContain('**Promulgation:**');
   });
 });

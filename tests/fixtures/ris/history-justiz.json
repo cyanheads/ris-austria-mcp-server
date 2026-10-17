@@ -1,0 +1,76 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "100",
+        "#text": "513"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JJT_20260820_OLG0639_0100BS00052_26M0000_000",
+                "Applikation": "Justiz",
+                "Organ": "OLG Graz",
+                "ImportTimestamp": "2026-10-17T18:53:24"
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2026-10-17",
+                "Geaendert": "2026-10-17",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Justiz&Dokumentnummer=JJT_20260820_OLG0639_0100BS00052_26M0000_000"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Text",
+                "Geschaeftszahl": {
+                  "item": "10Bs52/26m"
+                },
+                "Entscheidungsdatum": "2026-08-20",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:OLG0639:2026:0100BS00052.26M.0820.000",
+                "Justiz": {
+                  "Rechtsgebiete": {
+                    "item": "Strafrecht"
+                  },
+                  "Entscheidungsart": "Ordentliche Erledigung (Sachentscheidung)",
+                  "Gericht": "OLG Graz",
+                  "Textnummern": {
+                    "item": "EG3163"
+                  }
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/JustizEntscheidung.wxe?Abfrage=Justiz&Dokumentnummer=JJT_20260820_OLG0639_0100BS00052_26M0000_000&IncludeSelf=True",
+                "RechtssaetzeUrl": "https://ogd.ris.bka.gv.at/JustizEntscheidung.wxe?Abfrage=Justiz&Dokumentnummer=JJT_20260820_OLG0639_0100BS00052_26M0000_000&IncludeSelf=False"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Justiz/JJT_20260820_OLG0639_0100BS00052_26M0000_000/JJT_20260820_OLG0639_0100BS00052_26M0000_000.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Justiz/JJT_20260820_OLG0639_0100BS00052_26M0000_000/JJT_20260820_OLG0639_0100BS00052_26M0000_000.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Justiz/JJT_20260820_OLG0639_0100BS00052_26M0000_000/JJT_20260820_OLG0639_0100BS00052_26M0000_000.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Justiz/JJT_20260820_OLG0639_0100BS00052_26M0000_000/JJT_20260820_OLG0639_0100BS00052_26M0000_000.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -27,7 +27,7 @@ import {
   buildAnnouncementsRequest,
 } from '@/services/ris/request-builder.js';
 
-import { contractError, expectArgumentRejection } from './_wire.js';
+import { contentText, contractError, expectArgumentRejection, type WireError } from './_wire.js';
 
 const { searchAnnouncements } = vi.hoisted(() => ({ searchAnnouncements: vi.fn() }));
 
@@ -255,20 +255,23 @@ describe('risSearchAnnouncements — error mapping', () => {
       'a collection that sorts by number only',
       { collection: 'health_structure_plans', sort_by: 'published' },
       "sort_by: 'published' is not available for collection 'health_structure_plans'. Use sort_by: 'number', or drop sort_by.",
+      'Set sort_by to one of: number — or omit sort_by.',
     ],
     [
       'a collection with no sortable column at all',
       { collection: 'court_rules', sort_by: 'number' },
       "sort_by: 'number' is not available for collection 'court_rules'. Drop sort_by — this collection carries no sortable column.",
+      'Change or drop sort_by, as the message describes.',
     ],
     [
       'a decrees collection with no sortable column',
       { collection: 'ministerial_decrees', sort_by: 'published' },
       "sort_by: 'published' is not available for collection 'ministerial_decrees'. Drop sort_by — this collection carries no sortable column.",
+      'Change or drop sort_by, as the message describes.',
     ],
   ])(
     'states a builder sort_by rejection for %s in the caller’s vocabulary',
-    async (_label, raw, message) => {
+    async (_label, raw, message, hint) => {
       searchAnnouncements.mockImplementation(async (params: AnnouncementsSearchParams) => {
         buildAnnouncementsRequest(params);
         throw new Error('unreachable — the builder was expected to reject these params');
@@ -280,11 +283,80 @@ describe('risSearchAnnouncements — error mapping', () => {
       // Nothing the caller could not have written itself survives into the message.
       expect(err.message).not.toMatch(/Spg|KmGer|Erlaesse|sortBy/u);
       expect(err.message).not.toContain('silently ignored upstream');
-      expect(err.data?.recovery).toMatchObject({
-        hint: expect.stringContaining('correct the parameter named in the message'),
-      });
+      // A local rejection is never a page past the end: its recovery names the field (#59).
+      expect(err.data?.recovery).toEqual({ hint });
     },
   );
+
+  describe('type outside the collection’s RIS enumeration (#59)', () => {
+    const TYPES = {
+      court_rules: ['Geschaeftsordnung', 'Geschaeftsverteilung'],
+      trade_exam_rules: [
+        'Befaehigungspruefungsordnung',
+        'Meisterpruefungsordnung',
+        'HoehereBerufsqualifikation',
+        'Fachdiplom',
+        'HoeheresFachdiplom',
+      ],
+      veterinary: [
+        'Kundmachungen',
+        'SonstigeVeroeffentlichungen',
+        'VeroeffentlichungenAufGrundVEVO',
+      ],
+    } as const;
+    const COLLECTIONS = Object.keys(TYPES) as (keyof typeof TYPES)[];
+
+    beforeEach(() => {
+      searchAnnouncements.mockImplementation(async (params: AnnouncementsSearchParams) => {
+        buildAnnouncementsRequest(params);
+        return parseSearchResponse(fixture('search-zero-hits.json'));
+      });
+    });
+
+    it.each(COLLECTIONS.map((collection) => [collection, TYPES[collection]] as const))(
+      '%s: rejects Bogus naming type, the collection, and its values, with a field-naming recovery',
+      async (collection, values) => {
+        const result = await runToolContract(risSearchAnnouncements, { collection, type: 'Bogus' });
+        expect(result.isError).toBe(true);
+        const err = (result.structuredContent as { error: WireError }).error;
+        expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+        expect(err.data).toMatchObject({ reason: 'invalid_query' });
+        expect(err.message).toBe(
+          `Invalid type value "Bogus" for collection ${collection}. Valid values: ${values.join(', ')}.`,
+        );
+        const hint = `Set type to one of: ${values.join(', ')} — or omit type.`;
+        expect(err.data?.recovery).toEqual({ hint });
+        expect(contentText(result)).toContain(hint);
+        expect(contentText(result)).not.toMatch(/page/iu);
+      },
+    );
+
+    it.each(COLLECTIONS)('%s: type Undefined searches unfiltered', async (collection) => {
+      const result = await runToolContract(risSearchAnnouncements, {
+        collection,
+        type: 'Undefined',
+      });
+      expect(result.isError).not.toBe(true);
+    });
+
+    it('accepts a type padded with whitespace, sending the canonical value', async () => {
+      const result = await runToolContract(risSearchAnnouncements, {
+        collection: 'trade_exam_rules',
+        type: ' Fachdiplom',
+      });
+      expect(result.isError).not.toBe(true);
+      expect(buildAnnouncementsRequest(searchAnnouncements.mock.calls[0]![0]).params).toMatchObject(
+        {
+          Typ: 'Fachdiplom',
+        },
+      );
+    });
+
+    it('lists every collection’s type values in the type description', () => {
+      const description = risSearchAnnouncements.input.shape.type.description ?? '';
+      for (const value of Object.values(TYPES).flat()) expect(description).toContain(value);
+    });
+  });
 
   it('leads the recovery hint with the page for an out-of-range page (#30)', async () => {
     // RIS answers a page past the end with a German message that names no element, so
@@ -463,5 +535,229 @@ describe('risSearchAnnouncements — record mapping and format() parity', () => 
     expect(text).toContain('ÖGK');
     expect(text).toContain(record.authentic_pdf_url!);
     expect(text).toContain(`**RIS view:** ${record.document_url}`);
+  });
+});
+
+// The fold itself is swept across every state parameter in _shared.test.ts; this pins that the
+// folded code is the plan state the request carries on the wire path.
+describe('risSearchAnnouncements — state names in plan_state (#58)', () => {
+  it.each([
+    ['Kärnten', 'kaernten'],
+    ['Styria', 'steiermark'],
+  ])(
+    'searches the regional health-structure plan of the state named %j (%s)',
+    async (planState, code) => {
+      searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
+      const result = await runToolContract(risSearchAnnouncements, {
+        collection: 'health_structure_plans',
+        plan_state: planState,
+      });
+      expect(result.isError).not.toBe(true);
+      expect(searchAnnouncements.mock.calls[0]?.[0]).toMatchObject({ planState: code });
+    },
+  );
+});
+
+describe('risSearchAnnouncements — collection metadata on records (#54)', () => {
+  /** Run one call over the wire; return the parsed records by id and the text block per id. */
+  async function callWire(fixtureName: string, input: Record<string, unknown>) {
+    searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture(fixtureName)));
+    const result = await runToolContract(risSearchAnnouncements, input as never);
+    expect(result.isError).not.toBe(true);
+    const { results } = risSearchAnnouncements.output.parse(result.structuredContent);
+    const text = contentText(result);
+    const blockFor = (documentNumber: string) =>
+      text.split('\n\n').find((block) => block.includes(`**Document:** ${documentNumber} `)) ?? '';
+    return { blockFor, byId: new Map(results.map((r) => [r.document_number, r])), results };
+  }
+
+  it('adds no collection-specific keys to a social_insurance record', async () => {
+    const { results } = await callWire('search-avsv.json', { collection: 'social_insurance' });
+    expect(Object.keys(results[0]!).sort()).toEqual([
+      'authentic_pdf_url',
+      'binding',
+      'collection',
+      'content_urls',
+      'document_number',
+      'document_url',
+      'issuers',
+      'norms_cited',
+      'number',
+      'published',
+      'summary',
+      'title',
+    ]);
+  });
+
+  it('gives a decree its case number, type, approval date, department, gazette citation, and norms', async () => {
+    const { blockFor, byId } = await callWire('search-erlaesse.json', {
+      collection: 'ministerial_decrees',
+      issuer: 'BMJ',
+    });
+    const id = 'ERL_BMJ_20260924_2026_0_710_595';
+    expect(byId.get(id)).toMatchObject({
+      approved: '2026-09-24',
+      case_numbers: ['2026-0.710.595'],
+      department: 'I 7',
+      in_force_from: '2026-10-01',
+      norms_cited: ['TP1 GGG, TP2 GGG, TP3 GGG, TP12 GGG'],
+      promulgation: 'eJABl Nr. 13/2026',
+      type: 'Erlass',
+    });
+    expect(byId.get(id)).not.toHaveProperty('published');
+    const block = blockFor(id);
+    for (const line of [
+      '**Approved:** 2026-09-24',
+      '**Case numbers:** 2026-0.710.595',
+      '**Type:** Erlass',
+      '**Department:** I 7',
+      '**In force from:** 2026-10-01',
+      '**Promulgation:** eJABl Nr. 13/2026',
+      '**Norms:** TP1 GGG, TP2 GGG, TP3 GGG, TP12 GGG',
+    ]) {
+      expect(block).toContain(line);
+    }
+  });
+
+  it('keeps a multi-item decree Normen as separate entries and leaves absent fields absent', async () => {
+    const { blockFor, byId } = await callWire('search-erlaesse.json', {
+      collection: 'ministerial_decrees',
+    });
+    const rundschreiben = byId.get('ERL_BKA_20250110_2025_0_015_115')!;
+    expect(rundschreiben.norms_cited).toEqual(['B-VG Art 22a', 'IFG']);
+    for (const key of ['department', 'promulgation', 'in_force_from', 'in_force_until', 'note']) {
+      expect(rundschreiben).not.toHaveProperty(key);
+    }
+    expect(blockFor('ERL_BKA_20250110_2025_0_015_115')).not.toContain('**Department:**');
+    expect(byId.get('ERL_BKA_20250813_2025_0_615_241')!.in_force_until).toBe('2026-08-31');
+    expect(blockFor('ERL_BKA_20250813_2025_0_615_241')).toContain('**In force until:** 2026-08-31');
+    expect(byId.get('ERL_BKA_20260914_2026_0_722_315')!.keywords).toBe(
+      'Bildungskarenz, Bildungsteilzeit, Weiterbildungsbeihilfe',
+    );
+    expect(blockFor('ERL_BKA_20260914_2026_0_722_315')).toContain(
+      '**Keywords:** Bildungskarenz, Bildungsteilzeit, Weiterbildungsbeihilfe',
+    );
+    expect(byId.get('ERL_BMJ_20250930_2025_0_575_430')!.note).toBe(
+      'Außerkrafttreten des Erlasses vom 20. April 2018',
+    );
+    expect(blockFor('ERL_BMJ_20250930_2025_0_575_430')).toContain(
+      '**Note:** Außerkrafttreten des Erlasses vom 20. April 2018',
+    );
+  });
+
+  it('gives a veterinary notice trimmed case numbers, its repeal date, note, and keywords', async () => {
+    const { blockFor, byId } = await callWire('search-avn.json', { collection: 'veterinary' });
+    expect(byId.get('AVN_20261009_AVN_2026_23')!.case_numbers).toEqual(['2026-0.847.254']);
+    expect(byId.get('AVN_20260805_AVN_2026_17')!.case_numbers).toEqual(['2026-0.613.534']);
+    const tbc = byId.get('AVN_20260807_AVN_2026_19')!;
+    expect(tbc).toMatchObject({
+      in_force_from: '2026-08-08',
+      in_force_until: '2026-10-06',
+      keywords: 'TBC',
+      type: 'Kundmachung',
+    });
+    expect(tbc.note).toContain('AVN Nr. 2025/30');
+    expect(blockFor('AVN_20260807_AVN_2026_19')).toContain(`**Note:** ${tbc.note}`);
+    expect(byId.get('AVN_20260805_AVN_2026_17')).not.toHaveProperty('in_force_until');
+  });
+
+  it('gives a court rule its court, case number, type, and in-force window', async () => {
+    const { blockFor, byId } = await callWire('search-kmger.json', { collection: 'court_rules' });
+    const id = 'KMGER_LVWGTI_20260522_LVwG_102_120_2026';
+    expect(byId.get(id)).toMatchObject({
+      case_numbers: ['LVwG-102/120-2026'],
+      court_name: 'LVwG Tirol',
+      in_force_from: '2026-05-22',
+      in_force_until: '2026-08-09',
+      type: 'Geschaeftsverteilung',
+    });
+    expect(blockFor(id)).toContain('**Court:** LVwG Tirol');
+  });
+
+  it('gives a trade-exam rule its repeal date', async () => {
+    const { blockFor, byId } = await callWire('search-pruefgewo.json', {
+      collection: 'trade_exam_rules',
+    });
+    const id = 'PRUEF_20210412_2021_0_253_954_BMDW_Gewerberecht_';
+    expect(byId.get(id)).toMatchObject({
+      case_numbers: ['2021-0.253.954 (BMDW/Gewerberecht)'],
+      in_force_until: '2022-11-15',
+      type: 'Meisterpruefungsordnung',
+    });
+    expect(blockFor(id)).toContain('**In force until:** 2022-11-15');
+  });
+
+  it('gives a health-structure plan its state, type, and repeal date, and no case_numbers', async () => {
+    const { blockFor, byId } = await callWire('search-spg.json', {
+      collection: 'health_structure_plans',
+      plan_state: 'salzburg',
+    });
+    const id = 'SPG_SA_RSG_V_20250507_3_2025';
+    expect(byId.get(id)).toMatchObject({
+      in_force_until: '2026-02-16',
+      keywords: 'RSG-Planungsmatrix',
+      plan_state: 'Salzburg',
+      type: 'RsgVerordnung',
+    });
+    expect(byId.get(id)).not.toHaveProperty('case_numbers');
+    expect(blockFor(id)).toContain('**Plan state:** Salzburg');
+  });
+
+  it('gives council minutes their session number and legislature, and no case_numbers', async () => {
+    const { blockFor, byId } = await callWire('search-mrp.json', {
+      collection: 'council_minutes',
+    });
+    expect(byId.get('MRP_20260701_59')).toMatchObject({
+      legislature: 'XXVIII',
+      session_number: '59',
+    });
+    expect(byId.get('MRP_20260630_58b')!.session_number).toBe('58b');
+    expect(byId.get('MRP_20260701_59')).not.toHaveProperty('case_numbers');
+    expect(byId.get('MRP_20260701_59')).not.toHaveProperty('in_force_from');
+    const block = blockFor('MRP_20260701_59');
+    expect(block).toContain('**Session number:** 59');
+    expect(block).toContain('**Legislature:** XXVIII');
+  });
+
+  it('round-trips a decree norms_cited entry into the norm filter unchanged', async () => {
+    searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
+    const result = await runToolContract(risSearchAnnouncements, {
+      collection: 'ministerial_decrees',
+      norm: 'TP1 GGG, TP2 GGG, TP3 GGG, TP12 GGG',
+    });
+    expect(result.isError).not.toBe(true);
+    expect(searchAnnouncements.mock.calls[0]![0]).toMatchObject({
+      norm: 'TP1 GGG, TP2 GGG, TP3 GGG, TP12 GGG',
+    });
+  });
+});
+
+describe('risSearchAnnouncements — multi-line notes keep their label line (#54)', () => {
+  it('renders a note RIS breaks with <br/> on its one **Note:** line, the record keeping the break', async () => {
+    const page = parseSearchResponse(fixture('search-erlaesse.json'));
+    const id = 'ERL_BMJ_20250930_2025_0_575_430';
+    const hits = page.hits.map((hit) =>
+      hit.documentNumber === id
+        ? {
+            ...hit,
+            metadata: {
+              ...hit.metadata,
+              note: '1. Außerkrafttreten des Erlasses vom 20. April 2018\n2. Ersetzt durch den Erlass vom 30. September 2025',
+            },
+          }
+        : hit,
+    );
+    searchAnnouncements.mockResolvedValue({ ...page, hits });
+    const result = await runToolContract(risSearchAnnouncements, {
+      collection: 'ministerial_decrees',
+    });
+    expect(result.isError).not.toBe(true);
+    const { results } = risSearchAnnouncements.output.parse(result.structuredContent);
+    expect(results.find((r) => r.document_number === id)!.note).toBe(
+      '1. Außerkrafttreten des Erlasses vom 20. April 2018\n2. Ersetzt durch den Erlass vom 30. September 2025',
+    );
+    expect(contentText(result)).toContain(
+      '**Note:** 1. Außerkrafttreten des Erlasses vom 20. April 2018 / 2. Ersetzt durch den Erlass vom 30. September 2025\n',
+    );
   });
 });

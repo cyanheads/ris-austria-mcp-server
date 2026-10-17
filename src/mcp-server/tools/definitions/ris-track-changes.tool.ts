@@ -56,6 +56,28 @@ const ChangeRecordSchema = z
       ),
     title: z.string().optional().describe('Document title, HTML markup stripped, where present.'),
     short_title: z.string().optional().describe('Short title (Kurztitel), where assigned.'),
+    section_label: z
+      .string()
+      .optional()
+      .describe(
+        'Section, article, or annex the changed document holds (ArtikelParagraphAnlage, e.g. "§ 16", "Anl. 1"; "§ 0" is the law’s heading document) — consolidated-law rows (BrKons, LrKons) only.',
+      ),
+    law_id: z
+      .string()
+      .optional()
+      .describe(
+        'RIS law number (Gesetzesnummer) the section belongs to — consolidated-law rows only. Group a feed by law with it, or pass it to ris_search_legislation law_id for the law’s versions.',
+      ),
+    case_numbers: z
+      .array(z.string().describe('One case number (Geschäftszahl).'))
+      .optional()
+      .describe(
+        'Case numbers (Geschäftszahl), one per element in upstream order — a headnote row lists every decision it covers, the leading decision first. Court-decision rows only, which carry no title.',
+      ),
+    decision_date: z
+      .string()
+      .optional()
+      .describe('Decision date (Entscheidungsdatum) — court-decision rows only.'),
     organ: z
       .string()
       .optional()
@@ -113,9 +135,18 @@ function toRecord(change: RisChange, bindingStatus: RisBindingStatus): ChangeRec
   const md = hit.metadata;
   const title = md.title;
   const shortTitle = 'shortTitle' in md ? md.shortTitle : undefined;
+  const consolidated = md.controller === 'Bundesrecht' || md.controller === 'Landesrecht';
+  const sectionLabel = consolidated ? md.sectionLabel : undefined;
+  const lawId = consolidated ? md.lawId : undefined;
+  const caseNumbers = md.controller === 'Judikatur' ? md.caseNumbers : [];
+  const decisionDate = md.controller === 'Judikatur' ? md.decisionDate : undefined;
   const { html, pdf, rtf, xml } = hit.contentUrls;
   return {
     binding_status: bindingStatus,
+    ...(caseNumbers.length > 0 && { case_numbers: [...caseNumbers] }),
+    ...(decisionDate !== undefined && { decision_date: decisionDate }),
+    ...(lawId !== undefined && { law_id: lawId }),
+    ...(sectionLabel !== undefined && { section_label: sectionLabel }),
     content_urls: {
       ...(xml !== undefined && { xml }),
       ...(html !== undefined && { html }),
@@ -139,7 +170,7 @@ function toRecord(change: RisChange, bindingStatus: RisBindingStatus): ChangeRec
 export const risTrackChanges = tool('ris_track_changes', {
   title: 'Track RIS Changes',
   description:
-    'Track every document added or changed in one RIS application within an exact date window (changed_from/changed_to), optionally including deletions (include_deleted) — the delta-sync and monitoring primitive for mirrors and watchers, and the only surface that reports removals. Unlike the search tools’ coarse, additive-only changed_since intervals, this is exact-dated and deletion-aware. application accepts every RIS application code listed by ris_list_reference topic applications, including BrKons, LrKons, Dsk, and BgblAuth. Each changed document comes back in a compact cross-class record — document_number (for ris_get_document), title, dates, binding_status, and rendition URLs — plus its last-changed date; removed documents come back as deleted records with a deletion timestamp. One application per call; page explicitly for large windows.',
+    'Track every document added or changed in one RIS application within an exact date window (changed_from/changed_to), optionally including deletions (include_deleted) — the delta-sync and monitoring primitive for mirrors and watchers, and the only surface that reports removals. Unlike the search tools’ coarse, additive-only changed_since intervals, this is exact-dated and deletion-aware. application accepts every RIS application code listed by ris_list_reference topic applications, including BrKons, LrKons, Dsk, and BgblAuth. Each changed document comes back in a compact cross-class record — document_number (for ris_get_document), title, the section_label and law_id of a consolidated-law row or the case_numbers and decision_date of a court decision, dates, binding_status, and rendition URLs — plus its last-changed date; removed documents come back as deleted records with a deletion timestamp. One application per call; page explicitly for large windows.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     application: z
@@ -273,11 +304,32 @@ export const risTrackChanges = tool('ris_track_changes', {
       return [{ type: 'text', text: '_No changes on this page._' }];
     }
     const blocks = result.results.map((r) => {
+      // A consolidated-law row is named by its law's short title plus the section label
+      // ("DORA-Vollzugsgesetz § 16"); an untitled court-decision row by its leading case number,
+      // with a count of the rest — a headnote row can list 50 decisions.
+      const name =
+        r.section_label !== undefined ? (r.short_title ?? r.title) : (r.title ?? r.short_title);
+      const [leadCase, ...otherCases] = r.case_numbers ?? [];
+      const heading =
+        name !== undefined
+          ? `${name}${r.section_label !== undefined ? ` ${r.section_label}` : ''}`
+          : leadCase !== undefined
+            ? `${leadCase}${otherCases.length > 0 ? ` (+${otherCases.length} more)` : ''}`
+            : r.document_number;
       const lines = [
-        `## ${r.title ?? r.short_title ?? r.document_number}${r.deleted ? ' — deleted' : ''}`,
+        `## ${heading}${r.deleted ? ' — deleted' : ''}`,
         `**Document:** ${r.document_number}`,
       ];
+      if (r.title !== undefined && name !== r.title) lines.push(`**Title:** ${r.title}`);
       if (r.short_title !== undefined) lines.push(`**Short title:** ${r.short_title}`);
+      if (r.section_label !== undefined && name === undefined) {
+        lines.push(`**Section:** ${r.section_label}`);
+      }
+      if (r.case_numbers !== undefined && (name !== undefined || otherCases.length > 0)) {
+        lines.push(`**Case numbers:** ${r.case_numbers.join(', ')}`);
+      }
+      if (r.law_id !== undefined) lines.push(`**Law ID:** ${r.law_id}`);
+      if (r.decision_date !== undefined) lines.push(`**Decided:** ${r.decision_date}`);
       if (r.organ !== undefined) lines.push(`**Organ:** ${r.organ}`);
       lines.push(`**Binding:** ${r.binding_status}`);
       if (r.changed !== undefined || r.published !== undefined) {

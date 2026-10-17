@@ -3,8 +3,9 @@
  * court/tribunal application per call across the 17 court codes, including the
  * Parteien-Transparenz-Senat (upts), which the service routes to the Sonstige controller.
  * The full court-conditional filter matrix is guarded locally before any upstream call,
- * and decision_kind / subject_area values are validated against the static reference
- * tables — RIS silently ignores unknown params, so local strictness is the only safety.
+ * and decision_kind / subject_area / dsk and pvak issuing_body values are validated against the
+ * static reference tables — RIS silently ignores unknown params, so local strictness is the
+ * only safety.
  * @module mcp-server/tools/definitions/ris-search-case-law
  */
 
@@ -32,7 +33,9 @@ import type { RisHit, RisJudikaturMetadata } from '@/services/ris/types.js';
 import {
   failSearchError,
   filterText,
+  foldStateNames,
   isoDateString,
+  localRejectionRecovery,
   pageSizeParam,
   rewriteUnsupportedParam,
   type UnsupportedParam,
@@ -131,7 +134,9 @@ export const CaseLawRecordSchema = z
       .describe('Issuing body name (Organ), e.g. "Verfassungsgerichtshof".'),
     case_numbers: z
       .array(z.string().describe('One Geschäftszahl.'))
-      .describe('Case numbers (Geschäftszahl) — a decision can carry several.'),
+      .describe(
+        'Case numbers (Geschäftszahl), one per element in upstream order — a headnote lists every decision it covers, the leading decision first. Pass a value back as case_number to find that decision.',
+      ),
     decision_date: z.string().optional().describe('Decision date (Entscheidungsdatum).'),
     decision_type: z
       .string()
@@ -280,7 +285,7 @@ export function toRecord(hit: RisHit, fallbackApplication: string): CaseLawRecor
 export const risSearchCaseLaw = tool('ris_search_case_law', {
   title: 'Search Austrian Case Law',
   description:
-    'Search Austrian case law (Judikatur) in ONE court or tribunal per call — court is required: vfgh (Constitutional Court), vwgh (Supreme Administrative Court), justiz (ordinary courts incl. OGH, selected decisions), bvwg (federal administrative), lvwg (state administrative), dsk (data protection authority), normenliste (VwGH norm index), dok, pvak, gbk, verg, upts (party transparency), and the historical uvs, asylgh, ubas, umse, bks. Cross-court research is one call per court (calls are cheap); historical bodies are closed windows with successors — codes, windows, and Geschäftszahl examples: ris_list_reference topic courts. Filter by full-text query, cited norm ("DSG §1", "DSGVO Art32" — the highest-value filter), exact case_number (Geschäftszahl), decision date range, decision_type (headnote vs full text), decision_kind, or the court-conditional filters: issuing_body (dsk/dok/pvak/verg), court_name/legal_area/subject_area (justiz), state (lvwg/uvs), party (upts), commission/senate/discrimination_ground (gbk), subject_law (bks), collection_number (vfgh/vwgh/uvs). For a known Geschäftszahl or VfSlg/VwSlg cite, ris_lookup_citation resolves it directly.',
+    'Search Austrian case law (Judikatur) in ONE court or tribunal per call — court is required: vfgh (Constitutional Court), vwgh (Supreme Administrative Court), justiz (ordinary courts incl. OGH, selected decisions), bvwg (federal administrative), lvwg (state administrative), dsk (data protection authority), normenliste (VwGH norm index), dok, pvak, gbk, verg, upts (party transparency), and the historical uvs, asylgh, ubas, umse, bks. Cross-court research is one call per court (calls are cheap); historical bodies are closed windows with successors — codes, windows, and Geschäftszahl examples: ris_list_reference topic courts. Filter by full-text query, cited norm ("DSG §1", "DSGVO Art32" — the highest-value filter), exact case_number (Geschäftszahl), decision date range, decision_type (headnote vs full text), decision_kind, or the court-conditional filters: issuing_body (dsk/dok/pvak/verg), court_name/legal_area/subject_area (justiz), state (lvwg/uvs), party (upts), commission/senate/discrimination_ground (gbk), subject_law (bks), collection_number (vfgh/vwgh/uvs). For a known Geschäftszahl, ECLI, or VfSlg/VwSlg cite, ris_lookup_citation resolves it directly.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     court: z
@@ -326,7 +331,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
     issuing_body: filterText
       .optional()
       .describe(
-        'Deciding body (EntscheidendeBehoerde) — dsk, dok, pvak, and verg only. dsk: Datenschutzbehoerde (2014+) or Datenschutzkommission (up to 2013). Full value lists: ris_list_reference topic issuing_bodies. Omit to leave unfiltered; a blank value is rejected.',
+        'Deciding body (EntscheidendeBehoerde) — dsk, dok, pvak, and verg only. dsk: Datenschutzbehoerde (2014+), Datenschutzkommission (up to 2013), or ParlamentarischesDatenschutzkomitee (2025+); pvak: Personalvertretungsaufsichtsbehoerde (2014+) or PersonalvertretungsAufsichtskommission (up to 2013) — dsk and pvak take only these values, in any letter case. dok and verg take the body name as free text: ris_list_reference topic issuing_bodies. Omit to leave unfiltered; a blank value is rejected.',
       ),
     court_name: filterText
       .optional()
@@ -344,12 +349,9 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       .describe(
         'Subject-area taxonomy filter (Fachgebiet, justiz only) — 39 exact German values like "Datenschutzrecht", validated locally: ris_list_reference topic justiz_subject_areas. The corpus carries no tagged documents yet (every value returns 0 hits, verified 2026-07-05) — filter with query or norm instead until RIS populates the tags. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    state: z
-      .enum(STATE_CODES)
-      .optional()
-      .describe(
-        'Which of the nine state administrative courts/senates to search (lvwg and uvs only).',
-      ),
+    state: foldStateNames(z.enum(STATE_CODES).optional()).describe(
+      'Which of the nine state administrative courts/senates to search (lvwg and uvs only).',
+    ),
     party: filterText
       .optional()
       .describe(
@@ -431,7 +433,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'A page past the last page of results, or a parameter value that failed validation — decision_kind/subject_area checked locally against the reference tables, sort_by rejected locally because court normenliste indexes laws rather than decisions, or RIS rejected the value in-band (message passed through verbatim, in German, and it does not name the page).',
+      when: 'A page past the last page of results, or a parameter value that failed validation — decision_kind/subject_area checked locally against the reference tables, issuing_body checked locally against the dsk/pvak value lists, sort_by rejected locally because court normenliste indexes laws rather than decisions, or RIS rejected the value in-band (message passed through verbatim, in German, and it does not name the page).',
       recovery:
         'For a page past the end, request a lower page, starting from 1. Otherwise correct the parameter named in the message, or drop it if the court does not support it. Valid court codes, decision types/kinds, and syntax: ris_list_reference (topic: courts, decision_types, decision_kinds, or search_syntax).',
     },
@@ -506,6 +508,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
         throw ctx.fail(
           'invalid_query',
           `decision_kind '${decisionKind}' is not a valid Entscheidungsart for court '${court}'. Valid values: ${kinds.values.join(' | ')}.`,
+          localRejectionRecovery('decision_kind', kinds.values),
         );
       }
     }
@@ -542,16 +545,27 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       throw ctx.fail(
         'invalid_query',
         `subject_area '${subjectArea}' is not in the Justiz Fachgebiet taxonomy — the 39 exact German values are listed by ris_list_reference topic justiz_subject_areas.`,
+        localRejectionRecovery('subject_area'),
       );
     }
+    // dsk and pvak type EntscheidendeBehoerde as a case-sensitive schema enum: match it
+    // case-insensitively without surrounding whitespace, send the canonical spelling, and read
+    // RIS's no-filter member `Undefined` as an omitted filter. dok and verg take free text.
     if (issuingBody !== undefined && (court === 'dsk' || court === 'pvak')) {
-      const needle = issuingBody.toLowerCase();
-      const match = RIS_ISSUING_BODIES.find(
-        (body) =>
-          body.application === (court === 'dsk' ? 'Dsk' : 'Pvak') &&
-          body.value.toLowerCase() === needle,
+      const application = court === 'dsk' ? 'Dsk' : 'Pvak';
+      const values = RIS_ISSUING_BODIES.flatMap((body) =>
+        body.application === application ? [body.value] : [],
       );
-      if (match) issuingBody = match.value;
+      const needle = issuingBody.trim().toLowerCase();
+      const match = values.find((value) => value.toLowerCase() === needle);
+      if (match === undefined && needle !== 'undefined') {
+        throw ctx.fail(
+          'invalid_query',
+          `issuing_body '${issuingBody}' is not a valid EntscheidendeBehoerde for court '${court}'. Valid values: ${values.join(' | ')}.`,
+          localRejectionRecovery('issuing_body', values),
+        );
+      }
+      issuingBody = match;
     }
 
     const params: CaseLawSearchParams = {

@@ -19,10 +19,13 @@ import {
 import { createMockContext, getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { risSearchLegislation } from '@/mcp-server/tools/definitions/ris-search-legislation.tool.js';
+import {
+  type LegislationRecord,
+  risSearchLegislation,
+} from '@/mcp-server/tools/definitions/ris-search-legislation.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 
-import { contractError, expectArgumentRejection } from './_wire.js';
+import { contentText, contractError, expectArgumentRejection } from './_wire.js';
 
 const { searchLegislation } = vi.hoisted(() => ({ searchLegislation: vi.fn() }));
 
@@ -406,6 +409,91 @@ describe('risSearchLegislation — record mapping and format() parity', () => {
     for (const celex of record.celex_references) expect(text).toContain(celex);
   });
 
+  it('carries the consolidated federal abbreviation on both surfaces (#51)', async () => {
+    searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));
+    const result = await runToolContract(risSearchLegislation, {
+      scope: 'federal',
+      title: 'Datenschutzgesetz',
+    });
+    expect(result.isError).not.toBe(true);
+    const [record] = (result.structuredContent as { results: LegislationRecord[] }).results;
+    expect(record).toMatchObject({ document_number: 'NOR40262691', abbreviation: 'DSG' });
+    expect(contentText(result)).toContain('**Abbreviation:** DSG');
+  });
+
+  it('carries the trimmed state abbreviation on both surfaces, absent where RIS sends none (#51)', async () => {
+    searchLegislation.mockResolvedValue(
+      parseSearchResponse(fixture('search-lrkons-abkuerzung.json')),
+    );
+    const result = await runToolContract(risSearchLegislation, {
+      scope: 'wien',
+      title: 'BO für Wien',
+    });
+    expect(result.isError).not.toBe(true);
+    const { results } = result.structuredContent as { results: LegislationRecord[] };
+    expect(results.map((r) => r.application)).toEqual(Array(4).fill('LrKons'));
+    expect(results.map((r) => r.abbreviation)).toEqual([
+      'BO für Wien',
+      'BO für Wien',
+      'ALHVO 2022',
+      undefined,
+    ]);
+    expect(results[3]).not.toHaveProperty('abbreviation');
+    const blocks = contentText(result)
+      .split('\n\n')
+      .filter((block) => block.startsWith('## '));
+    expect(blocks).toHaveLength(4);
+    expect(blocks[0]).toContain('**Abbreviation:** BO für Wien');
+    expect(blocks[2]).toContain('**Abbreviation:** ALHVO 2022 |');
+    expect(blocks[3]).not.toContain('**Abbreviation:**');
+  });
+
+  it('carries federal keywords (Schlagworte) on both surfaces (#63)', async () => {
+    searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));
+    const result = await runToolContract(risSearchLegislation, { title: 'Datenschutzgesetz' });
+    expect(result.isError).not.toBe(true);
+    const [record] = (result.structuredContent as { results: LegislationRecord[] }).results;
+    expect(record!.keywords).toMatch(/^e-rk3, Inh, Gewinnabsicht, /u);
+    expect(record!.keywords).toContain(
+      'Informationsfreiheits-Anpassungsgesetz (BGBl. I Nr. 50/2025)',
+    );
+    // RIS's <br/> between keyword groups no longer breaks the line: the whole list stays on it.
+    const keywordsLine = contentText(result)
+      .split('\n')
+      .find((line) => line.startsWith('**Keywords:** '));
+    expect(keywordsLine).toBe(`**Keywords:** ${record!.keywords}`);
+  });
+
+  it('carries state keywords on both surfaces, absent where RIS sends none (#63)', async () => {
+    searchLegislation.mockResolvedValue(
+      parseSearchResponse(fixture('search-lrkons-abkuerzung.json')),
+    );
+    const result = await runToolContract(risSearchLegislation, { scope: 'wien' });
+    expect(result.isError).not.toBe(true);
+    const { results } = result.structuredContent as { results: LegislationRecord[] };
+    expect(results[0]!.keywords).toMatch(/^Bauordnung, Bau, Stadtentwicklung,/u);
+    expect(results[1]).not.toHaveProperty('keywords');
+    expect(results[2]).not.toHaveProperty('keywords');
+    expect(results[3]!.keywords).toMatch(/^Pensionsordnung, /u);
+    const blocks = contentText(result)
+      .split('\n\n')
+      .filter((block) => block.startsWith('## '));
+    expect(blocks[0]).toContain(`**Keywords:** ${results[0]!.keywords}`);
+    expect(blocks[1]).not.toContain('**Keywords:**');
+    expect(blocks[2]).not.toContain('**Keywords:**');
+    expect(blocks[3]).toContain(`**Keywords:** ${results[3]!.keywords}`);
+  });
+
+  it('leaves keywords absent on an English translation (#63)', async () => {
+    searchLegislation.mockResolvedValue(
+      parseSearchResponse(fixture('search-erv-translations.json')),
+    );
+    const result = await runToolContract(risSearchLegislation, { language: 'english' });
+    const { results } = result.structuredContent as { results: LegislationRecord[] };
+    for (const record of results) expect(record).not.toHaveProperty('keywords');
+    expect(contentText(result)).not.toContain('**Keywords:**');
+  });
+
   it('surfaces English-translation provenance on both surfaces (#22)', async () => {
     // An Erv record carries no in_force_from, no promulgation, and no eli, so without this
     // the returned document could not say which German version it renders or how stale it is.
@@ -458,5 +546,23 @@ describe('risSearchLegislation — record mapping and format() parity', () => {
       for (const idx of record.indexes) expect(text).toContain(idx);
       for (const celex of record.celex_references) expect(text).toContain(celex);
     }
+  });
+});
+
+// The fold itself is swept across every state parameter in _shared.test.ts; this pins that the
+// folded code is what reaches the request on the wire path.
+describe('risSearchLegislation — state names in scope (#58)', () => {
+  it.each([
+    ['Wien', 'wien'],
+    ['niederösterreich', 'niederoesterreich'],
+    ['Upper Austria', 'oberoesterreich'],
+  ])('searches the state named %j as scope: %s', async (scope, code) => {
+    searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
+    const result = await runToolContract(risSearchLegislation, { scope, title: 'Bauordnung' });
+    expect(result.isError).not.toBe(true);
+    expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject({
+      application: 'LrKons',
+      state: code,
+    });
   });
 });

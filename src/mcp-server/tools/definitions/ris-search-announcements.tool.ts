@@ -28,6 +28,7 @@ import type { RisHit } from '@/services/ris/types.js';
 import {
   failMinistrySearchError,
   filterText,
+  foldStateNames,
   isoDateString,
   pageSizeParam,
   rewriteUnsupportedParam,
@@ -116,6 +117,74 @@ const AnnouncementRecordSchema = z
       .string()
       .optional()
       .describe('Council session date (Sitzungsdatum) — council_minutes only.'),
+    session_number: z
+      .string()
+      .optional()
+      .describe(
+        'Council session number (Sitzungsnummer, e.g. "65", "58b") — council_minutes only; the session_number filter takes this value.',
+      ),
+    legislature: z
+      .string()
+      .optional()
+      .describe(
+        'Legislative period (Gesetzgebungsperiode, e.g. "XXVIII") — council_minutes only; the legislature filter takes this value.',
+      ),
+    approved: z
+      .string()
+      .optional()
+      .describe(
+        'Approval date (Genehmigungsdatum) — ministerial_decrees only, which carry no publication date.',
+      ),
+    case_numbers: z
+      .array(z.string().describe('One business reference number, trimmed.'))
+      .optional()
+      .describe(
+        'Business reference numbers (Geschäftszahl / GZ) — present on ministerial_decrees, veterinary, court_rules, and trade_exam_rules (empty when the entry carries none), absent on other collections. The case_number filter takes one on veterinary and ministerial_decrees.',
+      ),
+    type: z
+      .string()
+      .optional()
+      .describe(
+        'Document type (Typ — e.g. Erlass, Rundschreiben, Kundmachung, Geschaeftsverteilung, Meisterpruefungsordnung, RsgVerordnung).',
+      ),
+    department: z
+      .string()
+      .optional()
+      .describe(
+        'Ministry department (Abteilung) — ministerial_decrees only; the department filter takes this value.',
+      ),
+    court_name: z
+      .string()
+      .optional()
+      .describe('Court whose rules these are (Gericht, e.g. "LVwG Tirol") — court_rules only.'),
+    plan_state: z
+      .string()
+      .optional()
+      .describe(
+        'Plan region as RIS writes it (Land — Oesterreich for the federal ÖSG, else the Bundesland, e.g. Salzburg) — health_structure_plans only.',
+      ),
+    in_force_from: z
+      .string()
+      .optional()
+      .describe('Entry-into-force date (Inkrafttretensdatum), where recorded.'),
+    in_force_until: z
+      .string()
+      .optional()
+      .describe('Repeal date (Ausserkrafttretensdatum), where recorded.'),
+    promulgation: z
+      .string()
+      .optional()
+      .describe(
+        'Gazette citation of a decree (Fundstelle, e.g. "eJABl Nr. 13/2026") — ministerial_decrees only.',
+      ),
+    keywords: z
+      .string()
+      .optional()
+      .describe('Subject keywords (Schlagworte), comma-separated as RIS writes them.'),
+    note: z
+      .string()
+      .optional()
+      .describe('Annotation (Anmerkung) — e.g. the earlier notice this one replaces.'),
     issuers: z
       .array(z.string().describe('One issuing body.'))
       .describe(
@@ -124,7 +193,7 @@ const AnnouncementRecordSchema = z
     norms_cited: z
       .array(z.string().describe('One cited norm in RIS format, e.g. "DSG §1".'))
       .describe(
-        'Norms the document cites (veterinary notices and decrees) — copy an entry verbatim into a norm filter to find siblings. Empty when none.',
+        'Norms the document cites (veterinary notices and decrees), one entry per RIS item and never split — a decree entry often names several norms ("TP1 GGG, TP2 GGG"). Copy an entry verbatim into the norm filter to find the document and its siblings. Empty when none.',
       ),
     binding: z
       .enum(['authentic', 'administrative_directive', 'preparatory'])
@@ -160,6 +229,14 @@ function pickContentUrls(hit: RisHit): AnnouncementRecord['content_urls'] {
   };
 }
 
+/** Collections whose RIS application carries a case number (Geschaeftszahl / GZ). */
+const CASE_NUMBER_COLLECTIONS: ReadonlySet<RisCollectionCode> = new Set([
+  'court_rules',
+  'ministerial_decrees',
+  'trade_exam_rules',
+  'veterinary',
+]);
+
 /** Map a normalized RIS hit (all seven collections ride the Sonstige controller) to the record shape. */
 function toRecord(hit: RisHit, collection: RisCollectionCode): AnnouncementRecord {
   const base: AnnouncementRecord = {
@@ -178,13 +255,26 @@ function toRecord(hit: RisHit, collection: RisCollectionCode): AnnouncementRecor
   if (md.controller === 'Sonstige') {
     return {
       ...base,
+      ...(md.approvalDate !== undefined && { approved: md.approvalDate }),
+      ...(CASE_NUMBER_COLLECTIONS.has(collection) && { case_numbers: [...md.caseNumbers] }),
+      ...(md.courtName !== undefined && { court_name: md.courtName }),
+      ...(md.department !== undefined && { department: md.department }),
+      ...(md.inForceFrom !== undefined && { in_force_from: md.inForceFrom }),
+      ...(md.inForceUntil !== undefined && { in_force_until: md.inForceUntil }),
       issuers: [...md.issuers],
+      ...(md.keywords !== undefined && { keywords: md.keywords }),
+      ...(md.legislature !== undefined && { legislature: md.legislature }),
       norms_cited: [...md.normsCited],
+      ...(md.note !== undefined && { note: md.note }),
       ...(md.number !== undefined && { number: md.number }),
+      ...(md.planState !== undefined && { plan_state: md.planState }),
+      ...(md.promulgation !== undefined && { promulgation: md.promulgation }),
       ...(md.publishedDate !== undefined && { published: md.publishedDate }),
       ...(md.sessionDate !== undefined && { session_date: md.sessionDate }),
+      ...(md.sessionNumber !== undefined && { session_number: md.sessionNumber }),
       ...(md.summary !== undefined && { summary: md.summary }),
       ...(md.title !== undefined && { title: md.title }),
+      ...(md.normType !== undefined && { type: md.normType }),
     };
   }
   return base;
@@ -257,7 +347,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
     type: filterText
       .optional()
       .describe(
-        'Document type (Typ) — trade_exam_rules (Befaehigungspruefungsordnung | Meisterpruefungsordnung), court_rules (Geschaeftsordnung | Geschaeftsverteilung), veterinary (Kundmachungen | VeroeffentlichungenAufGrundVEVO | SonstigeVeroeffentlichungen). Omit to leave unfiltered; a blank value is rejected.',
+        'Document type (Typ) — trade_exam_rules (Befaehigungspruefungsordnung | Meisterpruefungsordnung | HoehereBerufsqualifikation | Fachdiplom | HoeheresFachdiplom), court_rules (Geschaeftsordnung | Geschaeftsverteilung), veterinary (Kundmachungen | VeroeffentlichungenAufGrundVEVO | SonstigeVeroeffentlichungen). Only these values, in any letter case. Omit to leave unfiltered; a blank value is rejected.',
       ),
     department: filterText
       .optional()
@@ -270,12 +360,9 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       .describe(
         'health_structure_plans only. Plan kind — all (default), expert_opinion (Gutachten), or regulation (Verordnungen). Searches the federal ÖSG unless plan_state is set.',
       ),
-    plan_state: z
-      .enum(STATE_CODES)
-      .optional()
-      .describe(
-        'health_structure_plans only. Restrict to one Bundesland’s regional health-structure plan (RSG) — setting it switches the search from the federal ÖSG to that state’s RSG.',
-      ),
+    plan_state: foldStateNames(z.enum(STATE_CODES).optional()).describe(
+      'health_structure_plans only. Restrict to one Bundesland’s regional health-structure plan (RSG) — setting it switches the search from the federal ÖSG to that state’s RSG.',
+    ),
     session_number: filterText
       .optional()
       .describe(
@@ -342,7 +429,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'A page past the last page of results; or a parameter value rejected locally — a plan_state outside regional health-structure plans, or a sort_by value this collection has no column for, in which case the message names the values it does sort by; or RIS rejecting a value in-band (the Client error message is passed through verbatim, in German, and it does not name the page).',
+      when: 'A page past the last page of results; or a parameter value rejected locally — a type outside the collection’s values, a plan_state outside regional health-structure plans, or a sort_by value this collection has no column for, in which case the message names the values it does sort by; or RIS rejecting a value in-band (the Client error message is passed through verbatim, in German, and it does not name the page).',
       recovery:
         'For a page past the end, request a lower page, starting from 1. Otherwise correct the parameter named in the message, or drop it if this collection does not carry it. Collections and their issuers: ris_list_reference topic collections or issuing_bodies.',
       thrownBy: 'service',
@@ -508,12 +595,32 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       const facts: string[] = [];
       if (r.number !== undefined) facts.push(`**Number:** ${r.number}`);
       if (r.published !== undefined) facts.push(`**Published:** ${r.published}`);
+      if (r.approved !== undefined) facts.push(`**Approved:** ${r.approved}`);
       if (r.session_date !== undefined) facts.push(`**Session:** ${r.session_date}`);
+      if (r.session_number !== undefined) facts.push(`**Session number:** ${r.session_number}`);
+      if (r.legislature !== undefined) facts.push(`**Legislature:** ${r.legislature}`);
       if (facts.length > 0) lines.push(facts.join(' | '));
+      if (r.case_numbers !== undefined && r.case_numbers.length > 0) {
+        lines.push(`**Case numbers:** ${r.case_numbers.join(', ')}`);
+      }
+      const kind: string[] = [];
+      if (r.type !== undefined) kind.push(`**Type:** ${r.type}`);
+      if (r.department !== undefined) kind.push(`**Department:** ${r.department}`);
+      if (r.court_name !== undefined) kind.push(`**Court:** ${r.court_name}`);
+      if (r.plan_state !== undefined) kind.push(`**Plan state:** ${r.plan_state}`);
+      if (kind.length > 0) lines.push(kind.join(' | '));
+      const force: string[] = [];
+      if (r.in_force_from !== undefined) force.push(`**In force from:** ${r.in_force_from}`);
+      if (r.in_force_until !== undefined) force.push(`**In force until:** ${r.in_force_until}`);
+      if (force.length > 0) lines.push(force.join(' | '));
+      if (r.promulgation !== undefined) lines.push(`**Promulgation:** ${r.promulgation}`);
       lines.push(`**Binding:** ${r.binding}`);
       if (r.issuers.length > 0) lines.push(`**Issuer:** ${r.issuers.join(', ')}`);
       if (r.summary !== undefined) lines.push(r.summary);
       if (r.norms_cited.length > 0) lines.push(`**Norms:** ${r.norms_cited.join('; ')}`);
+      if (r.keywords !== undefined) lines.push(`**Keywords:** ${r.keywords}`);
+      // A note's own line breaks (RIS <br/>) render as " / ", keeping the note on its line.
+      if (r.note !== undefined) lines.push(`**Note:** ${r.note.replaceAll('\n', ' / ')}`);
       if (r.authentic_pdf_url !== undefined)
         lines.push(`**Authentic PDF:** ${r.authentic_pdf_url}`);
       if (r.document_url !== undefined) lines.push(`**RIS view:** ${r.document_url}`);

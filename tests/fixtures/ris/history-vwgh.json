@@ -1,0 +1,158 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "100",
+        "#text": "456"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JWR_1983160049_19850221X07",
+                "Applikation": "Vwgh",
+                "Organ": "Verwaltungsgerichtshof (VwGH)",
+                "ImportTimestamp": "2026-10-16T22:00:27"
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "1985-02-21",
+                "Geaendert": "2026-10-16",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1983160049_19850221X07"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "83/16/0049"
+                },
+                "Normen": {
+                  "item": "GrEStG 1955 §4 Abs1 Z2 lita"
+                },
+                "Entscheidungsdatum": "1985-02-21",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:1985:1983160049.X07",
+                "Vwgh": {
+                  "Rechtssatznummer": "7",
+                  "Entscheidungsart": "Erkenntnis",
+                  "DokumentnummerTyp": "X",
+                  "Stammrechtssatznummer": "JWR_1983160049_19850221X07",
+                  "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                  "Indizes": {
+                    "item": [
+                      "Grunderwerbsteuer",
+                      "32/06 Verkehrsteuern"
+                    ]
+                  },
+                  "Sammlungsnummer": "VwSlg 5969 F/1985",
+                  "Beachte": "<br/>Besprechung in:<br/>AnwBl 1985/12, S 665;<br/>AnwBl 1985/12, S 665;<br/>",
+                  "RechtssatzketteUrl": "https://ogd.ris.bka.gv.at/VwghRechtssatzkette.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1983160049_19850221X07"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1983160049_19850221X07",
+                "EntscheidungstextUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_1983160049_19850221X00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1983160049_19850221X07/JWR_1983160049_19850221X07.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1983160049_19850221X07/JWR_1983160049_19850221X07.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1983160049_19850221X07/JWR_1983160049_19850221X07.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1983160049_19850221X07/JWR_1983160049_19850221X07.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JWR_1988140197_19890627X01",
+                "Applikation": "Vwgh",
+                "Organ": "Verwaltungsgerichtshof (VwGH)",
+                "ImportTimestamp": "2026-10-16T22:00:27"
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "1989-06-27",
+                "Geaendert": "2026-10-16",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1988140197_19890627X01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "88/14/0197"
+                },
+                "Normen": {
+                  "item": [
+                    "EStG 1972 §16 Abs1 Z9",
+                    "EStG 1972 §4 Abs5"
+                  ]
+                },
+                "Entscheidungsdatum": "1989-06-27",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:1989:1988140197.X01",
+                "Vwgh": {
+                  "Rechtssatznummer": "1",
+                  "Entscheidungsart": "Erkenntnis",
+                  "DokumentnummerTyp": "X",
+                  "Stammrechtssatznummer": "JWR_1988140197_19890627X01",
+                  "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                  "Indizes": {
+                    "item": [
+                      "Lohnsteuer",
+                      "32/02 Steuern vom Einkommen und Ertrag"
+                    ]
+                  },
+                  "RechtssatzketteUrl": "https://ogd.ris.bka.gv.at/VwghRechtssatzkette.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1988140197_19890627X01"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1988140197_19890627X01",
+                "EntscheidungstextUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_1988140197_19890627X00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1988140197_19890627X01/JWR_1988140197_19890627X01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1988140197_19890627X01/JWR_1988140197_19890627X01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1988140197_19890627X01/JWR_1988140197_19890627X01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1988140197_19890627X01/JWR_1988140197_19890627X01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

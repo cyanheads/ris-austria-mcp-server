@@ -22,7 +22,13 @@ import type {
 import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisHit } from '@/services/ris/types.js';
 
-import { failSearchError, filterText, isoDateString, pageSizeParam } from './_shared.js';
+import {
+  failSearchError,
+  filterText,
+  foldStateNames,
+  isoDateString,
+  pageSizeParam,
+} from './_shared.js';
 
 const STATE_CODES = RIS_STATES.map((s) => s.code) as [RisStateCode, ...RisStateCode[]];
 const SCOPE_VALUES = ['federal', ...STATE_CODES] as ['federal', ...RisStateCode[]];
@@ -127,6 +133,10 @@ export const LegislationRecordSchema = z
     indexes: z
       .array(z.string().describe('One Systematik index entry, e.g. "10/10 Datenschutz".'))
       .describe('Systematik classification entries (Index). Empty when unclassified.'),
+    keywords: z
+      .string()
+      .optional()
+      .describe('Keywords (Schlagworte), where present (consolidated federal and state law).'),
     eli: z
       .string()
       .optional()
@@ -188,14 +198,13 @@ export function toRecord(
   if (md.controller === 'Bundesrecht' || md.controller === 'Landesrecht') {
     return {
       ...base,
-      ...('abbreviation' in md && md.abbreviation !== undefined
-        ? { abbreviation: md.abbreviation }
-        : {}),
+      ...(md.abbreviation !== undefined && { abbreviation: md.abbreviation }),
       celex_references: [...md.celexReferences],
       ...(md.eli !== undefined && { eli: md.eli }),
       ...(md.inForceFrom !== undefined && { in_force_from: md.inForceFrom }),
       ...(md.inForceUntil !== undefined && { in_force_until: md.inForceUntil }),
       indexes: [...md.indexes],
+      ...(md.keywords !== undefined && { keywords: md.keywords }),
       ...(md.lawId !== undefined && { law_id: md.lawId }),
       ...(md.lawUrl !== undefined && { law_url: md.lawUrl }),
       ...(md.promulgation !== undefined && { promulgation: md.promulgation }),
@@ -237,12 +246,9 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       .describe(
         'Title search (Titel) — matches title, short title, and official abbreviation ("ABGB", "DSG"). Phrase field: * allowed leading or trailing with ≥2 characters beside it. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    scope: z
-      .enum(SCOPE_VALUES)
-      .default('federal')
-      .describe(
-        'Jurisdiction: federal (default) searches consolidated federal law; a Bundesland searches that state’s consolidated law (or, with municipality set, its municipal law).',
-      ),
+    scope: foldStateNames(z.enum(SCOPE_VALUES).default('federal')).describe(
+      'Jurisdiction: federal (default) searches consolidated federal law; a Bundesland searches that state’s consolidated law (or, with municipality set, its municipal law).',
+    ),
     municipality: filterText
       .optional()
       .describe(
@@ -594,6 +600,7 @@ export const risSearchLegislation = tool('ris_search_legislation', {
         }
       }
       if (r.indexes.length > 0) lines.push(`**Index:** ${r.indexes.join('; ')}`);
+      if (r.keywords !== undefined) lines.push(`**Keywords:** ${r.keywords}`);
       if (r.eli !== undefined) lines.push(`**ELI:** ${r.eli}`);
       if (r.celex_references.length > 0) {
         lines.push(`**CELEX:** ${r.celex_references.join(', ')}`);

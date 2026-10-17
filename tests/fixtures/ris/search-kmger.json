@@ -1,0 +1,55 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "100",
+        "#text": "55"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "KMGER_LVWGTI_20260522_LVwG_102_120_2026",
+                "Applikation": "KmGer",
+                "Organ": "LVwG Tirol",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=KmGer&Dokumentnummer=KMGER_LVWGTI_20260522_LVwG_102_120_2026"
+              },
+              "Sonstige": {
+                "Titel": "Geänderte Geschäftsverteilung des Landesverwaltungsgerichts Tirol für das Jahr 2026\r\n",
+                "Kundmachungsdatum": "2026-05-22",
+                "KmGer": {
+                  "Gericht": "LVwG Tirol",
+                  "GZ": "LVwG-102/120-2026",
+                  "Typ": "Geschaeftsverteilung",
+                  "Kurzinformation": "Geänderte Geschäftsverteilung des Landesverwaltungsgerichts Tirol für das Jahr 2026 ",
+                  "Inkrafttretensdatum": "2026-05-22",
+                  "Ausserkrafttretensdatum": "2026-08-09"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": {
+                    "DataType": "Authentisch",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/KmGer/KMGER_LVWGTI_20260522_LVwG_102_120_2026/KMGER_LVWGTI_20260522_LVwG_102_120_2026.pdf"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

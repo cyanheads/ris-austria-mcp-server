@@ -29,6 +29,7 @@ import type { RisHit } from '@/services/ris/types.js';
 import {
   failMinistrySearchError,
   filterText,
+  foldStateNames,
   isoDateString,
   pageSizeParam,
   rewriteUnsupportedParam,
@@ -321,6 +322,12 @@ export const GazetteRecordSchema = z
       .describe(
         'Gazette number (Bgblnummer / Lgblnummer / Kundmachungsnummer / BgblAlt Fundstelle), where assigned.',
       ),
+    promulgation: z
+      .string()
+      .optional()
+      .describe(
+        'The gazette that carried the entry — on the 1945–2003 federal tier its citation (Fundstelle, e.g. "StGBl. Nr. 1/1945", "BGBl. I Nr. 50/1999"), on the 1848–1940 tier the gazette title (Kundmachungsorgan, e.g. "Staatsgesetzblatt für die Republik Österreich"). Gazettes filed in one tier can share a gazette_number — the 1945 StGBl. and BGBl., and the 1848–1940 gazettes in their changeover years — and this tells them apart.',
+      ),
     part: z
       .string()
       .optional()
@@ -355,6 +362,27 @@ export const GazetteRecordSchema = z
       .string()
       .optional()
       .describe('European Legislation Identifier, where assigned (federal coverage is best).'),
+    celex_references: z
+      .array(z.string().describe('One CELEX number of a transposed EU act, as RIS writes it.'))
+      .describe(
+        'CELEX numbers of the EU acts this entry transposes — RIS CelexNummer metadata (BgblAuth, BgblPdf, LgblAuth; LgblNO CelexNummern) plus [CELEX-Nr.: …] title markers. LgblNO keeps the older form without the sector digit (383L0189) and corrigendum suffixes (394L0010R(01)). Empty when none.',
+      ),
+    systematic_number: z
+      .string()
+      .optional()
+      .describe(
+        'Niederösterreich systematic classification number (Gliederungszahl, e.g. 0001/1-62) — LgblNO only, which carries no gazette number; cite an LgblNO entry by this plus issue.',
+      ),
+    issue: z
+      .string()
+      .optional()
+      .describe(
+        'Gazette issue (Stück) the entry appeared in — LgblNO StueckNummer, BgblAlt Stueck.',
+      ),
+    start_page: z
+      .string()
+      .optional()
+      .describe('First page of the entry in the gazette volume (Anfangsseite) — BgblAlt only.'),
     binding: z
       .enum(['authentic', 'consolidated_informational', 'historical_record'])
       .describe(
@@ -397,6 +425,7 @@ function pickContentUrls(hit: RisHit): GazetteRecord['content_urls'] {
 export function toRecord(hit: RisHit, application: GazetteApplication): GazetteRecord {
   const base: GazetteRecord = {
     binding: GAZETTE_BINDING[application],
+    celex_references: [],
     content_urls: pickContentUrls(hit),
     document_number: hit.documentNumber,
     ...(hit.contentUrls.authentic !== undefined && {
@@ -410,12 +439,16 @@ export function toRecord(hit: RisHit, application: GazetteApplication): GazetteR
     return {
       ...base,
       ...(md.alexUrl !== undefined && { alex_url: md.alexUrl }),
+      celex_references: [...md.celexReferences],
       ...(md.eli !== undefined && { eli: md.eli }),
       ...(md.gazetteNumber !== undefined && { gazette_number: md.gazetteNumber }),
+      ...(md.issue !== undefined && { issue: md.issue }),
       ...(issuer !== undefined && { issuer }),
       ...(md.part !== undefined && { part: md.part }),
+      ...(md.promulgation !== undefined && { promulgation: md.promulgation }),
       ...(md.publishedDate !== undefined && { published: md.publishedDate }),
       ...(md.shortTitle !== undefined && { short_title: md.shortTitle }),
+      ...(md.startPage !== undefined && { start_page: md.startPage }),
       ...(md.title !== undefined && { title: md.title }),
       ...(md.normType !== undefined && { type: md.normType }),
     };
@@ -423,11 +456,14 @@ export function toRecord(hit: RisHit, application: GazetteApplication): GazetteR
   if (md.controller === 'Landesrecht') {
     return {
       ...base,
+      celex_references: [...md.celexReferences],
       ...(md.eli !== undefined && { eli: md.eli }),
       ...(md.gazetteNumber !== undefined && { gazette_number: md.gazetteNumber }),
+      ...(md.issue !== undefined && { issue: md.issue }),
       ...(issuer !== undefined && { issuer }),
       ...(md.publishedDate !== undefined && { published: md.publishedDate }),
       ...(md.shortTitle !== undefined && { short_title: md.shortTitle }),
+      ...(md.systematicNumber !== undefined && { systematic_number: md.systematicNumber }),
       ...(md.title !== undefined && { title: md.title }),
       ...(md.normType !== undefined && { type: md.normType }),
     };
@@ -465,12 +501,9 @@ export const risSearchGazette = tool('ris_search_gazette', {
     'Browse Austria’s promulgation record — the authentic, legally binding gazettes — at every level of government. scope picks the jurisdiction: federal (default; the Bundesgesetzblatt across three era tiers auto-routed by year — BgblAuth 2004+ authentic, BgblPdf 1945–2003, BgblAlt 1848–1940 metadata-only ÖNB scans; one call serves one tier, so a published_from/published_to interval crossing 2004-01-01 or 1945-01-01 is rejected with the boundaries to split at, and RIS carries no federal gazette for 1941–1944), one Bundesland (its Landesgesetzblatt), district (Bezirke promulgations), or municipal (Gemeinde promulgations). For a state scope, series selects law gazettes (law_gazette, the default → LGBl) vs ordinance gazettes (ordinance_gazette → Verordnungsblätter, currently Tirol only), and state_era picks which era of that series to search: current (the default → the authentic LGBl) or legacy (the state’s earlier non-authentic series — Niederösterreich’s systematic LgblNO, or the older Lgbl elsewhere; Wien carries neither, and ordinance gazettes have no legacy series). Filter by query (full text), title, number ("171/2026" — a pre-2004 number auto-routes to the right era tier), part (federal I/II/III or pre_1997), type (laws/regulations/announcements/other), published_from/to, issuer (federal or ordinance gazettes only), district_authority (district only), or municipality (municipal only). Every result carries a binding label (authentic vs historical_record vs consolidated_informational) and the amtssigniert authentic PDF wherever it exists — the binding artifact, never a paraphrase. For one known gazette number, ris_lookup_citation resolves it directly. Coverage windows, era tiers, and part semantics: ris_list_reference topic applications or gazette_parts.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
-    scope: z
-      .enum(GAZETTE_SCOPE_VALUES)
-      .default('federal')
-      .describe(
-        'Jurisdiction level: federal (default — the Bundesgesetzblatt, era tier auto-routed), a Bundesland (burgenland … wien, its Landesgesetzblatt), district (Bezirke promulgations), or municipal (Gemeinde promulgations).',
-      ),
+    scope: foldStateNames(z.enum(GAZETTE_SCOPE_VALUES).default('federal')).describe(
+      'Jurisdiction level: federal (default — the Bundesgesetzblatt, era tier auto-routed), a Bundesland (burgenland … wien, its Landesgesetzblatt), district (Bezirke promulgations), or municipal (Gemeinde promulgations).',
+    ),
     series: z
       .enum(['law_gazette', 'ordinance_gazette'])
       .optional()
@@ -496,7 +529,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
     number: filterText
       .optional()
       .describe(
-        'Gazette number, e.g. "171/2026" or "BGBl. II Nr. 171/2026" (federal), "61/2026" (state), a Kundmachungsnummer (district/municipal). A trailing year routes a federal query to the right era tier; a bare number searches the current tier. Omit to leave unfiltered; a blank value is rejected.',
+        'Gazette number, e.g. "171/2026" (federal; the cited form "BGBl. II Nr. 171/2026" works from 2004 only — earlier tiers match the bare "194/1961"), "61/2026" (state), a Kundmachungsnummer (district/municipal). A trailing year routes a federal query to the right era tier; a bare number searches the current tier. Omit to leave unfiltered; a blank value is rejected.',
       ),
     part: z
       .enum(['part1', 'part2', 'part3', 'pre_1997'])
@@ -735,7 +768,8 @@ export const risSearchGazette = tool('ris_search_gazette', {
 
     // Restate a builder rejection in this tool's vocabulary, then map it and every service
     // failure onto the declared contract so reason + recovery reach the wire (neither
-    // carries them on its own).
+    // carries them on its own). The builder's `state` comes from scope; a state the gazette
+    // lacks only reaches it under state_era: legacy, so state_era is the field to correct.
     const result = await getRisService()
       .searchGazette(params, ctx)
       .catch((err: unknown) => {
@@ -744,6 +778,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
             callerFacingRejection(rejected, gazetteLabel(application, scope, routedBy)),
           ),
           ctx,
+          { state: 'state_era' },
         );
       });
     ctx.log.info('Gazette search completed', {
@@ -821,11 +856,17 @@ export const risSearchGazette = tool('ris_search_gazette', {
     const blocks = result.results.map((r) => {
       const lines = [`## ${r.title ?? r.short_title ?? r.gazette_number ?? r.document_number}`];
       lines.push(`**Document:** ${r.document_number}`);
+      if (r.promulgation !== undefined) lines.push(`**Promulgation:** ${r.promulgation}`);
       const facts: string[] = [];
       if (r.gazette_number !== undefined) facts.push(`**Number:** ${r.gazette_number}`);
       if (r.part !== undefined) facts.push(`**Part:** ${r.part}`);
       if (r.type !== undefined) facts.push(`**Type:** ${r.type}`);
       if (r.published !== undefined) facts.push(`**Published:** ${r.published}`);
+      if (r.systematic_number !== undefined) {
+        facts.push(`**Gliederungszahl:** ${r.systematic_number}`);
+      }
+      if (r.issue !== undefined) facts.push(`**Issue:** ${r.issue}`);
+      if (r.start_page !== undefined) facts.push(`**Start page:** ${r.start_page}`);
       if (facts.length > 0) lines.push(facts.join(' | '));
       const origin: string[] = [];
       if (r.issuer !== undefined) origin.push(`**Issuer:** ${r.issuer}`);
@@ -837,6 +878,9 @@ export const risSearchGazette = tool('ris_search_gazette', {
       if (r.short_title !== undefined) lines.push(`**Short title:** ${r.short_title}`);
       lines.push(`**Binding:** ${r.binding}`);
       if (r.eli !== undefined) lines.push(`**ELI:** ${r.eli}`);
+      if (r.celex_references.length > 0) {
+        lines.push(`**CELEX:** ${r.celex_references.join(', ')}`);
+      }
       if (r.authentic_pdf_url !== undefined)
         lines.push(`**Authentic PDF:** ${r.authentic_pdf_url}`);
       if (r.alex_url !== undefined) lines.push(`**ÖNB scan:** ${r.alex_url}`);

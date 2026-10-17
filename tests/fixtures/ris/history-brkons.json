@@ -1,0 +1,145 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "100",
+        "#text": "556"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "NOR40264172",
+                "Applikation": "BrKons",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "ImportTimestamp": "2026-10-16T16:15:34"
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2024-07-23",
+                "Geaendert": "2026-10-16",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/bgbl/i/2024/112/P16/NOR40264172"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "DORA-Vollzugsgesetz",
+                "Eli": "https://ris.bka.gv.at/eli/bgbl/i/2024/112/P16/NOR40264172",
+                "BrKons": {
+                  "Kundmachungsorgan": "BGBl. I Nr. 112/2024",
+                  "Typ": "BG",
+                  "Dokumenttyp": "Paragraph",
+                  "ArtikelParagraphAnlage": "§ 16",
+                  "Paragraphnummer": "16",
+                  "StammnormPublikationsorgan": "BGBl. I Nr.",
+                  "StammnormBgblnummer": "112/2024",
+                  "Inkrafttretensdatum": "2025-01-17",
+                  "Ausserkrafttretensdatum": "2026-10-16",
+                  "Abkuerzung": "DORA-VG",
+                  "Indizes": {
+                    "item": "37/02 Kreditwesen"
+                  },
+                  "Aenderung": "",
+                  "Gesetzesnummer": "20012655",
+                  "GesamteRechtsvorschriftUrl": "https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=Bundesnormen&Gesetzesnummer=20012655"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40264172/NOR40264172.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40264172/NOR40264172.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40264172/NOR40264172.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40264172/NOR40264172.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "NOR40264174",
+                "Applikation": "BrKons",
+                "Organ": "BKA (Bundeskanzleramt)",
+                "ImportTimestamp": "2026-10-16T16:11:33"
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2024-07-23",
+                "Geaendert": "2026-10-16",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/bgbl/i/2024/112/P0/NOR40264174"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "DORA-Vollzugsgesetz",
+                "Titel": "Bundesgesetz über das Wirksamwerden der Verordnung (EU) 2022/2554 über die digitale operationale Resilienz im Finanzsektor (DORA-Vollzugsgesetz – DORA-VG)<br/>StF: BGBl. I Nr. 112/2024 (NR: GP XXVII RV 2596 AB 2673 S. 270. BR: AB 11539 S. 969.)<br/>[CELEX-Nr.: 32022L2556]",
+                "Eli": "https://ris.bka.gv.at/eli/bgbl/i/2024/112/P0/NOR40264174",
+                "BrKons": {
+                  "Kundmachungsorgan": "BGBl. I Nr. 112/2024",
+                  "Typ": "BG",
+                  "Dokumenttyp": "Norm",
+                  "ArtikelParagraphAnlage": "§ 0",
+                  "Paragraphnummer": "0",
+                  "StammnormPublikationsorgan": "BGBl. I Nr.",
+                  "StammnormBgblnummer": "112/2024",
+                  "Inkrafttretensdatum": "2024-09-30",
+                  "Abkuerzung": "DORA-VG",
+                  "Indizes": {
+                    "item": "37/02 Kreditwesen"
+                  },
+                  "Aenderung": "BGBl. I Nr. 88/2026 (NR: GP XXVIII RV 592 AB 606 S. 96. BR: 11865 AB 11871 S. 996.)",
+                  "Anmerkung": "Das DORA-Vollzugsgesetz wurde in Artikel 1 des BGBl. I Nr. 112/2024 kundgemacht.",
+                  "Schlagworte": "Inh<br/>Aufsichtsbefugnis",
+                  "Gesetzesnummer": "20012655",
+                  "GesamteRechtsvorschriftUrl": "https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=Bundesnormen&Gesetzesnummer=20012655"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40264174/NOR40264174.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40264174/NOR40264174.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40264174/NOR40264174.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40264174/NOR40264174.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

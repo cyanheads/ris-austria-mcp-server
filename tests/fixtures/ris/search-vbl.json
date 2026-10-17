@@ -1,0 +1,91 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "100",
+        "#text": "588"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "VBL_TI_LR_20261014_97",
+                "Applikation": "Vbl",
+                "Organ": "LReg Tirol",
+                "Einbringer": "Landesregierung",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vbl&Dokumentnummer=VBL_TI_LR_20261014_97"
+              },
+              "Landesrecht": {
+                "Kurztitel": "Festlegung einer längeren Frist für die zweite Fortschreibung des örtlichen Raumordnungskonzeptes der Gemeinde Lavant  ",
+                "Titel": "Verordnung der Landesregierung vom 8. Oktober 2026, mit der eine längere Frist für die zweite Fortschreibung des örtlichen Raumordnungskonzeptes der Gemeinde Lavant festgelegt wird",
+                "Kundmachungsdatum": "2026-10-14",
+                "Bundesland": "Tirol",
+                "Vbl": {
+                  "Kundmachungsorgan": "VBl. Tirol Nr.",
+                  "Kundmachungsnummer": "97/2026",
+                  "Typ": "Verordnung"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vbl/VBL_TI_LR_20261014_97/VBL_TI_LR_20261014_97.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vbl/VBL_TI_LR_20261014_97/VBL_TI_LR_20261014_97.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vbl/VBL_TI_LR_20261014_97/VBL_TI_LR_20261014_97.rtf"
+                      },
+                      {
+                        "DataType": "Authentisch",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vbl/VBL_TI_LR_20261014_97/VBL_TI_LR_20261014_97.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Verordnungsblatt für Tirol",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Jpg",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vbl/VBL_TI_LR_20261014_97/image001.jpg"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Erläuternde Bemerkungen",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Authentisch",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vbl/VBL_TI_LR_20261014_97/Material_97_OEROK_Lavant_EB_KM.pdf"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
