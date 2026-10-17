@@ -129,6 +129,7 @@ export interface RawAllgemein {
 
 /** Consolidated-law fields shared by the BrKons and LrKons application nodes. */
 export interface RawKonsNode {
+  readonly Abkuerzung?: string;
   readonly Aenderung?: string;
   readonly ArtikelParagraphAnlage?: string;
   readonly Ausserkrafttretensdatum?: string;
@@ -163,12 +164,14 @@ export interface RawBundesrechtMeta {
   readonly BgblAuth?: {
     readonly Ausgabedatum?: string;
     readonly Bgblnummer?: string;
+    readonly CelexNummer?: RawWrappedList<string>;
     readonly Teil?: string;
     readonly Typ?: string;
   };
   readonly BgblPdf?: {
     readonly Bgblnummer?: string;
-    readonly CelexNummer?: string;
+    /** Usually one comma-joined string; a wrapped list or nil on some records. */
+    readonly CelexNummer?: RawWrappedList<string> | string;
     readonly Fundstelle?: string;
     readonly Jahrgang?: string;
     readonly Kundmachungsdatum?: string;
@@ -202,6 +205,8 @@ export interface RawLandesrechtMeta {
   };
   readonly LgblNO?: {
     readonly Ausgabedatum?: string;
+    /** Plural element name, unlike LgblAuth's `CelexNummer`. */
+    readonly CelexNummern?: RawWrappedList<string>;
     readonly Gliederungszahl?: string;
     readonly Indizes?: RawWrappedList<string>;
     readonly StueckNummer?: string;
@@ -329,12 +334,15 @@ export interface RawSonstigeMeta {
   };
   readonly Erlaesse?: {
     readonly Abteilung?: string;
+    readonly Anmerkung?: string;
     readonly Ausserkrafttretensdatum?: string;
     readonly Bundesministerium?: string;
     readonly Fundstelle?: string;
+    readonly Genehmigungsdatum?: string;
     readonly Geschaeftszahl?: RawWrappedList<string>;
     readonly Inkrafttretensdatum?: string;
     readonly Kurzinformation?: string;
+    readonly Normen?: RawWrappedList<string>;
     readonly Typ?: string;
   };
   readonly KmGer?: {
@@ -355,6 +363,7 @@ export interface RawSonstigeMeta {
   };
   readonly PruefGewO?: {
     readonly Anmerkung?: string;
+    readonly Ausserkrafttretensdatum?: string;
     readonly GZ?: string;
     readonly Inkrafttretensdatum?: string;
     readonly Kurzinformation?: string;
@@ -362,6 +371,7 @@ export interface RawSonstigeMeta {
   };
   readonly Schlagworte?: string;
   readonly Spg?: {
+    readonly Ausserkrafttretensdatum?: string;
     readonly Inkrafttretensdatum?: string;
     readonly Kurzinformation?: string;
     readonly Land?: string;
@@ -400,6 +410,11 @@ export interface RisContentReference {
 
 /** Consolidated-law fields shared by federal (BrKons) and state (LrKons) records. */
 export interface RisConsolidatedFields {
+  /**
+   * Official abbreviation (BrKons/LrKons Abkuerzung, trimmed — some arrive with a leading
+   * space). Federal review drafts and government bills take it from Begut/RegV instead.
+   */
+  readonly abbreviation?: string;
   /** Amendment note (Aenderung), CELEX markers preserved in `celexReferences`. */
   readonly amendment?: string;
   /** Systematik index entries (Indizes). */
@@ -416,7 +431,10 @@ export interface RisConsolidatedFields {
   readonly lawUrl?: string;
   /** Norm type code (Typ — BG, V, K, …). */
   readonly normType?: string;
-  /** Promulgation reference (Kundmachungsorgan). */
+  /**
+   * Promulgation reference (Kundmachungsorgan). Federal gazette entries carry it too: the
+   * citation on BgblPdf (Fundstelle, "StGBl. Nr. 1/1945"), the gazette title on BgblAlt.
+   */
   readonly promulgation?: string;
   /** §/Artikel/Anlage label (ArtikelParagraphAnlage). */
   readonly sectionLabel?: string;
@@ -424,12 +442,11 @@ export interface RisConsolidatedFields {
 
 /** Normalized `Metadaten.Bundesrecht` (BrKons, BgblAuth, BgblPdf, BgblAlt, Begut, RegV, Erv). */
 export interface RisBundesrechtMetadata extends RisConsolidatedFields {
-  /** Official abbreviation (Begut/RegV Abkuerzung). */
-  readonly abbreviation?: string;
   /** ÖNB scan link for BgblAlt issues (AlexUrl). */
   readonly alexUrl?: string;
   /** Translation author (Erv). */
   readonly author?: string;
+  /** `[CELEX-Nr.: …]` markers in Titel/Aenderung plus BgblAuth and BgblPdf CelexNummer. */
   readonly celexReferences: readonly string[];
   readonly controller: 'Bundesrecht';
   /** Council-of-ministers adoption date (RegV Beschlussdatum). */
@@ -461,6 +478,7 @@ export interface RisBundesrechtMetadata extends RisConsolidatedFields {
 
 /** Normalized `Metadaten.Landesrecht` (LrKons, LgblAuth, Lgbl, LgblNO, Vbl). */
 export interface RisLandesrechtMetadata extends RisConsolidatedFields {
+  /** `[CELEX-Nr.: …]` markers in Titel/Aenderung plus LgblAuth CelexNummer and LgblNO CelexNummern. */
   readonly celexReferences: readonly string[];
   readonly controller: 'Landesrecht';
   readonly eli?: string;
@@ -582,6 +600,9 @@ export interface RisGemeindenMetadata {
 
 /** Normalized `Metadaten.Sonstige` (Avsv, Avn, KmGer, PruefGewO, Spg, Erlaesse, Mrp, Upts). */
 export interface RisSonstigeMetadata {
+  /** Erlaesse approval date (Genehmigungsdatum) — decrees carry no Kundmachungsdatum. */
+  readonly approvalDate?: string;
+  /** Business reference numbers (Geschaeftszahl / GZ), trimmed. */
   readonly caseNumbers: readonly string[];
   readonly controller: 'Sonstige';
   /** Court whose rules the document carries (KmGer Gericht). */
@@ -599,7 +620,7 @@ export interface RisSonstigeMetadata {
   readonly keywords?: string;
   /** Mrp legislature period (Gesetzgebungsperiode). */
   readonly legislature?: string;
-  /** Cited norms (Avn Normen / Upts Norm). */
+  /** Cited norms (Avn / Erlaesse Normen, Upts Norm). */
   readonly normsCited: readonly string[];
   /** Norm type / document type (Typ). */
   readonly normType?: string;
@@ -611,6 +632,8 @@ export interface RisSonstigeMetadata {
   readonly party?: string;
   /** Spg regional-plan Bundesland (Land). */
   readonly planState?: string;
+  /** Erlaesse gazette citation (Fundstelle, e.g. "eJABl Nr. 13/2026"). */
+  readonly promulgation?: string;
   /** Publication date (Kundmachungsdatum). */
   readonly publishedDate?: string;
   /** Mrp session date (Sitzungsdatum). */

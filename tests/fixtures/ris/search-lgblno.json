@@ -1,0 +1,143 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "100",
+        "#text": "1939"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "LRNI_2007006",
+                "Applikation": "LgblNO",
+                "Organ": "LReg Niederösterreich",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=LgblNO&Dokumentnummer=LRNI_2007006"
+              },
+              "Landesrecht": {
+                "Titel": "VERORDNUNG ÜBER DIE GESCHÄFTSORDNUNG DER NÖ LANDESREGIERUNG",
+                "Kundmachungsdatum": "2007-01-26",
+                "Bundesland": "Niederösterreich",
+                "LgblNO": {
+                  "Typ": "Verordnung",
+                  "Gliederungszahl": "0001/1-62",
+                  "Ausgabedatum": "2007-01-26",
+                  "Ausordnungsdatum": "2008-04-10",
+                  "StueckNummer": "6",
+                  "Indizes": {
+                    "item": "0 Verfassungs- und Organisationsrecht"
+                  }
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblNO/LRNI_2007006/LRNI_2007006.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblNO/LRNI_2007006/LRNI_2007006.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblNO/LRNI_2007006/LRNI_2007006.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblNO/LRNI_2007006/LRNI_2007006.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "LRNI_2007086",
+                "Applikation": "LgblNO",
+                "Organ": "LReg Niederösterreich",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2009-02-25",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=LgblNO&Dokumentnummer=LRNI_2007086"
+              },
+              "Landesrecht": {
+                "Kurztitel": "NÖ LV 1979 ",
+                "Titel": "NÖ LANDESVERFASSUNG 1979",
+                "Kundmachungsdatum": "2007-12-03",
+                "Bundesland": "Niederösterreich",
+                "LgblNO": {
+                  "Typ": "Landesgesetz",
+                  "Gliederungszahl": "0001-15",
+                  "Ausgabedatum": "2007-12-03",
+                  "Ausordnungsdatum": "2009-02-19",
+                  "StueckNummer": "86",
+                  "Indizes": {
+                    "item": "0 Verfassungs- und Organisationsrecht"
+                  },
+                  "CelexNummern": {
+                    "item": [
+                      "383L0189",
+                      "388L0182",
+                      "394L0010",
+                      "394L0010R(01)",
+                      "398L0034",
+                      "398L0048"
+                    ]
+                  }
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblNO/LRNI_2007086/LRNI_2007086.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblNO/LRNI_2007086/LRNI_2007086.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblNO/LRNI_2007086/LRNI_2007086.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblNO/LRNI_2007086/LRNI_2007086.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

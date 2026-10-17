@@ -22,6 +22,7 @@ import {
 import type {
   RisBundesrechtMetadata,
   RisJudikaturMetadata,
+  RisLandesrechtMetadata,
   RisSonstigeMetadata,
 } from '@/services/ris/types.js';
 
@@ -32,6 +33,43 @@ function fixture(name: string): unknown {
 /** Read a fixture as the raw body text, the shape an error-response body arrives in. */
 function rawFixture(name: string): string {
   return readFileSync(new URL(`../../fixtures/ris/${name}`, import.meta.url), 'utf8');
+}
+
+type RawNode = Record<string, unknown>;
+
+/**
+ * A captured page with fields of one record's metadata node replaced — the upstream shapes no
+ * capture happens to carry, such as an element RIS sends as `{"@xsi:nil": "true"}`. `path`
+ * names the node under `Data.Metadaten`; `fields` are merged into it.
+ */
+function withMetadata(
+  name: string,
+  documentNumber: string,
+  path: readonly string[],
+  fields: RawNode,
+): unknown {
+  const payload = fixture(name) as {
+    OgdSearchResult: { OgdDocumentResults: { OgdDocumentReference: RawNode | RawNode[] } };
+  };
+  const refs = [payload.OgdSearchResult.OgdDocumentResults.OgdDocumentReference].flat();
+  const ref = refs.find(
+    (candidate) =>
+      ((candidate.Data as RawNode).Metadaten as { Technisch: { ID: string } }).Technisch.ID ===
+      documentNumber,
+  );
+  if (ref === undefined) throw new Error(`No record ${documentNumber} in ${name}`);
+  let node = (ref.Data as RawNode).Metadaten as RawNode;
+  for (const key of path) node = node[key] as RawNode;
+  Object.assign(node, fields);
+  return payload;
+}
+
+const NIL = { '@xsi:nil': 'true' };
+
+/** Every record of a page by document number — the page has to parse whole for any of them to exist. */
+function metadataById<T>(payload: unknown): Map<string, T> {
+  const { hits } = parseSearchResponse(payload);
+  return new Map(hits.map((hit) => [hit.documentNumber, hit.metadata as T]));
 }
 
 describe('parseSearchResponse', () => {
@@ -114,6 +152,73 @@ describe('parseSearchResponse', () => {
     const metadata = result.hits[0]!.metadata as RisJudikaturMetadata;
     expect(metadata.caseNumbers.length).toBeGreaterThan(1);
     expect(metadata.caseNumbers[0]).toBe('E33/2026 ua');
+    expect(metadata.caseNumbers).toEqual([
+      'E33/2026 ua',
+      'E3622/2025',
+      'E214/2026 ua',
+      'E217/2026',
+      'E219/2026 ua',
+      'E234/2026 ua',
+      'E256/2026 ua',
+      'E338/2026 ua',
+      'E349/2026 ua',
+    ]);
+  });
+
+  // search-justiz-gz-joined.json: the live page for Geschaeftszahl=6Ob236/23h (five
+  // Rechtssätze) plus one more live Justiz Rechtssatz whose companions are themselves joined.
+  it('splits a joined Justiz Geschaeftszahl into one case number per element, companions lifted (#53)', () => {
+    const hits = parseSearchResponse(fixture('search-justiz-gz-joined.json')).hits;
+    const caseNumbers = hits.map((hit) => (hit.metadata as RisJudikaturMetadata).caseNumbers);
+
+    const [headnote] = caseNumbers;
+    expect(hits[0]!.documentNumber).toBe('JJR_19521210_OGH0002_0010OB00948_5200000_001');
+    expect(headnote).toHaveLength(52);
+    expect(headnote!.slice(0, 5)).toEqual([
+      '1Ob948/52',
+      '2Ob398/53',
+      '3Ob760/53',
+      '3Ob761/53',
+      '3Ob15/54',
+    ]);
+    expect(headnote!.slice(-3)).toEqual(['6Ob236/23h', '3Ob149/25w', '3Ob146/25d']);
+    expect(headnote).toContain('1Ob236/53');
+    for (const value of headnote!) expect(value).toMatch(/^\d+Ob\d+\/\d+[a-z]?$/u);
+
+    for (const single of caseNumbers.slice(1, 5)) expect(single).toEqual(['6Ob236/23h']);
+
+    // Several companions inside one pair of parentheses, separated by `;` themselves.
+    expect(caseNumbers[5]).toEqual([
+      '13Os15/07s',
+      '15Os4/11v',
+      '15Os4/18d',
+      '15Os39/19b',
+      '15Os52/25y',
+      '15Os53/25w',
+      '15Os54/25t',
+      '15Os52/26z',
+      '15Os53/26x',
+    ]);
+  });
+
+  // search-vfgh-gz-joined.json: four live VfGH Rechtssätze — a comma-joined item, a
+  // parenthesized ordinal, an ordinal list holding a comma, and an item array.
+  it('splits a comma-joined VfGH item but keeps ordinals and the ua suffix whole (#53)', () => {
+    const caseNumbers = parseSearchResponse(fixture('search-vfgh-gz-joined.json')).hits.map(
+      (hit) => (hit.metadata as RisJudikaturMetadata).caseNumbers,
+    );
+    expect(caseNumbers).toEqual([
+      ['G179/2024', 'V113/2024'],
+      ['G8/2026 (G8/2026-15)'],
+      ['G155/2025 ua (G155/2025-16, G209/2025-5)'],
+      ['E3811/2025 ua', 'E976/2026 ua'],
+    ]);
+  });
+
+  it('trims the trailing space a Dsk Geschaeftszahl arrives with (#53)', () => {
+    const metadata = parseSearchResponse(fixture('search-dsk-gz-trailing-space.json')).hits[0]!
+      .metadata as RisJudikaturMetadata;
+    expect(metadata.caseNumbers).toEqual(['2022-0.560.569']);
   });
 
   it('maps every Normenliste identifying field, preferring the VwGH short form (#19)', () => {
@@ -187,6 +292,71 @@ describe('parseSearchResponse', () => {
     expect(metadata.celexReferences).toContain('32016L0680');
   });
 
+  it('maps the consolidated BrKons Abkuerzung to abbreviation (#51)', () => {
+    const metadata = parseSearchResponse(fixture('search-brkons-celex.json')).hits[0]!
+      .metadata as RisBundesrechtMetadata;
+    expect(metadata.abbreviation).toBe('DSG');
+  });
+
+  it('leaves abbreviation absent on a BrKons record without Abkuerzung (#51)', () => {
+    for (const hit of parseSearchResponse(fixture('search-brkons-multi.json')).hits) {
+      expect(hit.metadata).not.toHaveProperty('abbreviation');
+    }
+  });
+
+  it('keeps the Begut and RegV Abkuerzung as the federal draft abbreviation (#51)', () => {
+    const begut = parseSearchResponse(fixture('search-begut.json')).hits[0]!
+      .metadata as RisBundesrechtMetadata;
+    const regv = parseSearchResponse(fixture('search-regv.json')).hits[0]!
+      .metadata as RisBundesrechtMetadata;
+    expect(begut.abbreviation).toBe('EStG-Novelle 2026');
+    expect(regv.abbreviation).toBe('USt-Novelle 2026');
+  });
+
+  // search-lrkons-abkuerzung.json is one page assembled from four live LrKons records: both
+  // BO für Wien § 1 / § 1a hits, Salzburg's ALHVO 2022 § 1 (Abkuerzung arrives with a leading
+  // space), and a Wien § 1 that carries Schlagworte but no Abkuerzung.
+  it('maps the consolidated LrKons Abkuerzung to abbreviation, trimmed (#51)', () => {
+    const hits = parseSearchResponse(fixture('search-lrkons-abkuerzung.json')).hits;
+    const metadata = hits.map((hit) => hit.metadata as RisLandesrechtMetadata);
+    expect(hits.map((hit) => hit.documentNumber)).toEqual([
+      'LWI40016426',
+      'LWI40017687',
+      'LSB40028116',
+      'LWI40000588',
+    ]);
+    expect(metadata.map((md) => md.controller)).toEqual(Array(4).fill('Landesrecht'));
+    expect(metadata[0]!.abbreviation).toBe('BO für Wien');
+    expect(metadata[1]!.abbreviation).toBe('BO für Wien');
+    expect(metadata[2]!.abbreviation).toBe('ALHVO 2022');
+    expect(metadata[3]).not.toHaveProperty('abbreviation');
+  });
+
+  it('maps the consolidated Schlagworte to keywords, absent where RIS sends none', () => {
+    const metadata = parseSearchResponse(fixture('search-lrkons-abkuerzung.json')).hits.map(
+      (hit) => hit.metadata as RisLandesrechtMetadata,
+    );
+    expect(metadata[0]!.keywords).toMatch(/^Bauordnung, Bau, Stadtentwicklung,/u);
+    expect(metadata[1]).not.toHaveProperty('keywords');
+    expect(metadata[2]).not.toHaveProperty('keywords');
+    expect(metadata[3]!.keywords).toMatch(/^Pensionsordnung, /u);
+    const brkons = parseSearchResponse(fixture('search-brkons-celex.json')).hits[0]!
+      .metadata as RisBundesrechtMetadata;
+    // RIS separates keyword groups with <br/>; keywords stay one comma-separated list.
+    expect(brkons.keywords).toMatch(/^e-rk3, Inh, Gewinnabsicht, 2\. Euro-Umstellungsgesetz/u);
+    expect(brkons.keywords).not.toContain('\n');
+  });
+
+  it('joins keyword groups RIS breaks with <br/> into one list on a Sonstige record too (#63, #54)', () => {
+    const sonstige = parseSearchResponse(
+      withMetadata('search-erlaesse.json', 'ERL_BMJ_20260924_2026_0_710_595', ['Sonstige'], {
+        Schlagworte: 'Gebühren,<br/>Vergleich<br/><br/>Gerichtsgebühren <br/>',
+      }),
+    ).hits.find((hit) => hit.documentNumber === 'ERL_BMJ_20260924_2026_0_710_595')!
+      .metadata as RisSonstigeMetadata;
+    expect(sonstige.keywords).toBe('Gebühren, Vergleich, Gerichtsgebühren');
+  });
+
   it('normalizes object-or-array content references and keys DataTypes (Mrp, GrA)', () => {
     const mrp = parseSearchResponse(fixture('search-mrp.json')).hits[0]!;
     // ContentReference array with a single-object ContentUrl inside.
@@ -247,6 +417,212 @@ describe('parseSearchResponse', () => {
     );
     expect(() => parseSearchResponse({ OgdSearchResult: {} })).toThrowError(
       expect.objectContaining({ code: JsonRpcErrorCode.ServiceUnavailable }),
+    );
+  });
+});
+
+describe('gazette identifiers — CELEX lists, Gliederungszahl, issue and page (#55)', () => {
+  it('keeps the BgblAlt issue and start page and the LgblNO Gliederungszahl and issue', () => {
+    const bgblAlt = metadataById<RisBundesrechtMetadata>(fixture('search-bgblalt.json'));
+    expect(bgblAlt.get('glo1940_0049_00357')).toMatchObject({ issue: '25', startPage: '357' });
+    const lgblNo = metadataById<RisLandesrechtMetadata>(fixture('search-lgblno.json'));
+    expect(lgblNo.get('LRNI_2007006')).toMatchObject({
+      issue: '6',
+      systematicNumber: '0001/1-62',
+    });
+  });
+
+  it('reads the BgblAuth CelexNummer list, in both of its wrapped-list shapes', () => {
+    const meta = metadataById<RisBundesrechtMetadata>(fixture('search-bgblauth-celex.json'));
+    expect(meta.get('BGBLA_2026_I_8')!.celexReferences).toEqual([
+      '32019L0633',
+      '32019L1161',
+      '32022L2041',
+      '32022L2381',
+      '32023L0970',
+      '32023L1791',
+      '32024L1760',
+    ]);
+    // A single CELEX arrives as `{ item: "…" }`, not a one-element array.
+    expect(meta.get('BGBLA_2026_I_81')!.celexReferences).toEqual(['32024L1233']);
+    expect(meta.get('BGBLA_2026_I_88')!.celexReferences).toEqual([]);
+  });
+
+  it('splits the comma-joined BgblPdf CelexNummer string into one entry per act', () => {
+    const meta = metadataById<RisBundesrechtMetadata>(fixture('search-bgblpdf-celex.json'));
+    const nine = meta.get('2003_570_2')!.celexReferences;
+    expect(nine).toEqual([
+      '31975L0442',
+      '31991L0156',
+      '31996D0350',
+      '31991L0689',
+      '31994L0031',
+      '32000D0532',
+      '32001D0118',
+      '32001D0119',
+      '32001D0573',
+    ]);
+    expect(nine.some((entry) => entry.includes(','))).toBe(false);
+    expect(meta.get('2003_140_1')!.celexReferences).toEqual(['32001L0019']);
+    expect(meta.get('2003_146_1')!.celexReferences).toEqual([]);
+  });
+
+  it('strips the "CELEX-Nr.:" label and splits on "und" in a prose BgblPdf value', () => {
+    const meta = metadataById<RisBundesrechtMetadata>(fixture('search-bgblpdf-celex.json'));
+    expect(meta.get('2003_130_1')!.celexReferences).toEqual(['31999L0070', '32001L0019']);
+  });
+
+  it('reads the LgblNO CelexNummern list verbatim, pre-sector forms and corrigenda included', () => {
+    const meta = metadataById<RisLandesrechtMetadata>(fixture('search-lgblno.json'));
+    expect(meta.get('LRNI_2007086')!.celexReferences).toEqual([
+      '383L0189',
+      '388L0182',
+      '394L0010',
+      '394L0010R(01)',
+      '398L0034',
+      '398L0048',
+    ]);
+    expect(meta.get('LRNI_2007006')!.celexReferences).toEqual([]);
+  });
+});
+
+describe('nil and wrapped upstream shapes on the abbreviation, decree, and CELEX fields', () => {
+  it('reads a nil BrKons Abkuerzung as no abbreviation (#51)', () => {
+    const meta = metadataById<RisBundesrechtMetadata>(
+      withMetadata('search-brkons-celex.json', 'NOR40262691', ['Bundesrecht', 'BrKons'], {
+        Abkuerzung: NIL,
+      }),
+    );
+    expect(meta.get('NOR40262691')).not.toHaveProperty('abbreviation');
+  });
+
+  it('reads a nil LrKons Abkuerzung as no abbreviation, and the rest of the page still parses (#51)', () => {
+    const meta = metadataById<RisLandesrechtMetadata>(
+      withMetadata('search-lrkons-abkuerzung.json', 'LWI40016426', ['Landesrecht', 'LrKons'], {
+        Abkuerzung: NIL,
+      }),
+    );
+    expect(meta.get('LWI40016426')).not.toHaveProperty('abbreviation');
+    expect(meta.get('LWI40017687')!.abbreviation).toBe('BO für Wien');
+    expect(meta.size).toBe(4);
+  });
+
+  it('reads a nil decree Abteilung as no department, and the rest of the page still parses (#54)', () => {
+    const meta = metadataById<RisSonstigeMetadata>(
+      withMetadata(
+        'search-erlaesse.json',
+        'ERL_BMJ_20250930_2025_0_575_430',
+        ['Sonstige', 'Erlaesse'],
+        { Abteilung: NIL },
+      ),
+    );
+    expect(meta.get('ERL_BMJ_20250930_2025_0_575_430')).not.toHaveProperty('department');
+    expect(meta.get('ERL_BMJ_20260924_2026_0_710_595')!.department).toBe('I 7');
+    expect(meta.size).toBe(5);
+  });
+
+  it('reads a nil BgblPdf CelexNummer as no CELEX entries, and the rest of the page still parses (#55)', () => {
+    const meta = metadataById<RisBundesrechtMetadata>(
+      withMetadata('search-bgblpdf-celex.json', '2003_570_2', ['Bundesrecht', 'BgblPdf'], {
+        CelexNummer: NIL,
+      }),
+    );
+    expect(meta.get('2003_570_2')!.celexReferences).toEqual([]);
+    expect(meta.get('2003_130_1')!.celexReferences).toEqual(['31999L0070', '32001L0019']);
+  });
+
+  it('splits each item of a wrapped BgblPdf CelexNummer list (#55)', () => {
+    const meta = metadataById<RisBundesrechtMetadata>(
+      withMetadata('search-bgblpdf-celex.json', '2003_570_2', ['Bundesrecht', 'BgblPdf'], {
+        CelexNummer: { item: ['31991L0628, 31995L0029', 'CELEX-Nr.: 31999L0070 und 32001L0019'] },
+      }),
+    );
+    expect(meta.get('2003_570_2')!.celexReferences).toEqual([
+      '31991L0628',
+      '31995L0029',
+      '31999L0070',
+      '32001L0019',
+    ]);
+  });
+
+  it('reads nil decree Anmerkung, Fundstelle, Genehmigungsdatum, and Normen, and a nil BgblPdf Fundstelle, as absent or empty', () => {
+    const decree = metadataById<RisSonstigeMetadata>(
+      withMetadata(
+        'search-erlaesse.json',
+        'ERL_BMJ_20260924_2026_0_710_595',
+        ['Sonstige', 'Erlaesse'],
+        { Anmerkung: NIL, Fundstelle: NIL, Genehmigungsdatum: NIL, Normen: NIL },
+      ),
+    ).get('ERL_BMJ_20260924_2026_0_710_595')!;
+    expect(decree.normsCited).toEqual([]);
+    for (const key of ['approvalDate', 'note', 'promulgation'] as const) {
+      expect(decree).not.toHaveProperty(key);
+    }
+    const pdf = metadataById<RisBundesrechtMetadata>(
+      withMetadata('search-bgblpdf-celex.json', '2003_570_2', ['Bundesrecht', 'BgblPdf'], {
+        Fundstelle: NIL,
+      }),
+    ).get('2003_570_2')!;
+    expect(pdf).not.toHaveProperty('promulgation');
+  });
+});
+
+describe('announcement metadata — decrees, case numbers, repeal dates (#54)', () => {
+  const sonstigeById = (name: string) => metadataById<RisSonstigeMetadata>(fixture(name));
+
+  it('keeps the decree fields it already mapped (case number, type, department, in-force date)', () => {
+    const decree = sonstigeById('search-erlaesse.json').get('ERL_BMJ_20260924_2026_0_710_595');
+    expect(decree).toMatchObject({
+      caseNumbers: ['2026-0.710.595'],
+      department: 'I 7',
+      inForceFrom: '2026-10-01',
+      normType: 'Erlass',
+    });
+    expect(decree!.publishedDate).toBeUndefined();
+  });
+
+  it('trims a decree department RIS pads with a trailing space ("I 7 ")', () => {
+    const decree = sonstigeById('search-erlaesse.json').get('ERL_BMJ_20250930_2025_0_575_430');
+    expect(decree!.department).toBe('I 7');
+  });
+
+  it('reads decree Normen verbatim — one item per RIS entry, never split on commas', () => {
+    const decrees = sonstigeById('search-erlaesse.json');
+    expect(decrees.get('ERL_BMJ_20260924_2026_0_710_595')!.normsCited).toEqual([
+      'TP1 GGG, TP2 GGG, TP3 GGG, TP12 GGG',
+    ]);
+    expect(decrees.get('ERL_BKA_20250110_2025_0_015_115')!.normsCited).toEqual([
+      'B-VG Art 22a',
+      'IFG',
+    ]);
+    expect(decrees.get('ERL_BKA_20250813_2025_0_615_241')!.normsCited).toEqual([]);
+  });
+
+  it('reads the decree approval date, gazette citation, and note', () => {
+    const decrees = sonstigeById('search-erlaesse.json');
+    expect(decrees.get('ERL_BMJ_20260924_2026_0_710_595')).toMatchObject({
+      approvalDate: '2026-09-24',
+      promulgation: 'eJABl Nr. 13/2026',
+    });
+    expect(decrees.get('ERL_BMJ_20250930_2025_0_575_430')!.note).toBe(
+      'Außerkrafttreten des Erlasses vom 20. April 2018',
+    );
+    expect(decrees.get('ERL_BKA_20250110_2025_0_015_115')!.promulgation).toBeUndefined();
+  });
+
+  it('trims the whitespace some veterinary case numbers arrive with', () => {
+    const avn = sonstigeById('search-avn.json');
+    expect(avn.get('AVN_20261009_AVN_2026_23')!.caseNumbers).toEqual(['2026-0.847.254']);
+    expect(avn.get('AVN_20260805_AVN_2026_17')!.caseNumbers).toEqual(['2026-0.613.534']);
+  });
+
+  it('reads the repeal date of trade-exam rules and health-structure plans', () => {
+    expect(
+      sonstigeById('search-pruefgewo.json').get('PRUEF_20210412_2021_0_253_954_BMDW_Gewerberecht_')!
+        .inForceUntil,
+    ).toBe('2022-11-15');
+    expect(sonstigeById('search-spg.json').get('SPG_SA_RSG_V_20250507_3_2025')!.inForceUntil).toBe(
+      '2026-02-16',
     );
   });
 });
@@ -415,5 +791,26 @@ describe('text helpers', () => {
     expect(isHtmlErrorPage('<!DOCTYPE html><html>…')).toBe(true);
     expect(isHtmlErrorPage('  <html lang="de">')).toBe(true);
     expect(isHtmlErrorPage('{"OgdSearchResult":{}}')).toBe(false);
+  });
+});
+
+describe('gazette promulgation — the gazette each federal entry appeared in (#65)', () => {
+  /** The promulgation of record `id` on the captured page `name`. */
+  const promulgation = (name: string, id: string) =>
+    metadataById<RisBundesrechtMetadata>(fixture(name)).get(id)?.promulgation;
+
+  it('reads the BgblPdf Fundstelle, the only field telling 1945 StGBl. from BGBl.', () => {
+    expect(promulgation('search-bgblpdf-1-1945.json', '1945_1_0')).toBe('StGBl. Nr. 1/1945');
+    expect(promulgation('search-bgblpdf-1-1945.json', '1945_0_0')).toBe('BGBl. Nr. 1/1945');
+    expect(promulgation('search-bgblpdf-50-1999.json', '1999_50_1')).toBe('BGBl. I Nr. 50/1999');
+  });
+
+  it('keeps the BgblAlt Kundmachungsorgan, the gazette title', () => {
+    expect(promulgation('search-bgblalt-1-1938.json', 'glo1938_0001_00001')).toBe(
+      'Gesetzblatt für das Land Österreich',
+    );
+    expect(promulgation('search-bgblalt-1-1938.json', 'bgl1938_0001_00001')).toBe(
+      'Bundesgesetzblatt für den Bundesstaat Österreich',
+    );
   });
 });

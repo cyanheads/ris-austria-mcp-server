@@ -1,0 +1,83 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "100",
+        "#text": "75"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "SPG_SA_RSG_V_20250507_3_2025",
+                "Applikation": "Spg",
+                "Organ": "LReg Salzburg",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Spg&Dokumentnummer=SPG_SA_RSG_V_20250507_3_2025"
+              },
+              "Sonstige": {
+                "Kurztitel": "5. Verordnung der Gesundheitsplanungs GmbH über die Verbindlicherklärung von Teilen des Regionalen Strukturplanes Gesundheit Salzburg 2025",
+                "Titel": "5. Verordnung der Gesundheitsplanungs GmbH über die Verbindlicherklärung von Teilen des Regionalen Strukturplanes Gesundheit Salzburg 2025",
+                "Kundmachungsdatum": "2025-05-06",
+                "Schlagworte": "RSG-Planungsmatrix",
+                "Spg": {
+                  "Spgnummer": "3/2025",
+                  "Typ": "RsgVerordnung",
+                  "Land": "Salzburg",
+                  "Kurzinformation": "5. Verordnung der Gesundheitsplanungs GmbH über die Verbindlicherklärung von Teilen des Regionalen Strukturplanes Gesundheit Salzburg 2025",
+                  "Inkrafttretensdatum": "2025-05-07",
+                  "Ausserkrafttretensdatum": "2026-02-16"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Spg/SPG_SA_RSG_V_20250507_3_2025/SPG_SA_RSG_V_20250507_3_2025.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Spg/SPG_SA_RSG_V_20250507_3_2025/SPG_SA_RSG_V_20250507_3_2025.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Spg/SPG_SA_RSG_V_20250507_3_2025/SPG_SA_RSG_V_20250507_3_2025.rtf"
+                      },
+                      {
+                        "DataType": "Authentisch",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Spg/SPG_SA_RSG_V_20250507_3_2025/SPG_SA_RSG_V_20250507_3_2025.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "image001.png",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Png",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Spg/SPG_SA_RSG_V_20250507_3_2025/image001.png"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

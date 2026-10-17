@@ -1,0 +1,252 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "100",
+        "#text": "710"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "AVN_20261009_AVN_2026_23",
+                "Applikation": "Avn",
+                "Organ": "BMSGPK (Bundesministerium für Soziales, Gesundheit, Pflege und Konsumentenschutz)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Avn&Dokumentnummer=AVN_20261009_AVN_2026_23"
+              },
+              "Sonstige": {
+                "Kurztitel": "Kundmachung  von Meldestellen an das Veterinärinformationssystem (VIS)  ",
+                "Titel": "Kundmachung  von Meldestellen an das Veterinärinformationssystem (VIS)  ",
+                "Kundmachungsdatum": "2026-10-09",
+                "Schlagworte": "Meldestellen, Bundesländer, Verein, Fleisch, Zucht",
+                "Avn": {
+                  "Avnnummer": "AVN 2026/23",
+                  "Typ": "Kundmachung",
+                  "Inkrafttretensdatum": "2026-10-10",
+                  "Geschaeftszahl": " 2026-0.847.254",
+                  "Normen": {
+                    "item": "§6 Abs4 der Tierkennzeichnungs- und Registrierungsverordnung 2009 TKZVO 2009, BGBl II Nr. 291/2009 idgF"
+                  },
+                  "Anmerkung": "Gleichzeitig tritt die Kundmachung von Meldestellen an das Veterinärinformationssystem (VIS), veröffentlicht unter 2026-0.402.605 in den AVN Nr. 2026/13, außer Kraft.",
+                  "Kurzinformation": "Kundmachung  von Meldestellen an das Veterinärinformationssystem (VIS)  "
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20261009_AVN_2026_23/AVN_20261009_AVN_2026_23.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20261009_AVN_2026_23/AVN_20261009_AVN_2026_23.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20261009_AVN_2026_23/AVN_20261009_AVN_2026_23.rtf"
+                      },
+                      {
+                        "DataType": "Authentisch",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20261009_AVN_2026_23/AVN_20261009_AVN_2026_23.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "Anlage I",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Authentisch",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20261009_AVN_2026_23/Anlage_I___ATM_LISTE_VIS_10_2026.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "image001.jpg",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Jpg",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20261009_AVN_2026_23/image001.jpg"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "AVN_20260807_AVN_2026_19",
+                "Applikation": "Avn",
+                "Organ": "BMSGPK (Bundesministerium für Soziales, Gesundheit, Pflege und Konsumentenschutz)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Avn&Dokumentnummer=AVN_20260807_AVN_2026_19"
+              },
+              "Sonstige": {
+                "Kurztitel": "Kundmachung betreffend aktive Überwachung der Tuberkulose",
+                "Titel": "Kundmachung betreffend aktive Überwachung der Tuberkulose",
+                "Kundmachungsdatum": "2026-08-07",
+                "Schlagworte": "TBC",
+                "Avn": {
+                  "Avnnummer": "AVN 2026/19",
+                  "Typ": "Kundmachung",
+                  "Inkrafttretensdatum": "2026-08-08",
+                  "Ausserkrafttretensdatum": "2026-10-06",
+                  "Geschaeftszahl": "2026-0.656.349",
+                  "Normen": {
+                    "item": "Rindertuberkuloseverordnung §1"
+                  },
+                  "Anmerkung": "Mit Inkrafttreten dieser Kundmachung tritt die Kundmachung betreffend aktive Überwachung der Tuberkulose, AVN Nr. 2025/30, außer Kraft.",
+                  "Kurzinformation": "Kundmachung betreffend aktive Überwachung der Tuberkulose"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20260807_AVN_2026_19/AVN_20260807_AVN_2026_19.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20260807_AVN_2026_19/AVN_20260807_AVN_2026_19.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20260807_AVN_2026_19/AVN_20260807_AVN_2026_19.rtf"
+                      },
+                      {
+                        "DataType": "Authentisch",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20260807_AVN_2026_19/AVN_20260807_AVN_2026_19.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "Anlage",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Authentisch",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20260807_AVN_2026_19/Anlage.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "image001.jpg",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Jpg",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20260807_AVN_2026_19/image001.jpg"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "AVN_20260805_AVN_2026_17",
+                "Applikation": "Avn",
+                "Organ": "BMSGPK (Bundesministerium für Soziales, Gesundheit, Pflege und Konsumentenschutz)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Avn&Dokumentnummer=AVN_20260805_AVN_2026_17"
+              },
+              "Sonstige": {
+                "Kurztitel": "Kundmachung zum ÖTGD-Programm „Impfprophylaxe beim Ferkel“ Anerkennung im Rahmen von § 15 TGD-Ver...",
+                "Titel": "Kundmachung zum ÖTGD-Programm „Impfprophylaxe beim Ferkel“\r\nAnerkennung im Rahmen von § 15 TGD-Verordnung 2009 sowie § 5 der Veterinär-Arzneispezialitäten-Anwendungsverordnung\r\n",
+                "Kundmachungsdatum": "2026-08-05",
+                "Schlagworte": "Impfprophylaxe beim Ferkel, Ergänzende Freigabe ",
+                "Avn": {
+                  "Avnnummer": "AVN 2026/17",
+                  "Typ": "Kundmachung",
+                  "Inkrafttretensdatum": "2026-08-06",
+                  "Geschaeftszahl": "2026-0.613.534 ",
+                  "Normen": {
+                    "item": "TGD-VO 2009 §15, Veterinär-Arzneispezialitäten-Anwendungsverordnung 2010 §5"
+                  },
+                  "Kurzinformation": "Kundmachung zum ÖTGD-Programm „Impfprophylaxe beim Ferkel“ Anerkennung im Rahmen von § 15 TGD-Ver..."
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20260805_AVN_2026_17/AVN_20260805_AVN_2026_17.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20260805_AVN_2026_17/AVN_20260805_AVN_2026_17.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20260805_AVN_2026_17/AVN_20260805_AVN_2026_17.rtf"
+                      },
+                      {
+                        "DataType": "Authentisch",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20260805_AVN_2026_17/AVN_20260805_AVN_2026_17.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "image001.jpg",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Jpg",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Avn/AVN_20260805_AVN_2026_17/image001.jpg"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,246 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "100",
+        "#text": "3091"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "BGBLA_2026_I_8",
+                "Applikation": "BgblAuth",
+                "Organ": "BMJ (Bundesministerium für Justiz)",
+                "Einbringer": "BMJ (Bundesministerium für Justiz)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/bgbl/I/2026/8/20260227"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "Vergaberechtsgesetz 2026",
+                "Titel": "Bundesgesetz, mit dem das Bundesvergabegesetz 2018, das Bundesvergabegesetz Konzessionen 2018, das Bundesvergabegesetz Verteidigung und Sicherheit 2012, das Bundesgesetz über die Errichtung der Gesellschaft „Familie & Beruf Management GmbH“ und das Straßenfahrzeug-Beschaffungsgesetz geändert werden (Vergaberechtsgesetz 2026) ",
+                "Eli": "https://www.ris.bka.gv.at/eli/bgbl/I/2026/8/20260227",
+                "BgblAuth": {
+                  "Bgblnummer": "BGBl. I Nr. 8/2026",
+                  "Teil": "Teil1",
+                  "Ausgabedatum": "2026-02-27",
+                  "Typ": "Bundesgesetz",
+                  "Gesetzgebungsperiode": "XXVIII",
+                  "DatumNationalrat": "2025-12-11",
+                  "NummerNationalrat": "57",
+                  "Regierungsvorlage": {
+                    "item": "302"
+                  },
+                  "AusschussberichtNationalrat": {
+                    "item": "316"
+                  },
+                  "DatumBundesrat": "2025-12-17",
+                  "NummerBundesrat": "984",
+                  "AusschussberichtBundesrat": {
+                    "item": "11748"
+                  },
+                  "CelexNummer": {
+                    "item": [
+                      "32019L0633",
+                      "32019L1161",
+                      "32022L2041",
+                      "32022L2381",
+                      "32023L0970",
+                      "32023L1791",
+                      "32024L1760"
+                    ]
+                  },
+                  "AlteDokumentnummer": "BGBLA_2026_I_8"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_I_8/BGBLA_2026_I_8.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_I_8/BGBLA_2026_I_8.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_I_8/BGBLA_2026_I_8.rtf"
+                    },
+                    {
+                      "DataType": "Authentisch",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_I_8/BGBLA_2026_I_8.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "BGBLA_2026_I_81",
+                "Applikation": "BgblAuth",
+                "Organ": "BMI (Bundesministerium für Inneres)",
+                "Einbringer": "BMI (Bundesministerium für Inneres)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/bgbl/I/2026/81/20260806"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "Änderung des Niederlassungs- und Aufenthaltsgesetzes und des Ausländerbeschäftigungsgesetzes",
+                "Titel": "Bundesgesetz, mit dem das Niederlassungs- und Aufenthaltsgesetz und das Ausländerbeschäftigungsgesetz geändert werden",
+                "Eli": "https://www.ris.bka.gv.at/eli/bgbl/I/2026/81/20260806",
+                "BgblAuth": {
+                  "Bgblnummer": "BGBl. I Nr. 81/2026",
+                  "Teil": "Teil1",
+                  "Ausgabedatum": "2026-08-06",
+                  "Typ": "Bundesgesetz",
+                  "Gesetzgebungsperiode": "XXVIII",
+                  "DatumNationalrat": "2026-05-20",
+                  "NummerNationalrat": "77",
+                  "Regierungsvorlage": {
+                    "item": "443"
+                  },
+                  "AusschussberichtNationalrat": {
+                    "item": "456"
+                  },
+                  "Aenderung": {
+                    "item": "11809"
+                  },
+                  "DatumBundesrat": "2026-06-03",
+                  "NummerBundesrat": "991",
+                  "AusschussberichtBundesrat": {
+                    "item": "11813"
+                  },
+                  "CelexNummer": {
+                    "item": "32024L1233"
+                  },
+                  "AlteDokumentnummer": "BGBLA_2026_I_81"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_I_81/BGBLA_2026_I_81.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_I_81/BGBLA_2026_I_81.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_I_81/BGBLA_2026_I_81.rtf"
+                    },
+                    {
+                      "DataType": "Authentisch",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_I_81/BGBLA_2026_I_81.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "BGBLA_2026_I_88",
+                "Applikation": "BgblAuth",
+                "Organ": "BMASGPK (Bundesministerium für Arbeit, Soziales, Gesundheit, Pflege und Konsumentenschutz)",
+                "Einbringer": "BMASGPK (Bundesministerium für Arbeit, Soziales, Gesundheit, Pflege und Konsumentenschutz)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/bgbl/I/2026/88/20261016"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "Änderung des Allgemeinen Sozialversicherungsgesetzes, des Gewerblichen Sozialversicherungsgesetzes, des Bauern-Sozialversicherungsgesetzes, des Freiberuflichen-Sozialversicherungsgesetzes, des Arbeitsmarktservicegesetzes, des Arbeitsmarktpolitik-Finanzierungsgesetzes, des Einkommensteuergesetzes 1988, des Betrieblichen Mitarbeiter- und Selbständigenvorsorgegesetzes, des Pensionskassengesetzes, des Betriebspensionsgesetzes, des Landarbeitsgesetzes 2021, des Pensionskassenvorsorgegesetzes, des Versicherungssteuergesetzes 1953, des Bankwesengesetzes, des Einlagensicherungs- und Anlegerentschädigungsgesetzes und des DORA-Vollzugsgesetzes",
+                "Titel": "Bundesgesetz, mit dem das Allgemeine Sozialversicherungsgesetz, das Gewerbliche Sozialversicherungsgesetz, das Bauern-Sozialversicherungsgesetz, das Freiberuflichen-Sozialversicherungsgesetz, das Arbeitsmarktservicegesetz, das Arbeitsmarktpolitik-Finanzierungsgesetz, das Einkommensteuergesetz 1988, das Betriebliche Mitarbeiter- und Selbständigenvorsorgegesetz, das Pensionskassengesetz, das Betriebspensionsgesetz, das Landarbeitsgesetz 2021, das Pensionskassenvorsorgegesetz, das Versicherungssteuergesetz 1953, das Bankwesengesetz, das Einlagensicherungs- und Anlegerentschädigungsgesetz und das DORA-Vollzugsgesetz geändert werden",
+                "Eli": "https://www.ris.bka.gv.at/eli/bgbl/I/2026/88/20261016",
+                "BgblAuth": {
+                  "Bgblnummer": "BGBl. I Nr. 88/2026",
+                  "Teil": "Teil1",
+                  "Ausgabedatum": "2026-10-16",
+                  "Typ": "Bundesgesetz",
+                  "Gesetzgebungsperiode": "XXVIII",
+                  "DatumNationalrat": "2026-09-23",
+                  "NummerNationalrat": "96",
+                  "Regierungsvorlage": {
+                    "item": "592"
+                  },
+                  "AusschussberichtNationalrat": {
+                    "item": "606"
+                  },
+                  "Aenderung": {
+                    "item": "11865"
+                  },
+                  "DatumBundesrat": "2026-10-08",
+                  "NummerBundesrat": "996",
+                  "AusschussberichtBundesrat": {
+                    "item": "11871"
+                  },
+                  "AlteDokumentnummer": "BGBLA_2026_I_88"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_I_88/BGBLA_2026_I_88.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_I_88/BGBLA_2026_I_88.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_I_88/BGBLA_2026_I_88.rtf"
+                    },
+                    {
+                      "DataType": "Authentisch",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_I_88/BGBLA_2026_I_88.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

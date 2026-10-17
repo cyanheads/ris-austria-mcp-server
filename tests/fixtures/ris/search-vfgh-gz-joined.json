@@ -1,0 +1,372 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "100",
+        "#text": "4"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFR_20260630_24G00179_01",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-07-17",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_20260630_24G00179_01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "G179/2024, V113/2024"
+                },
+                "Normen": {
+                  "item": [
+                    "B-VG Art8 Abs2",
+                    "B-VG Art139 Abs1 Z3",
+                    "B-VG Art140 Abs1 Z1 litc",
+                    "VolksgruppenG §1, §2",
+                    "VolksgruppenbeiräteV ",
+                    "VfGG §7 Abs1"
+                  ]
+                },
+                "Entscheidungsdatum": "2026-06-30",
+                "Schlagworte": "VfGH / Individualantrag, Volksgruppen, VfGH / Legitimation, Minderheiten, Rechte subjektive",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:2026:G179.2024",
+                "Vfgh": {
+                  "Entscheidungsart": "Beschluss",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": "10/10 Grundrechte, Datenschutz, Auskunftspflicht"
+                  },
+                  "Leitsatz": "Zurückweisung eines Individualantrags auf Aufhebung einer Bestimmung des VolksgruppenG sowie der gesamten VolksgruppenbeiräteV mangels Bestehens eines subjektives Rechts auf Einrichtung eines Volksgruppenbeirates bzw auf Anerkennung einer Volksgruppe ",
+                  "Entscheidungstexte": {
+                    "item": {
+                      "Geschaeftszahl": "G179/2024, V113/2024",
+                      "Dokumenttyp": "Text",
+                      "Gericht": "VfGH",
+                      "Entscheidungsdatum": "2026-06-30",
+                      "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260630_24G00179_00",
+                      "Dokumentnummer": "JFT_20260630_24G00179_00",
+                      "Entscheidungsart": "Beschluss"
+                    }
+                  }
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260630_24G00179_01/JFR_20260630_24G00179_01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260630_24G00179_01/JFR_20260630_24G00179_01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260630_24G00179_01/JFR_20260630_24G00179_01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260630_24G00179_01/JFR_20260630_24G00179_01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFR_20260625_26G00008_01",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-08-24",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_20260625_26G00008_01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "G8/2026 (G8/2026-15)"
+                },
+                "Normen": {
+                  "item": [
+                    "B-VG Art7 Abs1 / Gesetz",
+                    "B-VG Art32",
+                    "B-VG Art33",
+                    "B-VG Art53",
+                    "B-VG Art90 Abs1",
+                    "B-VG Art140 Abs1 Z1 litc",
+                    "EMRK Art6 Abs1",
+                    "EMRK Art10",
+                    "StGG Art2",
+                    "VO-UA §17 Abs1, §18",
+                    "GOG NR §33, §37a",
+                    "MedienG §7a, §22, §30",
+                    "StPO §228",
+                    "VfGG §7 Abs1",
+                    "VfGG §65a"
+                  ]
+                },
+                "Entscheidungsdatum": "2026-06-25",
+                "Schlagworte": "Untersuchungsausschuss, Medienrecht, VfGH / Individualantrag, Meinungsäußerungsfreiheit, Pressefreiheit, Rechtspolitik, Kommunikationsfreiheit, Verhältnismäßigkeit, VfGH / Fristsetzung, VfGH / Kosten, Verhandlung mündliche, Kunstfreiheit, Öffentlichkeitsprinzip, Parlament, Auskunftsrecht, Sachverständige, Anhörungsrecht",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:2026:G8.2026",
+                "Vfgh": {
+                  "Entscheidungsart": "Erkenntnis",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": "10/03 Nationalrat, Bundesrat"
+                  },
+                  "Leitsatz": "Verstoß gegen den Gleichheitsgrundsatz durch eine Bestimmung der VO-UA betreffend die Beschränkung des Zugangs zu Anhörungen in Untersuchungsausschüssen auf nur für in Medienunternehmen tätige Journalisten; Verfassungswidrigkeit des Ausschlusses von – auch journalistische Standards erfüllende, jedoch nicht für ein professionelles Medienunternehmen arbeitende – Personen mit \"watchdog-Funktion\" iSd Art10 EMRK; Verhältnismäßigkeit des Verbots von Ton- und Bildaufnahmen angesichts der Unvorhersehbarkeit des Verlaufs von Anhörungen sowie zum Schutz von Persönlichkeitsrechten ",
+                  "Entscheidungstexte": {
+                    "item": {
+                      "Geschaeftszahl": "G8/2026 (G8/2026-15)",
+                      "Dokumenttyp": "Text",
+                      "Gericht": "VfGH",
+                      "Entscheidungsdatum": "2026-06-25",
+                      "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260625_26G00008_00",
+                      "Dokumentnummer": "JFT_20260625_26G00008_00",
+                      "Entscheidungsart": "Erkenntnis"
+                    }
+                  }
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260625_26G00008_01/JFR_20260625_26G00008_01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260625_26G00008_01/JFR_20260625_26G00008_01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260625_26G00008_01/JFR_20260625_26G00008_01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260625_26G00008_01/JFR_20260625_26G00008_01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFR_20260317_25G00155_01",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-04-15",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_20260317_25G00155_01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "G155/2025 ua (G155/2025-16, G209/2025-5)"
+                },
+                "Normen": {
+                  "item": [
+                    "B-VG Art7 Abs1 / Gesetz",
+                    "B-VG Art140 Abs1 Z1 lita",
+                    "B-VG Art140 Abs1 Z1 litb",
+                    "B-VG Art151 Abs68",
+                    "StGG Art2",
+                    "EMRK Art8",
+                    "Wr Kinder- und JugendhilfeG 2013 §1, §11, §12, §15 Abs4, §28, §29, §30, §31, §32, §38, §40, §41, §44",
+                    "Wr AuskunftspflichtG §1, §2, §3",
+                    "ABGB §185",
+                    "VfGG §7 Abs1"
+                  ]
+                },
+                "Entscheidungsdatum": "2026-03-17",
+                "Schlagworte": "Kinder, Auskunftsrecht, Privat- und Familienleben, Kinder- und Jugendhilfe, Jugendfürsorge, Kindschaftsrecht, lex specialis, Auslegung verfassungskonforme, VfGH / Fristsetzung, VfGH / Gerichtsantrag",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:2026:G155.2025",
+                "Vfgh": {
+                  "Entscheidungsart": "Erkenntnis",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": [
+                      "L60 Gesundheits- und Sozialrecht (S)",
+                      "L60/20 Jugendschutz und Jugendwohlfahrt, Kindertagesheimwesen"
+                    ]
+                  },
+                  "Leitsatz": "Verstoß gegen den Gleichheitsgrundsatz durch Bestimmungen des Wr Kinder- und JugendhilfeG 2013 betreffend den gänzlichen Ausschluss von – im Bereich der Pflege und Erziehung nicht obsorgeberechtigten – Pflegeeltern von der Erteilung von Auskünften über das Privat- und Familienleben ihrer Pflegekinder; keine sachliche Rechtfertigung des generellen Ausschlusses des Auskunftsanspruchs angesichts der langdauernden, familienartigen und schutzwürdigen Nahebeziehung zwischen Pflegekindern und Pflegeeltern; kein Auskunftsrecht gemäß dem Wr AuskunftspflichtG auf Grund der als lex specialis geltenden verfassungswidrigen Bestimmung des Wr Kinder- und JugendhilfeG 2013 ",
+                  "Entscheidungstexte": {
+                    "item": {
+                      "Geschaeftszahl": "G155/2025 ua (G155/2025-16, G209/2025-5)",
+                      "Dokumenttyp": "Text",
+                      "Gericht": "VfGH",
+                      "Entscheidungsdatum": "2026-03-17",
+                      "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260317_25G00155_00",
+                      "Dokumentnummer": "JFT_20260317_25G00155_00",
+                      "Entscheidungsart": "Erkenntnis"
+                    }
+                  }
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260317_25G00155_01/JFR_20260317_25G00155_01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260317_25G00155_01/JFR_20260317_25G00155_01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260317_25G00155_01/JFR_20260317_25G00155_01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260317_25G00155_01/JFR_20260317_25G00155_01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFR_20260701_25E03811_01",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-09-21",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_20260701_25E03811_01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": [
+                    "E3811/2025 ua",
+                    "E976/2026 ua"
+                  ]
+                },
+                "Normen": {
+                  "item": [
+                    "B-VG Art144 Abs1",
+                    "AsylG 2005 §25, §75 Abs41",
+                    "VfGG §7 Abs2"
+                  ]
+                },
+                "Entscheidungsdatum": "2026-07-01",
+                "Schlagworte": "Einstellung, VfGH / Gegenstandslosigkeit, Entscheidungserlassung (Zeitpunkt maßgeblich für Rechtslage)",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:2026:E3811.2025",
+                "Vfgh": {
+                  "Entscheidungsart": "Beschluss",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": "10/07 Verfassungs- und Verwaltungsgerichtsbarkeit"
+                  },
+                  "Leitsatz": "Einstellung des Verfahrens auf Grund einer Bestimmung des AsylG 2005 mangels Entscheidung des VfGH bis zum 12.06.2026; Zurücktreten der Rechtssache in jene Lage, in der sie sich vor der Entscheidung durch das BVwG befunden hat ",
+                  "Entscheidungstexte": {
+                    "item": [
+                      {
+                        "Geschaeftszahl": "E3811/2025 ua",
+                        "Dokumenttyp": "Text",
+                        "Gericht": "VfGH",
+                        "Entscheidungsdatum": "2026-07-01",
+                        "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260701_25E03811_00",
+                        "Dokumentnummer": "JFT_20260701_25E03811_00",
+                        "Entscheidungsart": "Beschluss"
+                      },
+                      {
+                        "Geschaeftszahl": "E976/2026 ua",
+                        "Dokumenttyp": "Text",
+                        "Gericht": "VfGH",
+                        "Entscheidungsdatum": "2026-07-01",
+                        "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20260701_26E00976_00",
+                        "Dokumentnummer": "JFT_20260701_26E00976_00",
+                        "Entscheidungsart": "Beschluss"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260701_25E03811_01/JFR_20260701_25E03811_01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260701_25E03811_01/JFR_20260701_25E03811_01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260701_25E03811_01/JFR_20260701_25E03811_01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_20260701_25E03811_01/JFR_20260701_25E03811_01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

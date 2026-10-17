@@ -1,0 +1,89 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "2",
+        "@pageSize": "100",
+        "#text": "1"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "DSBT_20220907_2022_0_560_569__00",
+                "Applikation": "Dsk",
+                "Organ": "Datenschutzbehörde",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2022-11-09",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Dsk&Dokumentnummer=DSBT_20220907_2022_0_560_569__00"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Text",
+                "Geschaeftszahl": {
+                  "item": "2022-0.560.569 "
+                },
+                "Normen": {
+                  "item": [
+                    "DSG §1 Abs1",
+                    "DSG §24 Abs1",
+                    "GRC Art8 Abs1",
+                    "GRC Art8 Abs3",
+                    "DSGVO Art57 Abs1 litf",
+                    "DSGVO Art77 Abs1",
+                    "DSGVO Art77 Abs2"
+                  ]
+                },
+                "Entscheidungsdatum": "2022-09-07",
+                "Schlagworte": "Geheimhaltung, Aktivlegitimation, Unzulässigkeit der Beschwerdeführung, kein Recht auf Beschwerde des Verantwortlichen gegen sich selbst wegen eines behauptet erfolgten Eingriffs in Geheimhaltungsrecht eines Dritten <br/>",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:DSB:2022:2022.0.560.569.",
+                "Dsk": {
+                  "Entscheidungsart": "BescheidBeschwerde",
+                  "Kurzinformation": "Geheimhaltung, Aktivlegitimation, Unzulässigkeit der Beschwerdeführung, kein Recht auf Beschwerde...",
+                  "EntscheidendeBehoerde": "Datenschutzbehörde",
+                  "Anfechtung": "Dieser Bescheid ist rechtskräftig.",
+                  "Staat": "AT",
+                  "Sprache": "DE",
+                  "Zugang": "PUBLIC"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Dsk&Dokumentnummer=DSBT_20220907_2022_0_560_569__00",
+                "RechtssaetzeUrl": "https://ogd.ris.bka.gv.at/JudikaturRechtssaetze.wxe?Abfrage=Dsk&Dokumentnummer=DSBT_20220907_2022_0_560_569__00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Dsk/DSBT_20220907_2022_0_560_569__00/DSBT_20220907_2022_0_560_569__00.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Dsk/DSBT_20220907_2022_0_560_569__00/DSBT_20220907_2022_0_560_569__00.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Dsk/DSBT_20220907_2022_0_560_569__00/DSBT_20220907_2022_0_560_569__00.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Dsk/DSBT_20220907_2022_0_560_569__00/DSBT_20220907_2022_0_560_569__00.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

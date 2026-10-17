@@ -1,0 +1,305 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "20",
+        "#text": "4"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "LWI40016426",
+                "Applikation": "LrKons",
+                "Organ": "LReg Wien",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2023-12-19",
+                "Geaendert": "2024-11-15",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/lgbl/WI/1930/11/P1/LWI40016426"
+              },
+              "Landesrecht": {
+                "Kurztitel": "Bauordnung für Wien",
+                "Bundesland": "Wien",
+                "LrKons": {
+                  "Kundmachungsorgan": "LGBl. Nr. 11/1930 zuletzt geändert durch LGBl. Nr. 37/2023 ",
+                  "Typ": "Gesetz",
+                  "Dokumenttyp": "Paragraph",
+                  "ArtikelParagraphAnlage": "§ 1",
+                  "Paragraphnummer": "1",
+                  "StammnormPublikationsorgan": "LGBl. Nr.",
+                  "StammnormBgblnummer": "11/1930",
+                  "NovellenPublikationsorgan": "LGBl. Nr.",
+                  "NovellenBgblnummer": "37/2023",
+                  "NovellenBeziehung": "zuletzt geändert durch",
+                  "Inkrafttretensdatum": "2023-12-14",
+                  "Abkuerzung": "BO für Wien",
+                  "Indizes": {
+                    "item": [
+                      "10 Bau- und Bodenrecht sowie Recht der Technik (B)",
+                      "10/10 Baurecht sowie Straßen- und Wegerecht"
+                    ]
+                  },
+                  "Aenderung": "",
+                  "Schlagworte": "Bauordnung, Bau, Stadtentwicklung, Stadtplanung, Baugesetz, BO, Bauen, Arbeit, Bauklasse, Haus, Wohnhaus, Pflegeheim, Krankenhaus, Krankenanstalt, Pensionistenwohnhaus, Garage, Tiefgarage, Wohnheim, Wohnhausanlage, Stadtbild, Flächenwidmung, Flächenwidmungsplan, Land, Grünland, Bauland, Industrieland, Parkanlagen, Sportanlagen, Kleingarten, Kleingartensiedlung, Sportplatz, Spielplatz, Grundfläche, Badehütte, Freibad, Erholungsgebiet, Friedhof, Friedhöfe, Steinbruch, Schottergrube, Sandgrube, Lehmgrube, Tongrube",
+                  "Gesetzesnummer": "20000006",
+                  "GesamteRechtsvorschriftUrl": "https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=LrW&Gesetzesnummer=20000006",
+                  "Eli": "https://ris.bka.gv.at/eli/lgbl/WI/1930/11/P1/LWI40016426"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LWI40016426/LWI40016426.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LWI40016426/LWI40016426.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LWI40016426/LWI40016426.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LWI40016426/LWI40016426.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "LWI40017687",
+                "Applikation": "LrKons",
+                "Organ": "LReg Wien",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2025-08-08",
+                "Geaendert": "2025-08-08",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/lgbl/WI/1930/11/P1a/LWI40017687"
+              },
+              "Landesrecht": {
+                "Kurztitel": "Bauordnung für Wien",
+                "Bundesland": "Wien",
+                "LrKons": {
+                  "Kundmachungsorgan": "LGBl. Nr. 11/1930 zuletzt geändert durch LGBl. Nr. 39/2025 ",
+                  "Typ": "Gesetz",
+                  "Dokumenttyp": "Paragraph",
+                  "ArtikelParagraphAnlage": "§ 1a",
+                  "Paragraphnummer": "1",
+                  "Paragraphbuchstabe": "a",
+                  "StammnormPublikationsorgan": "LGBl. Nr.",
+                  "StammnormBgblnummer": "11/1930",
+                  "NovellenPublikationsorgan": "LGBl. Nr.",
+                  "NovellenBgblnummer": "39/2025",
+                  "NovellenBeziehung": "zuletzt geändert durch",
+                  "Inkrafttretensdatum": "2025-09-01",
+                  "Abkuerzung": "BO für Wien",
+                  "Indizes": {
+                    "item": [
+                      "10 Bau- und Bodenrecht sowie Recht der Technik (B)",
+                      "10/10 Baurecht sowie Straßen- und Wegerecht"
+                    ]
+                  },
+                  "Aenderung": "",
+                  "Gesetzesnummer": "20000006",
+                  "GesamteRechtsvorschriftUrl": "https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=LrW&Gesetzesnummer=20000006",
+                  "Eli": "https://ris.bka.gv.at/eli/lgbl/WI/1930/11/P1a/LWI40017687"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LWI40017687/LWI40017687.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LWI40017687/LWI40017687.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LWI40017687/LWI40017687.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LWI40017687/LWI40017687.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "LSB40028116",
+                "Applikation": "LrKons",
+                "Organ": "LReg Salzburg",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2024-05-06",
+                "Geaendert": "2024-05-06",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/lgbl/SA/2022/27/P1/LSB40028116"
+              },
+              "Landesrecht": {
+                "Kurztitel": "Allgemeine Landeshaushaltsverordnung 2022",
+                "Bundesland": "Salzburg",
+                "LrKons": {
+                  "Kundmachungsorgan": "LGBl Nr 27/2022 zuletzt geändert durch LGBl Nr 42/2024 ",
+                  "Typ": "V",
+                  "Dokumenttyp": "Paragraph",
+                  "ArtikelParagraphAnlage": "§ 1",
+                  "Paragraphnummer": "1",
+                  "StammnormPublikationsorgan": "LGBl Nr",
+                  "StammnormBgblnummer": "27/2022",
+                  "NovellenPublikationsorgan": "LGBl Nr",
+                  "NovellenBgblnummer": "42/2024",
+                  "NovellenBeziehung": "zuletzt geändert durch",
+                  "Inkrafttretensdatum": "2024-05-03",
+                  "Abkuerzung": " ALHVO 2022",
+                  "Indizes": {
+                    "item": "1 Landesverfassung und Landesverwaltung"
+                  },
+                  "Aenderung": "",
+                  "Gesetzesnummer": "20001372",
+                  "GesamteRechtsvorschriftUrl": "https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=LrSbg&Gesetzesnummer=20001372",
+                  "Eli": "https://ris.bka.gv.at/eli/lgbl/SA/2022/27/P1/LSB40028116"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LSB40028116/LSB40028116.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LSB40028116/LSB40028116.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LSB40028116/LSB40028116.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LSB40028116/LSB40028116.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "LWI40000588",
+                "Applikation": "LrKons",
+                "Organ": "LReg Wien",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2014-04-15",
+                "Geaendert": "2014-04-15",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/lgbl/WI/2009/49/P1/LWI40000588"
+              },
+              "Landesrecht": {
+                "Kurztitel": "Anwendung des Kollektivvertrages des Bundes über die Pensionskassenzusage",
+                "Bundesland": "Wien",
+                "LrKons": {
+                  "Kundmachungsorgan": "LGBl. Nr. 49/2009",
+                  "Typ": "Verordnung",
+                  "Dokumenttyp": "Paragraph",
+                  "ArtikelParagraphAnlage": "§ 1",
+                  "Paragraphnummer": "1",
+                  "StammnormPublikationsorgan": "LGBl. Nr.",
+                  "StammnormBgblnummer": "49/2009",
+                  "Inkrafttretensdatum": "2009-01-01",
+                  "Indizes": {
+                    "item": [
+                      "20 Dienstrecht (D)",
+                      "20/10 Dienst-, Besoldungs- und Pensionsrecht"
+                    ]
+                  },
+                  "Aenderung": "",
+                  "Schlagworte": "Pensionsordnung, Kolletkivvertrag, Pensionskassenzusage, Vertragsbedienstetengesetz, Landeslehrer, Landeslehrerinnen, Landesvertragslehrgesetz, Landeslehrer-Dienstrechtsgesetz, Dienstrechts-Novelle 2009",
+                  "Gesetzesnummer": "20000027",
+                  "GesamteRechtsvorschriftUrl": "https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=LrW&Gesetzesnummer=20000027",
+                  "Eli": "https://www.ris.bka.gv.at/eli/lgbl/WI/2009/49/P1/LWI40000588"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LWI40000588/LWI40000588.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LWI40000588/LWI40000588.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LWI40000588/LWI40000588.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LWI40000588/LWI40000588.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

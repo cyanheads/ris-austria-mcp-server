@@ -115,6 +115,21 @@ function rawText(value: string | undefined): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined;
 }
 
+/**
+ * Clean a Schlagworte value into one comma-separated list. RIS breaks keyword groups with
+ * `<br/>` ("e-rk3, Inh<br/>Gewinnabsicht, …"), which cleaning turns into line breaks; a
+ * keyword list has no line structure to keep, so each break joins the groups with a comma.
+ */
+function keywordList(value: string | undefined): string | undefined {
+  const cleaned = cleanText(value);
+  if (cleaned === undefined) return;
+  return cleaned
+    .split('\n')
+    .map((group) => group.trim().replace(/,$/, ''))
+    .filter((group) => group !== '')
+    .join(', ');
+}
+
 const CELEX_BRACKET = /\[CELEX-?Nr\.?:?\s*([^\]]+)\]/gi;
 
 /** Parse `[CELEX-Nr.: …]` markers (possibly multi-valued) out of RIS text fields. */
@@ -129,6 +144,21 @@ export function parseCelexReferences(...texts: (string | undefined)[]): string[]
     }
   }
   return [...out];
+}
+
+/**
+ * Split BgblPdf's `CelexNummer` into one entry per act. RIS joins the list into one string
+ * with commas ("31991L0628, 31995L0029") and occasionally writes it as prose
+ * ("CELEX-Nr.: 31999L0070 und 32001L0019"); each entry is otherwise relayed as written. The
+ * element can also arrive as a wrapped list or nil, which `coerceWrappedList` reads.
+ */
+function splitCelexList(value: RawWrappedList<string> | string | undefined): string[] {
+  return coerceWrappedList(value).flatMap((joined) =>
+    joined
+      .split(/[,;]|\sund\s/)
+      .map((entry) => entry.trim().replace(/^CELEX-?Nr\.?:?\s*/i, ''))
+      .filter((entry) => entry !== ''),
+  );
 }
 
 /** Detect an HTML error page masquerading as an API response. */
@@ -334,11 +364,12 @@ function mapConsolidated(kons: RawBundesrechtMeta['BrKons']): {
   [K in keyof RisConsolidatedFields]: RisConsolidatedFields[K] | undefined;
 } {
   return {
+    abbreviation: cleanText(kons?.Abkuerzung),
     amendment: cleanText(kons?.Aenderung),
     inForceFrom: rawText(kons?.Inkrafttretensdatum),
     inForceUntil: rawText(kons?.Ausserkrafttretensdatum),
     indexes: coerceWrappedList(kons?.Indizes),
-    keywords: cleanText(kons?.Schlagworte),
+    keywords: keywordList(kons?.Schlagworte),
     lawId: rawText(kons?.Gesetzesnummer),
     lawUrl: rawText(kons?.GesamteRechtsvorschriftUrl),
     normType: rawText(kons?.Typ),
@@ -349,9 +380,11 @@ function mapConsolidated(kons: RawBundesrechtMeta['BrKons']): {
 
 function mapBundesrecht(raw: RawBundesrechtMeta): RisBundesrechtMetadata {
   const { Begut, BgblAlt, BgblAuth, BgblPdf, BrKons, Erv, RegV } = raw;
+  const consolidated = mapConsolidated(BrKons);
   return prune<RisBundesrechtMetadata>({
-    ...mapConsolidated(BrKons),
-    abbreviation: rawText(Begut?.Abkuerzung) ?? rawText(RegV?.Abkuerzung),
+    ...consolidated,
+    abbreviation:
+      consolidated.abbreviation ?? rawText(Begut?.Abkuerzung) ?? rawText(RegV?.Abkuerzung),
     alexUrl: rawText(BgblAlt?.AlexUrl),
     // Both Erv fields are `<br/>`-separated prose upstream — an author reads
     // "Ministry X<br/>amendment: Chancellery", a source three labelled version lines.
@@ -359,7 +392,8 @@ function mapBundesrecht(raw: RawBundesrechtMeta): RisBundesrechtMetadata {
     celexReferences: [
       ...new Set([
         ...parseCelexReferences(raw.Titel, BrKons?.Aenderung),
-        ...coerceWrappedList(BgblPdf?.CelexNummer),
+        ...coerceWrappedList(BgblAuth?.CelexNummer),
+        ...splitCelexList(BgblPdf?.CelexNummer),
       ]),
     ],
     controller: 'Bundesrecht',
@@ -369,9 +403,9 @@ function mapBundesrecht(raw: RawBundesrechtMeta): RisBundesrechtMetadata {
       rawText(BgblAuth?.Bgblnummer) ?? rawText(BgblPdf?.Bgblnummer) ?? rawText(BgblAlt?.Fundstelle),
     issue: rawText(BgblAlt?.Stueck),
     keywords:
-      cleanText(BrKons?.Schlagworte) ??
-      cleanText(Begut?.Schlagworte) ??
-      cleanText(RegV?.Schlagworte),
+      keywordList(BrKons?.Schlagworte) ??
+      keywordList(Begut?.Schlagworte) ??
+      keywordList(RegV?.Schlagworte),
     ministry: rawText(Begut?.EinbringendeStelle) ?? rawText(RegV?.EinbringendeStelle),
     normType:
       rawText(BrKons?.Typ) ??
@@ -379,7 +413,12 @@ function mapBundesrecht(raw: RawBundesrechtMeta): RisBundesrechtMetadata {
       rawText(BgblPdf?.Typ) ??
       rawText(BgblAlt?.Typ),
     part: rawText(BgblAuth?.Teil) ?? rawText(BgblPdf?.Teil),
-    promulgation: cleanText(BrKons?.Kundmachungsorgan) ?? cleanText(BgblAlt?.Kundmachungsorgan),
+    // BgblPdf's Fundstelle is the entry's own citation, and the only field that tells the
+    // 1945 Staatsgesetzblatt from the Bundesgesetzblatt — the two share Bgblnummer that year.
+    promulgation:
+      cleanText(BrKons?.Kundmachungsorgan) ??
+      rawText(BgblPdf?.Fundstelle) ??
+      cleanText(BgblAlt?.Kundmachungsorgan),
     publishedDate:
       rawText(BgblAuth?.Ausgabedatum) ??
       rawText(BgblPdf?.Kundmachungsdatum) ??
@@ -402,6 +441,7 @@ function mapLandesrecht(raw: RawLandesrechtMeta): RisLandesrechtMetadata {
       ...new Set([
         ...parseCelexReferences(raw.Titel, LrKons?.Aenderung),
         ...coerceWrappedList(LgblAuth?.CelexNummer),
+        ...coerceWrappedList(LgblNO?.CelexNummern),
       ]),
     ],
     controller: 'Landesrecht',
@@ -446,16 +486,48 @@ const JUDIKATUR_APP_KEYS: readonly RawJudikaturAppKey[] = [
   'Verg',
 ];
 
+/** Split one Geschäftszahl item on `;` and `,` that sit outside parentheses — one pass. */
+function splitOutsideParentheses(item: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < item.length; i++) {
+    const char = item[i];
+    if (char === '(') depth++;
+    else if (char === ')') depth = Math.max(0, depth - 1);
+    else if (depth === 0 && (char === ';' || char === ',')) {
+      parts.push(item.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(item.slice(start));
+  return parts;
+}
+
+/**
+ * One case number per element, in upstream order. A headnote names every decision it covers
+ * in one item — `;`-joined on Justiz, `,`-joined on the VfGH. Justiz parenthesizes companion
+ * decisions ("3Ob760/53 (3Ob761/53)"), each a case number of its own, so `liftCompanions`
+ * emits them as elements; elsewhere the parentheses hold the VfGH's ordinal form of the same
+ * case ("G8/2026 (G8/2026-15)", even with a comma inside) and stay whole, as does `ua`.
+ */
+function splitCaseNumbers(items: readonly string[], liftCompanions: boolean): string[] {
+  return items
+    .flatMap((item) => (liftCompanions ? item.split(/[;,()]/) : splitOutsideParentheses(item)))
+    .map((value) => value.trim())
+    .filter((value) => value !== '');
+}
+
 function mapJudikatur(raw: RawJudikaturMeta): RisJudikaturMetadata {
-  const node: RawJudikaturAppNode =
-    JUDIKATUR_APP_KEYS.map((key) => raw[key]).find(
-      (value) => value !== undefined && typeof value === 'object',
-    ) ?? {};
+  const appKey = JUDIKATUR_APP_KEYS.find(
+    (key) => raw[key] !== undefined && typeof raw[key] === 'object',
+  );
+  const node: RawJudikaturAppNode = (appKey !== undefined ? raw[appKey] : undefined) ?? {};
   return prune<RisJudikaturMetadata>({
     // The VwGH short form is on every Normenliste record and is the form its citations use;
     // `Abkuerzung` is sparse and frequently repeats the full title instead.
     abbreviation: rawText(node.AbkuerzungDesVerwaltungsgerichtshofes) ?? rawText(node.Abkuerzung),
-    caseNumbers: coerceWrappedList(raw.Geschaeftszahl),
+    caseNumbers: splitCaseNumbers(coerceWrappedList(raw.Geschaeftszahl), appKey === 'Justiz'),
     collectionNumber: rawText(node.Sammlungsnummer),
     controller: 'Judikatur',
     courtName: rawText(node.Gericht),
@@ -468,7 +540,7 @@ function mapJudikatur(raw: RawJudikaturMeta): RisJudikaturMetadata {
     headnotesUrl: rawText(raw.RechtssaetzeUrl),
     indexes: coerceWrappedList(node.Indizes),
     issuingBody: rawText(node.EntscheidendeBehoerde),
-    keywords: cleanText(raw.Schlagworte),
+    keywords: keywordList(raw.Schlagworte),
     legalAreas: coerceWrappedList(node.Rechtsgebiete),
     legalForceNote: cleanText(node.Anfechtung),
     normType: rawText(node.Typ),
@@ -488,7 +560,7 @@ function mapBezirke(raw: RawBezirkeMeta): RisBezirkeMetadata {
     controller: 'Bezirke',
     districtAuthority: rawText(bvb?.Bezirksverwaltungsbehoerde),
     gazetteNumber: rawText(bvb?.Kundmachungsnummer),
-    keywords: cleanText(bvb?.Schlagworte),
+    keywords: keywordList(bvb?.Schlagworte),
     normType: rawText(bvb?.Typ),
     promulgation: cleanText(bvb?.Kundmachungsorgan),
     publishedDate: rawText(bvb?.Kundmachungsdatum),
@@ -508,7 +580,7 @@ function mapGemeinden(raw: RawGemeindenMeta): RisGemeindenMetadata {
     gazetteNumber: rawText(GrA?.KundmachungsorganNr),
     indexes: coerceWrappedList(Gr?.Indizes),
     inForceFrom: rawText(Gr?.Inkrafttretensdatum),
-    keywords: cleanText(GrA?.Schlagworte),
+    keywords: keywordList(GrA?.Schlagworte),
     municipality: rawText(raw.Gemeinde),
     normType: rawText(raw.Typ),
     note: cleanText(raw.Anmerkung),
@@ -526,19 +598,24 @@ function mapSonstige(raw: RawSonstigeMeta): RisSonstigeMetadata {
     ...(rawText(Erlaesse?.Bundesministerium) ? [Erlaesse?.Bundesministerium as string] : []),
     ...coerceWrappedList(Mrp?.Einbringer),
   ];
+  // Some Avn values arrive padded (" 2026-0.847.254"), so every case number is trimmed; so is
+  // the decree department, which arrives as "I 7 " on some records (cleanText trims it).
   const caseNumbers = [
     ...coerceWrappedList(Erlaesse?.Geschaeftszahl),
     ...coerceWrappedList(Avn?.Geschaeftszahl),
     ...coerceWrappedList(KmGer?.GZ),
     ...coerceWrappedList(PruefGewO?.GZ),
     ...coerceWrappedList(Upts?.GZ),
-  ];
+  ]
+    .map((caseNumber) => caseNumber.trim())
+    .filter((caseNumber) => caseNumber !== '');
   return prune<RisSonstigeMetadata>({
+    approvalDate: rawText(Erlaesse?.Genehmigungsdatum),
     caseNumbers,
     controller: 'Sonstige',
     courtName: rawText(KmGer?.Gericht),
     decisionDate: rawText(Upts?.Entscheidungsdatum),
-    department: rawText(Erlaesse?.Abteilung),
+    department: cleanText(Erlaesse?.Abteilung),
     inForceFrom:
       rawText(Avn?.Inkrafttretensdatum) ??
       rawText(Erlaesse?.Inkrafttretensdatum) ??
@@ -548,9 +625,11 @@ function mapSonstige(raw: RawSonstigeMeta): RisSonstigeMetadata {
     inForceUntil:
       rawText(Avn?.Ausserkrafttretensdatum) ??
       rawText(Erlaesse?.Ausserkrafttretensdatum) ??
-      rawText(KmGer?.Ausserkrafttretensdatum),
+      rawText(KmGer?.Ausserkrafttretensdatum) ??
+      rawText(PruefGewO?.Ausserkrafttretensdatum) ??
+      rawText(Spg?.Ausserkrafttretensdatum),
     issuers,
-    keywords: cleanText(raw.Schlagworte),
+    keywords: keywordList(raw.Schlagworte),
     legislature: rawText(Mrp?.Gesetzgebungsperiode),
     normType:
       rawText(Avn?.Typ) ??
@@ -558,18 +637,25 @@ function mapSonstige(raw: RawSonstigeMeta): RisSonstigeMetadata {
       rawText(KmGer?.Typ) ??
       rawText(PruefGewO?.Typ) ??
       rawText(Spg?.Typ),
-    // Upts renders multiple cited norms as one newline-separated scalar (observed live).
+    // Avn and Erlaesse items are relayed verbatim: a decree item often joins several norms
+    // ("§§ 3 Abs. 2, 145 Abs. 2 … StVG; § 46 Abs. 1 StGB"), and RIS's Norm filter matches the
+    // whole item. Upts renders multiple cited norms as one newline-separated scalar (observed live).
     normsCited: [
       ...coerceWrappedList(Avn?.Normen),
+      ...coerceWrappedList(Erlaesse?.Normen),
       ...(rawText(Upts?.Norm)
         ?.split(/\r?\n/)
         .map((norm) => norm.trim())
         .filter((norm) => norm !== '') ?? []),
     ],
-    note: cleanText(Avn?.Anmerkung) ?? cleanText(PruefGewO?.Anmerkung),
+    note:
+      cleanText(Avn?.Anmerkung) ??
+      cleanText(Erlaesse?.Anmerkung) ??
+      cleanText(PruefGewO?.Anmerkung),
     number: rawText(Avsv?.Avsvnummer) ?? rawText(Avn?.Avnnummer) ?? rawText(Spg?.Spgnummer),
     party: rawText(Upts?.Partei),
     planState: rawText(Spg?.Land),
+    promulgation: cleanText(Erlaesse?.Fundstelle),
     publishedDate: rawText(raw.Kundmachungsdatum),
     sessionDate: rawText(Mrp?.Sitzungsdatum),
     sessionNumber: rawText(Mrp?.Sitzungsnummer),
