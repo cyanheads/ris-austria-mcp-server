@@ -70,6 +70,21 @@ describe('RIS_COURTS gzExamples — format self-routing', () => {
     },
   );
 
+  it('every active court’s example is among the courts detection probes (#49)', async () => {
+    const active = RIS_COURTS.filter((court) => court.status === 'active' && court.gzExample);
+    expect(active.map((court) => court.code)).toEqual(expect.arrayContaining(SELF_ROUTING_COURTS));
+
+    for (const { code, gzExample: citation } of active) {
+      searchCaseLaw.mockClear();
+      const ctx = createMockContext({ errors: risLookupCitation.errors });
+      await risLookupCitation.handler(risLookupCitation.input.parse({ citation }), ctx);
+      const probed = searchCaseLaw.mock.calls.map(
+        ([params]) => (params as { court: string }).court,
+      );
+      expect(probed, `${code}: "${citation}"`).toContain(code);
+    }
+  });
+
   it('every case-number example in the citation_formats table classifies as a case number', async () => {
     const caseNumbers = RIS_CITATION_FORMATS.find((format) => format.kind === 'case_number');
     expect(caseNumbers?.examples.length).toBeGreaterThan(0);

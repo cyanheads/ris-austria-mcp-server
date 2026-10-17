@@ -189,6 +189,17 @@ describe('risListReference', () => {
     expect(notes).toContain('ris_track_changes');
   });
 
+  it('states the lookup ranking and the partless-BGBl ambiguity in citation_formats', async () => {
+    const result = await run('citation_formats');
+    const via = (kind: string) =>
+      result.entries
+        .find((entry) => entry.value === kind)
+        ?.details.find((detail) => detail.key === 'Resolves via')?.value ?? '';
+    expect(via('norm')).toContain('("EStG" → EStG 1988)');
+    expect(via('gazette')).toContain('returns found: false naming each part');
+    expect(via('case_number')).toContain('where the decision text wins');
+  });
+
   it('makes no Kundmachung.Periode claim for changed_since (#37)', async () => {
     const result = await run('changed_since_intervals');
     expect(result.notes.join(' ')).not.toContain('Kundmachung.Periode');

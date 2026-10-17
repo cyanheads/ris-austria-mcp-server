@@ -6,14 +6,24 @@
  * silently reinterpreted as a citation miss (#14). Every free-text filter on the filter tools
  * rejects a blank or whitespace-only value (#39), and every paginated tool takes page_size 10
  * or 20 only (#40) — both swept from the advertised schemas, so a parameter added later cannot
- * skip the rule. Fully offline: only input schemas are exercised, no handler and no service.
+ * skip the rule. Every state-valued parameter folds a German, capitalized, umlauted, or English
+ * state name to its code while advertising the same JSON Schema as before (#58). The
+ * search-failure mapper gives a local rejection a recovery naming the field to correct, never
+ * the page-first advice RIS's own errors need (#59). Fully offline: only input schemas,
+ * schema-level rejections, and the error mapper are exercised, no handler and no service.
  * @module tests/tools/_shared.test
  */
 
 import { z } from '@cyanheads/mcp-ts-core';
+import { JsonRpcErrorCode, McpError, validationError } from '@cyanheads/mcp-ts-core/errors';
+import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { describe, expect, it } from 'vitest';
 
-import { isoDateString } from '@/mcp-server/tools/definitions/_shared.js';
+import {
+  failMinistrySearchError,
+  failSearchError,
+  isoDateString,
+} from '@/mcp-server/tools/definitions/_shared.js';
 import { risGetDocument } from '@/mcp-server/tools/definitions/ris-get-document.tool.js';
 import { risListReference } from '@/mcp-server/tools/definitions/ris-list-reference.tool.js';
 import { risLookupCitation } from '@/mcp-server/tools/definitions/ris-lookup-citation.tool.js';
@@ -23,6 +33,9 @@ import { risSearchDrafts } from '@/mcp-server/tools/definitions/ris-search-draft
 import { risSearchGazette } from '@/mcp-server/tools/definitions/ris-search-gazette.tool.js';
 import { risSearchLegislation } from '@/mcp-server/tools/definitions/ris-search-legislation.tool.js';
 import { risTrackChanges } from '@/mcp-server/tools/definitions/ris-track-changes.tool.js';
+import { foldStateName, RIS_STATES } from '@/services/ris/reference/index.js';
+
+import { expectArgumentRejection } from './_wire.js';
 
 /** A real date, an impossible one, and the base input each tool needs to reach its date field. */
 const VALID = '2026-07-26';
@@ -432,6 +445,376 @@ describe('page_size — 10 or 20 on every paginated tool (#40)', () => {
       expect(issue?.path).toEqual(['page_size']);
       expect(issue?.message).toContain('Expected 10 or 20');
       expect(issue?.message).toContain('raise page');
+    });
+  });
+});
+
+/** The nine state codes, in the order every state enum lists them. */
+const STATE_CODES = RIS_STATES.map((state) => state.code);
+
+/**
+ * Every state-valued parameter on the surface, as it was declared before the fold: its enum
+ * values, its default, and the minimal sibling input its tool requires. The sweep below derives
+ * the same set from the advertised schemas, so a state parameter added later must land here.
+ */
+const STATE_FIELDS: ReadonlyArray<{
+  readonly base: Readonly<Record<string, unknown>>;
+  readonly default?: string;
+  readonly definition: { readonly input: z.ZodObject; readonly name: string };
+  readonly field: string;
+  readonly values: readonly [string, ...string[]];
+}> = [
+  {
+    definition: risSearchLegislation,
+    field: 'scope',
+    base: {},
+    values: ['federal', ...STATE_CODES],
+    default: 'federal',
+  },
+  {
+    definition: risSearchGazette,
+    field: 'scope',
+    base: {},
+    values: ['federal', ...STATE_CODES, 'district', 'municipal'],
+    default: 'federal',
+  },
+  {
+    definition: risSearchCaseLaw,
+    field: 'state',
+    base: { court: 'lvwg' },
+    values: STATE_CODES as [string, ...string[]],
+  },
+  {
+    definition: risLookupCitation,
+    field: 'state',
+    base: { citation: '§ 1 DSG' },
+    values: STATE_CODES as [string, ...string[]],
+  },
+  {
+    definition: risSearchAnnouncements,
+    field: 'plan_state',
+    base: { collection: 'health_structure_plans' },
+    values: STATE_CODES as [string, ...string[]],
+  },
+];
+
+/** Spellings every state field folds to a code: the cases #58 pins, then the edges around them. */
+const FOLDED: ReadonlyArray<readonly [string, string, string]> = [
+  ['Wien', 'wien', 'the German name'],
+  ['Niederösterreich', 'niederoesterreich', 'a composed (NFC) umlaut'],
+  ['Niederösterreich'.normalize('NFD'), 'niederoesterreich', 'a decomposed (NFD) umlaut'],
+  ['niederösterreich', 'niederoesterreich', 'a lowercase umlauted name'],
+  ['OBERÖSTERREICH', 'oberoesterreich', 'an all-caps name with an umlaut'],
+  ['Kärnten', 'kaernten', 'ä'],
+  ['Kaernten', 'kaernten', 'the capitalized transliteration'],
+  [' Steiermark ', 'steiermark', 'surrounding spaces'],
+  ['\tTirol\n', 'tirol', 'a tab and a newline'],
+  ['Vienna', 'wien', 'an English name'],
+  ['Lower Austria', 'niederoesterreich', 'a two-word English name'],
+  ['upper   AUSTRIA', 'oberoesterreich', 'a doubled inner space and mixed case'],
+  ['Tyrol', 'tirol', 'Tyrol'],
+  ['Carinthia', 'kaernten', 'Carinthia'],
+  ['Styria', 'steiermark', 'Styria'],
+  ['Vorarlberg', 'vorarlberg', 'a name English shares'],
+];
+
+describe('foldStateName', () => {
+  const SCOPE = new Set(['federal', ...STATE_CODES]);
+
+  it.each(FOLDED)('folds %j to %s (%s)', (sent, code) => {
+    expect(foldStateName(sent, SCOPE)).toBe(code);
+  });
+
+  it('folds every German name, both RIS spellings, and the code itself, in any case, to that code', () => {
+    for (const state of RIS_STATES) {
+      const spellings = [state.code, state.name, state.flatAscii, state.flatUmlaut];
+      for (const spelling of spellings) {
+        for (const variant of [
+          spelling,
+          spelling.toUpperCase(),
+          spelling.normalize('NFD'),
+          ` ${spelling} `,
+        ]) {
+          expect(foldStateName(variant, SCOPE), JSON.stringify(variant)).toBe(state.code);
+        }
+      }
+    }
+  });
+
+  it('folds a non-state value of the field (federal) only where the field accepts it', () => {
+    expect(foldStateName('FEDERAL', SCOPE)).toBe('federal');
+    expect(foldStateName('Federal', new Set(STATE_CODES))).toBe('Federal');
+  });
+
+  it('returns an English name unchanged when the field does not accept its state', () => {
+    expect(foldStateName('Vienna', new Set(['federal']))).toBe('Vienna');
+  });
+
+  it.each([
+    ['Bayern', 'a German state outside Austria'],
+    ['  Bayern ', 'an unknown name with padding — returned untrimmed'],
+    ['', 'an empty string'],
+    ['Nieder-Österreich', 'a hyphenated spelling RIS never uses'],
+    ['Vienna, Austria', 'a qualified English name'],
+  ])('returns %j exactly as sent (%s)', (sent) => {
+    expect(foldStateName(sent, SCOPE)).toBe(sent);
+  });
+
+  it.each([3, null, undefined, true, ['wien'], { state: 'wien' }])(
+    'returns the non-string %j untouched',
+    (sent) => {
+      expect(foldStateName(sent, SCOPE)).toBe(sent);
+    },
+  );
+});
+
+// The fold runs over a caller-sized string before the enum sees it.
+describe('foldStateName — time on adversarial input', () => {
+  const SIZES = [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 320_000];
+  /** Bound on one call at 320,000 characters; linear work there takes about a millisecond. */
+  const BOUND_MS = 50;
+  const SCOPE = new Set(['federal', ...STATE_CODES]);
+
+  /** Thread-CPU milliseconds of one call, the fastest of three samples of ≥ 10 ms each. */
+  function cpuMs(run: () => void): number {
+    let best = Number.POSITIVE_INFINITY;
+    for (let sample = 0; sample < 3; sample++) {
+      const start = process.threadCpuUsage();
+      let runs = 0;
+      let ms = 0;
+      do {
+        run();
+        runs++;
+        const { user, system } = process.threadCpuUsage(start);
+        ms = (user + system) / 1_000;
+      } while (ms < 10);
+      best = Math.min(best, ms / runs);
+    }
+    return best;
+  }
+
+  it.each<[string, (size: number) => string]>([
+    ['a long digit run', (size) => '1'.repeat(size)],
+    [
+      'a whitespace run around a name',
+      (size) => `${' '.repeat(size / 2)}Wien${' '.repeat(size / 2)}`,
+    ],
+    ['alternating letters and spaces', (size) => 'a '.repeat(size / 2)],
+    ['decomposed umlauts (o + U+0308)', (size) => 'ö'.repeat(size / 2)],
+  ])('stays linear on %s', (_shape, make) => {
+    const times: number[] = [];
+    for (const size of SIZES) {
+      const input = make(size);
+      const ms = cpuMs(() => foldStateName(input, SCOPE));
+      expect(ms, `${size} characters`).toBeLessThan(BOUND_MS);
+      times.push(ms);
+    }
+    expect((times.at(-1) ?? 0) / (times[0] ?? 1)).toBeLessThan(256);
+  });
+});
+
+/** The advertised node of each property whose enum lists all nine state codes. */
+function stateEnumParams(definition: { readonly input: z.ZodType; readonly name: string }) {
+  return Object.entries(advertisedInput(definition).properties ?? {})
+    .filter(([, node]) => STATE_CODES.every((code) => node.enum?.includes(code)))
+    .map(([param]) => `${definition.name}.${param}`);
+}
+
+/** The JSON Schema `tools/list` advertises for an input — the call the MCP SDK makes. */
+function wireSchema(input: z.ZodType): unknown {
+  return (
+    input as unknown as {
+      '~standard': { jsonSchema: { input: (options: { target: string }) => unknown } };
+    }
+  )['~standard'].jsonSchema.input({ target: 'draft-2020-12' });
+}
+
+describe('state parameters — German and English names fold to the code (#58)', () => {
+  it('covers every parameter whose enum lists the nine state codes, on every tool', () => {
+    expect(ALL_TOOLS.flatMap(stateEnumParams).toSorted()).toEqual(
+      STATE_FIELDS.map(({ definition, field }) => `${definition.name}.${field}`).toSorted(),
+    );
+  });
+
+  describe.each(STATE_FIELDS)('$definition.name.$field', (entry) => {
+    const { base, definition, field, values } = entry;
+    const parse = (value: unknown) => definition.input.safeParse({ ...base, [field]: value });
+
+    it.each(FOLDED)('accepts %j as %s (%s)', (sent, code) => {
+      const outcome = parse(sent);
+      expect(outcome.success).toBe(true);
+      expect((outcome.data as Record<string, unknown>)[field]).toBe(code);
+    });
+
+    it.each(values)('accepts the code %s unchanged', (code) => {
+      const outcome = parse(code);
+      expect((outcome.data as Record<string, unknown>)[field]).toBe(code);
+    });
+
+    it(`reads an omitted ${field} as ${entry.default ?? 'unset'}`, () => {
+      const outcome = definition.input.safeParse(base);
+      expect(outcome.success).toBe(true);
+      expect((outcome.data as Record<string, unknown>)[field]).toBe(entry.default);
+    });
+
+    it('treats "Federal" as federal only where federal is one of the values', () => {
+      const outcome = parse('Federal');
+      expect(outcome.success).toBe(values.includes('federal'));
+      if (outcome.success) expect((outcome.data as Record<string, unknown>)[field]).toBe('federal');
+    });
+
+    it.each<[unknown, string]>([
+      ['Bayern', 'a state outside Austria'],
+      ['', 'an empty string'],
+      [3, 'a number'],
+    ])('rejects %j as invalid_arguments, naming the field and its codes', async (sent) => {
+      const result = await runToolContract(
+        definition as never,
+        { ...base, [field]: sent } as never,
+      );
+      expectArgumentRejection(result, [
+        `${field}: Invalid option`,
+        values.map((value) => `"${value}"`).join('|'),
+      ]);
+    });
+
+    it('advertises the same JSON Schema as the plain enum it wraps — only the key order moves', () => {
+      const plain = z.enum(values);
+      const before = (
+        entry.default === undefined ? plain.optional() : plain.default(entry.default)
+      ).describe(String(definition.input.shape[field]?.description));
+      expect(wireSchema(definition.input)).toStrictEqual(
+        wireSchema(definition.input.extend({ [field]: before })),
+      );
+    });
+  });
+});
+
+describe('failSearchError — local rejections recover by naming the field (#59)', () => {
+  /** The search tools' shared reasons, declared the way each tool declares them. */
+  const ERRORS = [
+    {
+      reason: 'invalid_query',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'A page past the end, or a rejected parameter value.',
+      recovery: 'For a page past the end, request a lower page, starting from 1.',
+    },
+    {
+      reason: 'unresolved_ministry',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'A ministry did not resolve.',
+      recovery: 'Pass a ministry from ris_list_reference topic ministries.',
+    },
+    {
+      reason: 'upstream_error',
+      code: JsonRpcErrorCode.ServiceUnavailable,
+      when: 'RIS is unreachable.',
+      recovery: 'RIS is temporarily unavailable — retry after a short delay.',
+    },
+    {
+      reason: 'upstream_timeout',
+      code: JsonRpcErrorCode.Timeout,
+      when: 'RIS did not answer in time.',
+      recovery: 'RIS did not answer in time — retry the same search shortly.',
+    },
+  ] as const;
+
+  function mapped(error: McpError, fields?: Readonly<Record<string, string>>): McpError {
+    const ctx = createMockContext({ errors: ERRORS });
+    const result = failSearchError(error, ctx as never, fields);
+    if (!(result instanceof McpError)) throw new Error('expected an McpError');
+    return result;
+  }
+
+  it.each([
+    [
+      'an invalid value, naming the values it accepts',
+      validationError('Invalid type value "Bogus".', {
+        param: 'type',
+        valid: ['Geschaeftsordnung', 'Geschaeftsverteilung'],
+        value: 'Bogus',
+      }),
+      'Set type to one of: Geschaeftsordnung, Geschaeftsverteilung — or omit type.',
+    ],
+    [
+      'an unsupported value, naming the alternatives',
+      validationError('sort_by: published is not available.', {
+        alternatives: ['number'],
+        application: 'Spg',
+        param: 'sortBy',
+        value: 'published',
+      }),
+      'Set sort_by to one of: number — or omit sort_by.',
+    ],
+    [
+      'an unsupported value with no alternative',
+      validationError('sort_by: number is not available.', {
+        alternatives: [],
+        application: 'KmGer',
+        param: 'sortBy',
+        value: 'number',
+      }),
+      'Change or drop sort_by, as the message describes.',
+    ],
+    [
+      'an unsupported field pair, in snake_case',
+      validationError('decidedFrom/decidedTo is not mapped.', {
+        application: 'Begut',
+        param: 'decidedFrom/decidedTo',
+      }),
+      'Change or drop decided_from/decided_to, as the message describes.',
+    ],
+  ])('%s', (_label, error, hint) => {
+    const err = mapped(error);
+    expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(err.message).toBe(error.message);
+    expect(err.data).toEqual({ reason: 'invalid_query', recovery: { hint } });
+    expect(hint).not.toMatch(/page/iu);
+  });
+
+  it('names the caller’s field where the tool routes it to a differently named builder param', () => {
+    const err = mapped(
+      validationError('The historical Lgbl gazette has no Wien.', {
+        application: 'Lgbl',
+        param: 'state',
+        state: 'wien',
+      }),
+      { state: 'state_era' },
+    );
+    expect(err.data?.recovery).toEqual({
+      hint: 'Change or drop state_era, as the message describes.',
+    });
+  });
+
+  it('leaves a RIS-originated rejection to the declared recovery', () => {
+    const err = mapped(
+      validationError("The 'Typ' element is invalid.", { risApplication: 'PruefGewO' }),
+    );
+    expect(err.data).toEqual({ reason: 'invalid_query' });
+  });
+
+  it.each([
+    [JsonRpcErrorCode.ServiceUnavailable, 'upstream_error'],
+    [JsonRpcErrorCode.Timeout, 'upstream_timeout'],
+  ] as const)('maps %s to %s without a hint, whatever its data', (code, reason) => {
+    const err = mapped(new McpError(code, 'down', { param: 'type' }));
+    expect(err.data).toEqual({ reason });
+  });
+
+  it('failMinistrySearchError keeps the ministry reason and passes the field map through', () => {
+    const ctx = createMockContext({ errors: ERRORS });
+    const ministry = failMinistrySearchError(
+      validationError('Unknown ministry "BMXX".', { input: 'BMXX', reason: 'unresolved_ministry' }),
+      ctx as never,
+    ) as McpError;
+    expect(ministry.data).toEqual({ reason: 'unresolved_ministry' });
+    const local = failMinistrySearchError(
+      validationError('No Wien.', { param: 'state' }),
+      ctx as never,
+      { state: 'state_era' },
+    ) as McpError;
+    expect(local.data?.recovery).toEqual({
+      hint: 'Change or drop state_era, as the message describes.',
     });
   });
 });
