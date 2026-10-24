@@ -412,7 +412,8 @@ export interface RisContentReference {
 export interface RisConsolidatedFields {
   /**
    * Official abbreviation (BrKons/LrKons Abkuerzung, trimmed — some arrive with a leading
-   * space). Federal review drafts and government bills take it from Begut/RegV instead.
+   * space). Federal review drafts and government bills take it from Begut/RegV instead,
+   * trimmed the same way ("AbfrageberechtigungBilDokG_LS " arrives with a trailing space).
    */
   readonly abbreviation?: string;
   /** Amendment note (Aenderung), CELEX markers preserved in `celexReferences`. */

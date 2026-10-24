@@ -23,7 +23,14 @@ import type {
 import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisHit, RisKeyedUrls } from '@/services/ris/types.js';
 
-import { failMinistrySearchError, filterText, isoDateString, pageSizeParam } from './_shared.js';
+import {
+  failMinistrySearchError,
+  filterText,
+  isoDateString,
+  joinNotices,
+  pageSizeParam,
+  servePageSize,
+} from './_shared.js';
 
 const STAGE_CODES = RIS_STAGES.map((s) => s.code) as [RisStageCode, ...RisStageCode[]];
 const CHANGED_SINCE_CODES = RIS_CHANGED_SINCE_INTERVALS.map((i) => i.code) as [
@@ -82,10 +89,28 @@ const DraftRecordSchema = z
       ),
     title: z.string().optional().describe('Full document title, HTML markup stripped.'),
     short_title: z.string().optional().describe('Short title (Kurztitel), where assigned.'),
+    abbreviation: z
+      .string()
+      .optional()
+      .describe(
+        'The bill’s short form (Abkuerzung), where the record carries one. For a bill that enacts a new law, ris_search_legislation title matches it once the law is in force; an amending bill ("…-Novelle", "AbgÄG 2026") folds into the law it amends and has no consolidated entry of its own.',
+      ),
+    keywords: z
+      .string()
+      .optional()
+      .describe(
+        'Keywords (Schlagworte), where present — one string as RIS writes it, separators included.',
+      ),
     ministry: z
       .string()
       .optional()
       .describe('Submitting ministry (EinbringendeStelle / Organ), where the record carries one.'),
+    review_start: z
+      .string()
+      .optional()
+      .describe(
+        'Start of the public review window (Beginn der Begutachtungsfrist) — review_drafts only.',
+      ),
     review_deadline: z
       .string()
       .optional()
@@ -169,8 +194,11 @@ function toRecord(hit: RisHit, stage: string): DraftRecord {
     const ministry = md.ministry ?? hit.submitter ?? hit.organ;
     return {
       ...base,
+      ...(md.abbreviation !== undefined && { abbreviation: md.abbreviation }),
       ...(md.decided !== undefined && { decided: md.decided }),
+      ...(md.keywords !== undefined && { keywords: md.keywords }),
       ...(ministry !== undefined && { ministry }),
+      ...(md.reviewStart !== undefined && { review_start: md.reviewStart }),
       ...(md.reviewDeadline !== undefined && { review_deadline: md.reviewDeadline }),
       ...(md.shortTitle !== undefined && { short_title: md.shortTitle }),
       ...(md.title !== undefined && { title: md.title }),
@@ -253,7 +281,9 @@ export const risSearchDrafts = tool('ris_search_drafts', {
     notice: z
       .string()
       .optional()
-      .describe('Zero-hit guidance — names the likely cause and the concrete next call.'),
+      .describe(
+        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call.',
+      ),
   },
   errors: [
     {
@@ -285,7 +315,7 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       when: 'RIS is unreachable, returned a server error, or served an HTML error page.',
       retryable: true,
       recovery:
-        'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the query.',
+        'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size to 10 or narrow the query.',
       thrownBy: 'service',
     },
     {
@@ -294,7 +324,7 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       when: 'RIS did not answer the search within the request deadline.',
       retryable: true,
       recovery:
-        'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size, or narrow the date range.',
+        'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size to 10, or narrow the date range.',
       thrownBy: 'service',
     },
   ],
@@ -322,6 +352,7 @@ export const risSearchDrafts = tool('ris_search_drafts', {
         `${decidedFrom !== undefined ? 'decided_from' : 'decided_to'} applies only to stage: government_bills — got stage: 'review_drafts'.`,
       );
     }
+    const served = servePageSize(input.page_size);
 
     const params: DraftsSearchParams = {
       stage,
@@ -335,7 +366,7 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       ...(input.sort_by !== undefined && { sortBy: input.sort_by }),
       ...(input.sort_direction !== undefined && { sortDirection: input.sort_direction }),
       ...(input.page !== undefined && { page: input.page }),
-      ...(input.page_size !== undefined && { pageSize: input.page_size }),
+      ...(served.pageSize !== undefined && { pageSize: served.pageSize }),
     };
 
     // Map request-builder and service failures onto this tool's declared contract so reason
@@ -357,6 +388,7 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       ctx.enrich({ truncated: true });
     }
 
+    let zeroHit: string | undefined;
     if (result.total === 0) {
       const fragments = [`0 ${stage} matched.`];
       if (ministry !== undefined) {
@@ -369,8 +401,10 @@ export const risSearchDrafts = tool('ris_search_drafts', {
           `No drafts in review on ${inReviewOn} matching the filters — drop in_review_on to search all drafts including closed reviews.`,
         );
       }
-      ctx.enrich.notice(fragments.join(' '));
+      zeroHit = fragments.join(' ');
     }
+    const notice = joinNotices(served.notice, zeroHit);
+    if (notice !== undefined) ctx.enrich.notice(notice);
 
     return { results: result.hits.map((hit) => toRecord(hit, stage)) };
   },
@@ -385,11 +419,14 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       const lines = [`## ${r.title ?? r.short_title ?? r.document_number}`];
       lines.push(`**Document:** ${r.document_number} (${r.stage})`);
       if (r.short_title !== undefined) lines.push(`**Short title:** ${r.short_title}`);
+      if (r.abbreviation !== undefined) lines.push(`**Abbreviation:** ${r.abbreviation}`);
       if (r.ministry !== undefined) lines.push(`**Ministry:** ${r.ministry}`);
       const dates: string[] = [];
+      if (r.review_start !== undefined) dates.push(`**Review start:** ${r.review_start}`);
       if (r.review_deadline !== undefined) dates.push(`**Review deadline:** ${r.review_deadline}`);
       if (r.decided !== undefined) dates.push(`**Decided:** ${r.decided}`);
       if (dates.length > 0) lines.push(dates.join(' | '));
+      if (r.keywords !== undefined) lines.push(`**Keywords:** ${r.keywords}`);
       if (r.document_url !== undefined) lines.push(`**RIS view:** ${r.document_url}`);
       const urls = renditionLinks(r.content_urls);
       if (urls !== '') lines.push(`**Text:** ${urls}`);

@@ -130,35 +130,55 @@ function keywordList(value: string | undefined): string | undefined {
     .join(', ');
 }
 
-const CELEX_BRACKET = /\[CELEX-?Nr\.?:?\s*([^\]]+)\]/gi;
+/** The opening of a `[CELEX-Nr.: …]` marker; RIS also spells the label "CELEX Nr.". */
+const CELEX_MARKER = /\[CELEX[-\s]?Nr\.?:?/gi;
+
+/**
+ * One CELEX number: a sector digit and four-digit year (`32016L0680`), the pre-1999 sector digit
+ * and two-digit year RIS writes (`373L0183`), or a year with no sector digit (`2003L0087`,
+ * accepted though not yet seen in RIS); a one- or two-letter document type; a four-digit number;
+ * and an optional corrigendum suffix (`394L0010R(01)`). Matched as a whole token and relayed as
+ * written, so the annotation text RIS writes beside the numbers — `(EWR/Anh. IX)`, the `und`
+ * before the last number, the gazette lines an unclosed marker runs over — never yields an
+ * entry, and a parenthesis glued to a number (`396L0010)`) is left behind.
+ */
+const CELEX_NUMBER = /(?<![\dA-Za-z])\d{3,5}[A-Z]{1,2}\d{4}(?:R?\(\d{2}\))?(?![\dA-Za-z])/g;
+
+/** Every CELEX number in a free-text RIS value, in order. */
+function celexNumbers(text: string): string[] {
+  return text.match(CELEX_NUMBER) ?? [];
+}
+
+/**
+ * The content of each `[CELEX-Nr.: …]` marker, running to the next `]`: RIS sometimes closes a
+ * marker with `)`, and the next `]` then ends it lines later. One pass — an opener inside a
+ * marker already read is skipped, and an opener with no `]` after it ends the scan, since none
+ * after it can close either.
+ */
+function celexMarkerContents(text: string): string[] {
+  const contents: string[] = [];
+  let from = 0;
+  for (const opener of text.matchAll(CELEX_MARKER)) {
+    if (opener.index < from) continue;
+    const start = opener.index + opener[0].length;
+    const close = text.indexOf(']', start);
+    if (close < 0) break;
+    contents.push(text.slice(start, close));
+    from = close + 1;
+  }
+  return contents;
+}
 
 /** Parse `[CELEX-Nr.: …]` markers (possibly multi-valued) out of RIS text fields. */
 export function parseCelexReferences(...texts: (string | undefined)[]): string[] {
   const out = new Set<string>();
   for (const text of texts) {
     if (!text) continue;
-    for (const match of text.matchAll(CELEX_BRACKET)) {
-      for (const token of (match[1] ?? '').split(/[,;\s]+/)) {
-        if (token !== '') out.add(token);
-      }
+    for (const content of celexMarkerContents(text)) {
+      for (const celex of celexNumbers(content)) out.add(celex);
     }
   }
   return [...out];
-}
-
-/**
- * Split BgblPdf's `CelexNummer` into one entry per act. RIS joins the list into one string
- * with commas ("31991L0628, 31995L0029") and occasionally writes it as prose
- * ("CELEX-Nr.: 31999L0070 und 32001L0019"); each entry is otherwise relayed as written. The
- * element can also arrive as a wrapped list or nil, which `coerceWrappedList` reads.
- */
-function splitCelexList(value: RawWrappedList<string> | string | undefined): string[] {
-  return coerceWrappedList(value).flatMap((joined) =>
-    joined
-      .split(/[,;]|\sund\s/)
-      .map((entry) => entry.trim().replace(/^CELEX-?Nr\.?:?\s*/i, ''))
-      .filter((entry) => entry !== ''),
-  );
 }
 
 /** Detect an HTML error page masquerading as an API response. */
@@ -384,7 +404,7 @@ function mapBundesrecht(raw: RawBundesrechtMeta): RisBundesrechtMetadata {
   return prune<RisBundesrechtMetadata>({
     ...consolidated,
     abbreviation:
-      consolidated.abbreviation ?? rawText(Begut?.Abkuerzung) ?? rawText(RegV?.Abkuerzung),
+      consolidated.abbreviation ?? cleanText(Begut?.Abkuerzung) ?? cleanText(RegV?.Abkuerzung),
     alexUrl: rawText(BgblAlt?.AlexUrl),
     // Both Erv fields are `<br/>`-separated prose upstream — an author reads
     // "Ministry X<br/>amendment: Chancellery", a source three labelled version lines.
@@ -393,7 +413,9 @@ function mapBundesrecht(raw: RawBundesrechtMeta): RisBundesrechtMetadata {
       ...new Set([
         ...parseCelexReferences(raw.Titel, BrKons?.Aenderung),
         ...coerceWrappedList(BgblAuth?.CelexNummer),
-        ...splitCelexList(BgblPdf?.CelexNummer),
+        // BgblPdf joins its list into one string — "31991L0628, 31995L0029", or prose such as
+        // "CELEX-Nr.: 31999L0070 und 32001L0019" — and can send a wrapped list or nil.
+        ...coerceWrappedList(BgblPdf?.CelexNummer).flatMap((joined) => celexNumbers(joined)),
       ]),
     ],
     controller: 'Bundesrecht',

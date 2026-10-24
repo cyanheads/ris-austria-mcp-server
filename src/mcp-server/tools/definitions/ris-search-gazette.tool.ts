@@ -31,8 +31,10 @@ import {
   filterText,
   foldStateNames,
   isoDateString,
+  joinNotices,
   pageSizeParam,
   rewriteUnsupportedParam,
+  servePageSize,
   type UnsupportedParam,
 } from './_shared.js';
 
@@ -365,7 +367,7 @@ export const GazetteRecordSchema = z
     celex_references: z
       .array(z.string().describe('One CELEX number of a transposed EU act, as RIS writes it.'))
       .describe(
-        'CELEX numbers of the EU acts this entry transposes — RIS CelexNummer metadata (BgblAuth, BgblPdf, LgblAuth; LgblNO CelexNummern) plus [CELEX-Nr.: …] title markers. LgblNO keeps the older form without the sector digit (383L0189) and corrigendum suffixes (394L0010R(01)). Empty when none.',
+        'CELEX numbers of the EU acts this entry transposes — RIS CelexNummer metadata (BgblAuth, BgblPdf, LgblAuth; LgblNO CelexNummern) plus [CELEX-Nr.: …] title markers. LgblNO keeps the older form with a two-digit year (383L0189) and corrigendum suffixes (394L0010R(01)). Empty when none.',
       ),
     systematic_number: z
       .string()
@@ -604,7 +606,9 @@ export const risSearchGazette = tool('ris_search_gazette', {
     notice: z
       .string()
       .optional()
-      .describe('Zero-hit guidance — names the likely cause and the concrete next call.'),
+      .describe(
+        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call.',
+      ),
   },
   errors: [
     {
@@ -643,7 +647,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
       when: 'RIS is unreachable, returned a server error, or served an HTML error page.',
       retryable: true,
       recovery:
-        'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the query.',
+        'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size to 10 or narrow the query.',
       thrownBy: 'service',
     },
     {
@@ -652,7 +656,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
       when: 'RIS did not answer the search within the request deadline.',
       retryable: true,
       recovery:
-        'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size, or narrow the date range.',
+        'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size to 10, or narrow the date range.',
       thrownBy: 'service',
     },
   ],
@@ -729,17 +733,22 @@ export const risSearchGazette = tool('ris_search_gazette', {
       application = 'LgblAuth';
     }
 
+    const served = servePageSize(input.page_size);
+
     // Vbl (Verordnungsblätter) resolves Tirol only upstream; a non-Tirol request would 500.
     // Short-circuit to a zero-hit notice instead of a retryable upstream_error.
     if (application === 'Vbl' && !VBL_COVERED.has(scope)) {
       ctx.enrich.total(0);
       ctx.enrich({
         page: input.page ?? 1,
-        pageSize: input.page_size ?? 20,
+        pageSize: served.pageSize ?? 20,
         servedApplication: application,
       });
       ctx.enrich.notice(
-        "0 gazette entries matched. Verordnungsblätter in RIS currently cover Tirol (2022+) — other states' ordinance gazettes are not yet published here.",
+        joinNotices(
+          served.notice,
+          "0 gazette entries matched. Verordnungsblätter in RIS currently cover Tirol (2022+) — other states' ordinance gazettes are not yet published here.",
+        ),
       );
       return { results: [] };
     }
@@ -763,7 +772,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
       ...(input.sort_by !== undefined && { sortBy: input.sort_by }),
       ...(input.sort_direction !== undefined && { sortDirection: input.sort_direction }),
       ...(input.page !== undefined && { page: input.page }),
-      ...(input.page_size !== undefined && { pageSize: input.page_size }),
+      ...(served.pageSize !== undefined && { pageSize: served.pageSize }),
     };
 
     // Restate a builder rejection in this tool's vocabulary, then map it and every service
@@ -793,6 +802,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
       ctx.enrich({ truncated: true });
     }
 
+    let zeroHit: string | undefined;
     if (result.total === 0) {
       const fragments = ['0 gazette entries matched.'];
       if (number !== undefined) {
@@ -841,8 +851,10 @@ export const risSearchGazette = tool('ris_search_gazette', {
           "Verordnungsblätter in RIS currently cover Tirol (2022+) — other states' ordinance gazettes are not yet published here.",
         );
       }
-      ctx.enrich.notice(fragments.join(' '));
+      zeroHit = fragments.join(' ');
     }
+    const notice = joinNotices(served.notice, zeroHit);
+    if (notice !== undefined) ctx.enrich.notice(notice);
 
     return { results: result.hits.map((hit) => toRecord(hit, application)) };
   },

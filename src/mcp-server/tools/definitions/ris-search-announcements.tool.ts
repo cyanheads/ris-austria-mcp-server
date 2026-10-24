@@ -30,8 +30,10 @@ import {
   filterText,
   foldStateNames,
   isoDateString,
+  joinNotices,
   pageSizeParam,
   rewriteUnsupportedParam,
+  servePageSize,
   type UnsupportedParam,
 } from './_shared.js';
 
@@ -408,7 +410,9 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
     notice: z
       .string()
       .optional()
-      .describe('Zero-hit guidance — names the likely cause and the concrete next call.'),
+      .describe(
+        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call.',
+      ),
   },
   errors: [
     {
@@ -440,7 +444,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       when: 'RIS is unreachable, returned a server error, or served an HTML error page.',
       retryable: true,
       recovery:
-        'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the query.',
+        'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size to 10 or narrow the query.',
       thrownBy: 'service',
     },
     {
@@ -449,7 +453,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       when: 'RIS did not answer the search within the request deadline.',
       retryable: true,
       recovery:
-        'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size, or narrow the date range.',
+        'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size to 10, or narrow the date range.',
       thrownBy: 'service',
     },
   ],
@@ -512,6 +516,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
           : undefined,
       );
     }
+    const served = servePageSize(input.page_size);
 
     const params: AnnouncementsSearchParams = {
       collection,
@@ -536,7 +541,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       ...(input.sort_by !== undefined && { sortBy: input.sort_by }),
       ...(input.sort_direction !== undefined && { sortDirection: input.sort_direction }),
       ...(input.page !== undefined && { page: input.page }),
-      ...(input.page_size !== undefined && { pageSize: input.page_size }),
+      ...(served.pageSize !== undefined && { pageSize: served.pageSize }),
     };
 
     // Restate a builder rejection in this tool's vocabulary, then map it and every service
@@ -562,6 +567,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       ctx.enrich({ truncated: true });
     }
 
+    let zeroHit: string | undefined;
     if (result.total === 0) {
       const fragments = [`0 documents in ${collection}.`];
       if (norm !== undefined) {
@@ -577,8 +583,10 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       if (collection === 'court_rules') {
         fragments.push('KmGer currently carries LVwG Tirol and Vorarlberg rules only.');
       }
-      ctx.enrich.notice(fragments.join(' '));
+      zeroHit = fragments.join(' ');
     }
+    const notice = joinNotices(served.notice, zeroHit);
+    if (notice !== undefined) ctx.enrich.notice(notice);
 
     return { results: result.hits.map((hit) => toRecord(hit, collection)) };
   },

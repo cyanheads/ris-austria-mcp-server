@@ -1,0 +1,456 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "20",
+        "#text": "2644"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3",
+                "Applikation": "RegV",
+                "Organ": "BMLUK (Bundesministerium für Land- und Forstwirtschaft, Klima- und Umweltschutz, Regionen und Wasserwirtschaft)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-10-14",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=RegV&Dokumentnummer=REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "EU-Batterienverordnung Begleitgesetz",
+                "Titel": "Bundesgesetz, mit dem das Altbatteriengesetz erlassen und das Abfallwirtschaftsgesetz 2002 geändert wird (EU-Batterienverordnung Begleitgesetz – BattBegG)",
+                "RegV": {
+                  "Abkuerzung": "BattBegG",
+                  "EinbringendeStelle": "BMLUK (Bundesministerium für Land- und Forstwirtschaft, Klima- und Umweltschutz, Regionen und Wasserwirtschaft)",
+                  "Beschlussdatum": "2026-10-14"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Vorblatt und WFA",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/Materialien_0001_B3DC8526_22B0_4B7C_95C2_C6D6EE5C9CAA.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/Materialien_0001_B3DC8526_22B0_4B7C_95C2_C6D6EE5C9CAA.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/Materialien_0001_B3DC8526_22B0_4B7C_95C2_C6D6EE5C9CAA.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Erläuterungen",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/Materialien_0002_7A4688E3_3048_4C10_9020_87203DEB9E9A.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/Materialien_0002_7A4688E3_3048_4C10_9020_87203DEB9E9A.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/Materialien_0002_7A4688E3_3048_4C10_9020_87203DEB9E9A.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/Materialien_0002_7A4688E3_3048_4C10_9020_87203DEB9E9A.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Textgegenüberstellung",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/Materialien_0003_82A979EB_2B1C_4DF1_B76B_22E24EA799DA.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/Materialien_0003_82A979EB_2B1C_4DF1_B76B_22E24EA799DA.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/Materialien_0003_82A979EB_2B1C_4DF1_B76B_22E24EA799DA.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Digi-Ready-Check",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/Materialien_0004_21027AFF_9C38_408F_81C2_D9B18869A3DE.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/Materialien_0004_21027AFF_9C38_408F_81C2_D9B18869A3DE.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/Materialien_0004_21027AFF_9C38_408F_81C2_D9B18869A3DE.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Dargestellt wird der Umsetzungsbedarf in Österreich. Aus der österreichischen BatterieVO werden Inhalte (Koordinierungsstelle, Abholkoordinierung) in das Begleitgesetz übernommen.",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Jpg",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/b8ca94c7-45bd-4c22-a145-36fe803b5692.img1is.jpg"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Temp1de09606-7d58-4ecc-bd5b-623aa9cb22c2.0001.gif",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Gif",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3/Temp1de09606-7d58-4ecc-bd5b-623aa9cb22c2.0001.gif"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3",
+                "Applikation": "RegV",
+                "Organ": "BMB (Bundesministerium für Bildung)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-10-07",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=RegV&Dokumentnummer=REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "Bundesgesetz, mit dem das Bildungsdirektionen-Einrichtungsgesetz und das Schulorganisationsgesetz geändert werden",
+                "Titel": "Bundesgesetz, mit dem das Bildungsdirektionen-Einrichtungsgesetz und das Schulorganisationsgesetz geändert werden",
+                "RegV": {
+                  "EinbringendeStelle": "BMB (Bundesministerium für Bildung)",
+                  "Beschlussdatum": "2026-10-07"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Vorblatt und WFA",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/Materialien_0001_6BCAD09B_7500_4B66_804E_F2D62FC1C460.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/Materialien_0001_6BCAD09B_7500_4B66_804E_F2D62FC1C460.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/Materialien_0001_6BCAD09B_7500_4B66_804E_F2D62FC1C460.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Erläuterungen",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/Materialien_0002_258BC4CD_D5FA_438B_BEE5_FF543D167086.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/Materialien_0002_258BC4CD_D5FA_438B_BEE5_FF543D167086.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/Materialien_0002_258BC4CD_D5FA_438B_BEE5_FF543D167086.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/Materialien_0002_258BC4CD_D5FA_438B_BEE5_FF543D167086.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Textgegenüberstellung",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/Materialien_0003_77402E75_3FB0_4B6A_8C23_1C91526DF5F6.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/Materialien_0003_77402E75_3FB0_4B6A_8C23_1C91526DF5F6.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/Materialien_0003_77402E75_3FB0_4B6A_8C23_1C91526DF5F6.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/Materialien_0003_77402E75_3FB0_4B6A_8C23_1C91526DF5F6.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Temp9351fc3e-aebf-4139-93c5-fe64adef5ac4.0001.gif",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Gif",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/Temp9351fc3e-aebf-4139-93c5-fe64adef5ac4.0001.gif"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Temp9351fc3e-aebf-4139-93c5-fe64adef5ac4.0002.gif",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Gif",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3/Temp9351fc3e-aebf-4139-93c5-fe64adef5ac4.0002.gif"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4",
+                "Applikation": "RegV",
+                "Organ": "BMF (Bundesministerium für Finanzen)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-09-22",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=RegV&Dokumentnummer=REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "Bundesgesetz, mit dem das Wirtschaftliche Eigentümer Registergesetz, das Gebührengesetz 1957 sowie das Finanzmarkt-Geldwäschegesetz geändert werden und ein Wirtschaftliche Eigentümer Registergesetz 2027 erlassen wird",
+                "Titel": "Bundesgesetz, mit dem das Wirtschaftliche Eigentümer Registergesetz, das Gebührengesetz 1957 sowie das Finanzmarkt-Geldwäschegesetz geändert werden und ein Wirtschaftliche Eigentümer Registergesetz 2027 erlassen wird",
+                "RegV": {
+                  "EinbringendeStelle": "BMF (Bundesministerium für Finanzen)",
+                  "Beschlussdatum": "2026-09-22",
+                  "Schlagworte": "WiEReG, Wirtschaftliche Eigentümer, Geldwäsche, Geldwäscherei, Terrorismusfinanzierung"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Vorblatt und WFA",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/Materialien_0001_88FB93BE_C6EB_48A6_AAD8_6861860D4B2E.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/Materialien_0001_88FB93BE_C6EB_48A6_AAD8_6861860D4B2E.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/Materialien_0001_88FB93BE_C6EB_48A6_AAD8_6861860D4B2E.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Erläuterungen",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/Materialien_0002_1877E691_E963_48DE_A360_BAC4362E11CA.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/Materialien_0002_1877E691_E963_48DE_A360_BAC4362E11CA.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/Materialien_0002_1877E691_E963_48DE_A360_BAC4362E11CA.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/Materialien_0002_1877E691_E963_48DE_A360_BAC4362E11CA.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Textgegenüberstellung",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/Materialien_0003_191A1A6A_622E_4888_97A9_44B7B492001D.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/Materialien_0003_191A1A6A_622E_4888_97A9_44B7B492001D.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/Materialien_0003_191A1A6A_622E_4888_97A9_44B7B492001D.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Tempb0a3013e-557b-4a80-a13d-792d6bc235c6.0001.gif",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Gif",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/Tempb0a3013e-557b-4a80-a13d-792d6bc235c6.0001.gif"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Tempb0a3013e-557b-4a80-a13d-792d6bc235c6.0002.gif",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Gif",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4/Tempb0a3013e-557b-4a80-a13d-792d6bc235c6.0002.gif"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

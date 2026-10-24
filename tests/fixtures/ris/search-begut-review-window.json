@@ -1,0 +1,649 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "20",
+        "#text": "18"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "BEGUT_1174CDB5_3F55_443A_A112_175692DE8744",
+                "Applikation": "Begut",
+                "Organ": "BMLUK (Bundesministerium für Land- und Forstwirtschaft, Klima- und Umweltschutz, Regionen und Wasserwirtschaft)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-10-15",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Begut&Dokumentnummer=BEGUT_1174CDB5_3F55_443A_A112_175692DE8744"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "Bundesgesetz, mit dem das Chemikaliengesetz 1996, das Fluorierte Treibhausgase-Gesetz 2009 und das Biozidproduktegesetz geändert werden",
+                "Titel": "Bundesgesetz, mit dem das Chemikaliengesetz 1996, das Fluorierte Treibhausgase-Gesetz 2009 und das Biozidproduktegesetz geändert werden",
+                "Begut": {
+                  "EinbringendeStelle": "BMLUK (Bundesministerium für Land- und Forstwirtschaft, Klima- und Umweltschutz, Regionen und Wasserwirtschaft)",
+                  "BeginnBegutachtungsfrist": "2026-10-15",
+                  "EndeBegutachtungsfrist": "2026-11-26",
+                  "Schlagworte": "F-Gase, Biozide, Chemikalien"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Erläuterungen Artikelgesetz",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/Materialien_0001_527E1FFA_D443_45BE_83E3_3F967754E3F2.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/Materialien_0001_527E1FFA_D443_45BE_83E3_3F967754E3F2.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/Materialien_0001_527E1FFA_D443_45BE_83E3_3F967754E3F2.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/Materialien_0001_527E1FFA_D443_45BE_83E3_3F967754E3F2.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "TGÜ_Artikelgesetz",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/Materialien_0002_D2F65E9C_2789_4D20_B549_FD6A0160E153.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/Materialien_0002_D2F65E9C_2789_4D20_B549_FD6A0160E153.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/Materialien_0002_D2F65E9C_2789_4D20_B549_FD6A0160E153.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Vorblatt, WFA Artikelgesetz",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/Materialien_0003_9E7241D0_650D_4C17_89CE_67592602A18D.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/Materialien_0003_9E7241D0_650D_4C17_89CE_67592602A18D.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/Materialien_0003_9E7241D0_650D_4C17_89CE_67592602A18D.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Letter",
+                  "Name": "Begleitschreiben Begutachtungsentwurf",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/Schreiben_0001_467B4FE8_D6E1_4296_A730_B92417CDD263.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/Schreiben_0001_467B4FE8_D6E1_4296_A730_B92417CDD263.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/Schreiben_0001_467B4FE8_D6E1_4296_A730_B92417CDD263.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Temp6ae771d7-2d1e-41e9-8909-8f2dfdaa852c.0001.gif",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Gif",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/Temp6ae771d7-2d1e-41e9-8909-8f2dfdaa852c.0001.gif"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Temp6ae771d7-2d1e-41e9-8909-8f2dfdaa852c.0002.gif",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Gif",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_1174CDB5_3F55_443A_A112_175692DE8744/Temp6ae771d7-2d1e-41e9-8909-8f2dfdaa852c.0002.gif"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566",
+                "Applikation": "Begut",
+                "Organ": "BMASGPK (Bundesministerium für Arbeit, Soziales, Gesundheit, Pflege und Konsumentenschutz)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-10-21",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Begut&Dokumentnummer=BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "Novelle der Bauarbeiterschutzverordnung zur Anpassung an die Flüssiggasverordnung 2025",
+                "Titel": "Verordnung der Bundesministerin für Arbeit, Soziales, Gesundheit, Pflege und Konsumentenschutz, mit der die Verordnung des Bundesministers für Arbeit, Soziales und Konsumentenschutz über Sicherheit und Gesundheitsschutz auf Baustellen und auf auswärtigen Arbeitsstellen (Bauarbeiterschutzverordnung – BauV) geändert wird",
+                "Begut": {
+                  "Abkuerzung": "BauV-Novelle Flüssiggas",
+                  "EinbringendeStelle": "BMASGPK (Bundesministerium für Arbeit, Soziales, Gesundheit, Pflege und Konsumentenschutz)",
+                  "BeginnBegutachtungsfrist": "2026-10-21",
+                  "EndeBegutachtungsfrist": "2026-11-18"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Erläuterungen",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Materialien_0001_D44AF520_1770_46A1_AEF3_B5C01B0F2266.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Materialien_0001_D44AF520_1770_46A1_AEF3_B5C01B0F2266.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Materialien_0001_D44AF520_1770_46A1_AEF3_B5C01B0F2266.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Materialien_0001_D44AF520_1770_46A1_AEF3_B5C01B0F2266.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Textgegenüberstellung",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Materialien_0002_ECD1F85C_0002_425B_A40E_61ED1E07A9DB.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Materialien_0002_ECD1F85C_0002_425B_A40E_61ED1E07A9DB.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Materialien_0002_ECD1F85C_0002_425B_A40E_61ED1E07A9DB.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Materialien_0002_ECD1F85C_0002_425B_A40E_61ED1E07A9DB.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Vorblatt und WFA",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Materialien_0003_89D1FEFB_AA14_4921_9B13_EC4172E14073.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Materialien_0003_89D1FEFB_AA14_4921_9B13_EC4172E14073.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Materialien_0003_89D1FEFB_AA14_4921_9B13_EC4172E14073.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Letter",
+                  "Name": "Begleitschreiben Begutachtungsentwurf",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Schreiben_0001_2B4C6250_F4D1_4A80_A2D6_6B0E94C60523.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Schreiben_0001_2B4C6250_F4D1_4A80_A2D6_6B0E94C60523.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Schreiben_0001_2B4C6250_F4D1_4A80_A2D6_6B0E94C60523.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Temp0f9aead7-0cb8-4048-a6cf-7c314b05dd1c.0001.gif",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Gif",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Temp0f9aead7-0cb8-4048-a6cf-7c314b05dd1c.0001.gif"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Temp0f9aead7-0cb8-4048-a6cf-7c314b05dd1c.0002.gif",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Gif",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566/Temp0f9aead7-0cb8-4048-a6cf-7c314b05dd1c.0002.gif"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563",
+                "Applikation": "Begut",
+                "Organ": "BMJ (Bundesministerium für Justiz)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-10-21",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Begut&Dokumentnummer=BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "Mediengesetznovelle 2026",
+                "Titel": "Bundesgesetz, mit dem das Bundesgesetz vom 12. Juni 1981 über die Presse und andere publizistische Medien geändert wird (Mediengesetznovelle 2026)",
+                "Begut": {
+                  "EinbringendeStelle": "BMJ (Bundesministerium für Justiz)",
+                  "BeginnBegutachtungsfrist": "2026-10-21",
+                  "EndeBegutachtungsfrist": "2026-11-10"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Erläuterungen",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Materialien_0001_84065D86_69D0_4218_BF03_8C4039099B3B.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Materialien_0001_84065D86_69D0_4218_BF03_8C4039099B3B.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Materialien_0001_84065D86_69D0_4218_BF03_8C4039099B3B.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Materialien_0001_84065D86_69D0_4218_BF03_8C4039099B3B.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Textgegenüberstellung",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Materialien_0002_6260EEA2_23DA_4AD3_9844_60B299BF5E30.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Materialien_0002_6260EEA2_23DA_4AD3_9844_60B299BF5E30.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Materialien_0002_6260EEA2_23DA_4AD3_9844_60B299BF5E30.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Materialien_0002_6260EEA2_23DA_4AD3_9844_60B299BF5E30.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "WFA",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Materialien_0003_36FC539C_8FC6_439F_9DC5_9A024D6082F8.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Materialien_0003_36FC539C_8FC6_439F_9DC5_9A024D6082F8.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Materialien_0003_36FC539C_8FC6_439F_9DC5_9A024D6082F8.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Letter",
+                  "Name": "Begleitschreiben Begutachtungsentwurf",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Schreiben_0001_07E83F4B_E065_4AF8_80E9_40E78511330D.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Schreiben_0001_07E83F4B_E065_4AF8_80E9_40E78511330D.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Schreiben_0001_07E83F4B_E065_4AF8_80E9_40E78511330D.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Schreiben_0001_07E83F4B_E065_4AF8_80E9_40E78511330D.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Bundesministerium für Justiz",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Jpg",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/90e72f28-944d-419e-80d9-bcd22c4e4c92.img1is.jpg"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Temp613a78f8-fd4d-4e7e-b71e-65dfc9dccdbb.0001.gif",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Gif",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563/Temp613a78f8-fd4d-4e7e-b71e-65dfc9dccdbb.0001.gif"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB",
+                "Applikation": "Begut",
+                "Organ": "BMF (Bundesministerium für Finanzen)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-09-22",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Begut&Dokumentnummer=BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB"
+              },
+              "Bundesrecht": {
+                "Kurztitel": "Kohlenstoffdioxid-Speicherungsgesetz",
+                "Titel": "Bundesgesetz, mit dem das Bundesgesetz über das Verbot der geologischen Speicherung von Kohlenstoffdioxid aufgehoben und das Bundesgesetz über die geologische Speicherung von Kohlenstoffdioxid (KSp-G) erlassen wird",
+                "Begut": {
+                  "Abkuerzung": "KSp-G",
+                  "EinbringendeStelle": "BMF (Bundesministerium für Finanzen)",
+                  "BeginnBegutachtungsfrist": "2026-09-22",
+                  "EndeBegutachtungsfrist": "2026-10-30",
+                  "Schlagworte": "Geologische Speicherung; Kohlenstoffdioxid; CO2"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Erläuterungen",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/Materialien_0001_9481C61F_5BCE_4189_A2B1_092271800D33.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/Materialien_0001_9481C61F_5BCE_4189_A2B1_092271800D33.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/Materialien_0001_9481C61F_5BCE_4189_A2B1_092271800D33.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/Materialien_0001_9481C61F_5BCE_4189_A2B1_092271800D33.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Material",
+                  "Name": "Vorblatt_WFA",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/Materialien_0002_82C3E87B_BB2D_4413_8448_8F875703E805.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/Materialien_0002_82C3E87B_BB2D_4413_8448_8F875703E805.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/Materialien_0002_82C3E87B_BB2D_4413_8448_8F875703E805.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Letter",
+                  "Name": "Begleitschreiben Begutachtungsentwurf",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/Schreiben_0001_D8318EF4_7927_48C2_A249_30DF0DAB36D1.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/Schreiben_0001_D8318EF4_7927_48C2_A249_30DF0DAB36D1.html"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/Schreiben_0001_D8318EF4_7927_48C2_A249_30DF0DAB36D1.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Temp255b6bc8-67a3-49b9-9a05-af7c7c4566a9.0001.gif",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Gif",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/Temp255b6bc8-67a3-49b9-9a05-af7c7c4566a9.0001.gif"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "EmbeddedAttachment",
+                  "Name": "Temp255b6bc8-67a3-49b9-9a05-af7c7c4566a9.0002.gif",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Gif",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB/Temp255b6bc8-67a3-49b9-9a05-af7c7c4566a9.0002.gif"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -549,6 +549,50 @@ describe('risSearchLegislation — record mapping and format() parity', () => {
   });
 });
 
+describe('risSearchLegislation — in-force line (#69)', () => {
+  async function versions() {
+    searchLegislation.mockResolvedValue(
+      parseSearchResponse(fixture('search-brkons-estg-section-2.json')),
+    );
+    const result = await runToolContract(risSearchLegislation, {
+      include_all_versions: true,
+      title: 'EStG',
+    });
+    expect(result.isError).not.toBe(true);
+    const { results } = risSearchLegislation.output.parse(result.structuredContent);
+    const text = contentText(result);
+    const blockFor = (documentNumber: string) =>
+      text.split('\n\n').find((block) => block.includes(`**Document:** ${documentNumber}`)) ?? '';
+    return { blockFor, byId: new Map(results.map((r) => [r.document_number, r])), text };
+  }
+
+  it('renders a version with no end date as "→ no end date", never as still in force', async () => {
+    const { blockFor, byId, text } = await versions();
+    expect(byId.get('NOR40261333')!.in_force_from).toBe('2024-01-01');
+    expect(byId.get('NOR40261333')).not.toHaveProperty('in_force_until');
+    expect(blockFor('NOR40261333')).toContain('\n**In force:** 2024-01-01 → no end date\n');
+    expect(text).not.toMatch(/still in force/iu);
+  });
+
+  it('keeps the from → until line of a version with an end date (regression)', async () => {
+    const { blockFor, byId } = await versions();
+    expect(byId.get('NOR40246516')).toMatchObject({
+      in_force_from: '2022-07-29',
+      in_force_until: '2026-12-31',
+    });
+    expect(blockFor('NOR40246516')).toContain('\n**In force:** 2022-07-29 → 2026-12-31\n');
+  });
+
+  it('describes in_force_until by the in-force rule, not as "absent while in force"', () => {
+    const field = risSearchLegislation.output.shape.results.element.shape.in_force_until;
+    expect(field.description).not.toMatch(/absent while in force|still in force/iu);
+    expect(field.description).toContain(
+      'in force on date D when in_force_from ≤ D and in_force_until is absent or ≥ D',
+    );
+    expect(field.description).toContain('9000-01-01');
+  });
+});
+
 // The fold itself is swept across every state parameter in _shared.test.ts; this pins that the
 // folded code is what reaches the request on the wire path.
 describe('risSearchLegislation — state names in scope (#58)', () => {

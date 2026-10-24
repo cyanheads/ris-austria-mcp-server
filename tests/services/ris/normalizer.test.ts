@@ -292,6 +292,53 @@ describe('parseSearchResponse', () => {
     expect(metadata.celexReferences).toContain('32016L0680');
   });
 
+  it('keeps every CELEX number of the ABGB Aenderung and none of its annotation fragments (#71)', () => {
+    // NOR40198929's Aenderung CELEX lines as RIS sends them, one marker spelled "CELEX Nr.".
+    const aenderung =
+      '[CELEX-Nr.: 373L0183, 377L0780, 389L0646, 389L0299, 389L0647, 391L0031, 383L0350, 386L0635, 389L0117, 391L0308 (EWR/Anh. IX)]\r\n[CELEX-Nr.: 387L0102 (EWR/Anh. XIX)]\r\n[CELEX-Nr.: 387L0102, 390L0088, 393L0013, 390L0619, 392L0096]\r\n[CELEX-Nr.: 399L0044]\r\n[CELEX-Nr.: 300L0035]\r\n[CELEX-Nr.: 32003L0058]\r\n[CELEX-Nr.: 32008L0048]\r\n[CELEX-Nr.: 32011L0007, 32011L0090]\r\n[CELEX-Nr.: 32011L0083]\r\n[CELEX-Nr.: 32014L0056]\r\n[CELEX-Nr.: 32011L0093, 32012L0029, 32017L0541]\r\n[CELEX-Nr.: 32019L0770, 32019L0771]\r\n[CELEX-Nr.: 32019L1158]\r\n[CELEX Nr.: 32019L1152]\r\n[CELEX-Nr.: 32022L2041]\r\n[CELEX-Nr.: 32024L1346]\r';
+    const metadata = metadataById<RisBundesrechtMetadata>(
+      withMetadata('search-brkons-celex.json', 'NOR40262691', ['Bundesrecht', 'BrKons'], {
+        Aenderung: aenderung,
+      }),
+    ).get('NOR40262691')!;
+    expect(metadata.celexReferences).toEqual([
+      // From the fixture's Titel marker.
+      '395L0046',
+      '373L0183',
+      '377L0780',
+      '389L0646',
+      '389L0299',
+      '389L0647',
+      '391L0031',
+      '383L0350',
+      '386L0635',
+      '389L0117',
+      '391L0308',
+      '387L0102',
+      '390L0088',
+      '393L0013',
+      '390L0619',
+      '392L0096',
+      '399L0044',
+      '300L0035',
+      '32003L0058',
+      '32008L0048',
+      '32011L0007',
+      '32011L0090',
+      '32011L0083',
+      '32014L0056',
+      '32011L0093',
+      '32012L0029',
+      '32017L0541',
+      '32019L0770',
+      '32019L0771',
+      '32019L1158',
+      '32019L1152',
+      '32022L2041',
+      '32024L1346',
+    ]);
+  });
+
   it('maps the consolidated BrKons Abkuerzung to abbreviation (#51)', () => {
     const metadata = parseSearchResponse(fixture('search-brkons-celex.json')).hits[0]!
       .metadata as RisBundesrechtMetadata;
@@ -311,6 +358,41 @@ describe('parseSearchResponse', () => {
       .metadata as RisBundesrechtMetadata;
     expect(begut.abbreviation).toBe('EStG-Novelle 2026');
     expect(regv.abbreviation).toBe('USt-Novelle 2026');
+  });
+
+  it('trims a Begut or RegV Abkuerzung RIS pads with whitespace (#68)', () => {
+    const begut = metadataById<RisBundesrechtMetadata>(
+      withMetadata(
+        'search-begut-review-window.json',
+        'BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566',
+        ['Bundesrecht', 'Begut'],
+        { Abkuerzung: 'AbfrageberechtigungBilDokG_LS ' },
+      ),
+    );
+    expect(begut.get('BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566')!.abbreviation).toBe(
+      'AbfrageberechtigungBilDokG_LS',
+    );
+    const regv = metadataById<RisBundesrechtMetadata>(
+      withMetadata(
+        'search-regv-abkuerzung.json',
+        'REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3',
+        ['Bundesrecht', 'RegV'],
+        { Abkuerzung: ' BattBegG' },
+      ),
+    );
+    expect(regv.get('REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3')!.abbreviation).toBe('BattBegG');
+  });
+
+  it('reads the Begut review start and the draft keywords verbatim, ";" separators included (#68)', () => {
+    const begut = metadataById<RisBundesrechtMetadata>(fixture('search-begut-review-window.json'));
+    expect(begut.get('BEGUT_1174CDB5_3F55_443A_A112_175692DE8744')).toMatchObject({
+      keywords: 'F-Gase, Biozide, Chemikalien',
+      reviewDeadline: '2026-11-26',
+      reviewStart: '2026-10-15',
+    });
+    expect(begut.get('BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB')!.keywords).toBe(
+      'Geologische Speicherung; Kohlenstoffdioxid; CO2',
+    );
   });
 
   // search-lrkons-abkuerzung.json is one page assembled from four live LrKons records: both
@@ -541,6 +623,21 @@ describe('nil and wrapped upstream shapes on the abbreviation, decree, and CELEX
       '31991L0628',
       '31995L0029',
       '31999L0070',
+      '32001L0019',
+    ]);
+  });
+
+  it('keeps only the CELEX numbers of a BgblPdf CelexNummer carrying annotation text (#71)', () => {
+    const meta = metadataById<RisBundesrechtMetadata>(
+      withMetadata('search-bgblpdf-celex.json', '2003_570_2', ['Bundesrecht', 'BgblPdf'], {
+        CelexNummer:
+          '31991L0628 (EWR/Anh. IX), 31995L0029; CELEX-Nr.: 394L0010R(01) und 32001L0019',
+      }),
+    );
+    expect(meta.get('2003_570_2')!.celexReferences).toEqual([
+      '31991L0628',
+      '31995L0029',
+      '394L0010R(01)',
       '32001L0019',
     ]);
   });
@@ -787,6 +884,51 @@ describe('text helpers', () => {
     expect(parseCelexReferences(undefined, 'no markers here')).toEqual([]);
   });
 
+  it('parseCelexReferences keeps the pre-1999 short form, the sector-less year, and corrigendum suffixes as written', () => {
+    expect(
+      parseCelexReferences('[CELEX-Nr.: 373L0183, 32018L2001; 32023L1791R(05), 2003L0087]'),
+    ).toEqual(['373L0183', '32018L2001', '32023L1791R(05)', '2003L0087']);
+  });
+
+  it('parseCelexReferences drops parenthesized annotation text, across both separators (#71)', () => {
+    // The ABGB Aenderung brackets, as RIS sends them.
+    expect(
+      parseCelexReferences(
+        '[CELEX-Nr.: 383L0350, 386L0635, 389L0117, 391L0308 (EWR/Anh. IX)]\n[CELEX-Nr.: 387L0102 (EWR/Anh. XIX)]',
+        '[CELEX-Nr.: 390L0088; 393L0013 (EWR/Anh. IX), 390L0619]',
+      ),
+    ).toEqual([
+      '383L0350',
+      '386L0635',
+      '389L0117',
+      '391L0308',
+      '387L0102',
+      '390L0088',
+      '393L0013',
+      '390L0619',
+    ]);
+  });
+
+  it('parseCelexReferences drops the "und" joining the last two numbers of a bracket (#71)', () => {
+    expect(parseCelexReferences('[CELEX-Nr.: 396L0082, 300L0076 und 399L0031]')).toEqual([
+      '396L0082',
+      '300L0076',
+      '399L0031',
+    ]);
+  });
+
+  it('parseCelexReferences reads past an unclosed bracket without keeping the gazette lines it spans (#71)', () => {
+    // An Aenderung RIS closes with ")" instead of "]": the marker runs on to the next "]".
+    const aenderung =
+      '[CELEX-Nr.: 393L0006, 395L0026, 396L0010)\r\nBGBl. Nr. 757/1996 (NR: GP XX RV 397 AB 477 S. 47. BR: AB 5314 S. 619.)\r\nBGBl. I Nr. 58/1997 (K über Idat)\r\n[CELEX-Nr.: 390L0314]';
+    expect(parseCelexReferences(aenderung)).toEqual([
+      '393L0006',
+      '395L0026',
+      '396L0010',
+      '390L0314',
+    ]);
+  });
+
   it('isHtmlErrorPage detects HTML bodies', () => {
     expect(isHtmlErrorPage('<!DOCTYPE html><html>…')).toBe(true);
     expect(isHtmlErrorPage('  <html lang="de">')).toBe(true);
@@ -812,5 +954,78 @@ describe('gazette promulgation — the gazette each federal entry appeared in (#
     expect(promulgation('search-bgblalt-1-1938.json', 'bgl1938_0001_00001')).toBe(
       'Bundesgesetzblatt für den Bundesstaat Österreich',
     );
+  });
+});
+
+describe('parseCelexReferences — time on adversarial input (#71)', () => {
+  /** Bound on one parse at the largest size of any shape; linear work there takes under 2 ms. */
+  const BOUND_MS = 50;
+
+  /** Thread-CPU milliseconds of one parse, the fastest of three samples of ≥ 10 ms each. */
+  function cpuMs(text: string): number {
+    let best = Number.POSITIVE_INFINITY;
+    for (let sample = 0; sample < 3; sample++) {
+      const start = process.threadCpuUsage();
+      let runs = 0;
+      let ms = 0;
+      do {
+        parseCelexReferences(text);
+        runs++;
+        const { user, system } = process.threadCpuUsage(start);
+        ms = (user + system) / 1_000;
+      } while (ms < 10);
+      best = Math.min(best, ms / runs);
+    }
+    return best;
+  }
+
+  /**
+   * Each shape leads with one real number, so the parse is checked to keep it at every size: a
+   * parse that turned fast by giving up early fails there. The adversarial run follows it, where
+   * no later number lets a backtracking pattern end its scan.
+   */
+  it.each<[string, number, (size: number) => string, string[]]>([
+    [
+      'a long digit run inside one marker',
+      5_000,
+      (size) => `[CELEX-Nr.: 32016L0680, ${'3'.repeat(size)}L0001]`,
+      ['32016L0680'],
+    ],
+    [
+      'repeated openers with no closer',
+      1_250,
+      (size) => `[CELEX-Nr.: 32016L0680] ${'[CELEX-Nr.: '.repeat(Math.ceil(size / 12))}`,
+      ['32016L0680'],
+    ],
+    [
+      'repeated openers before one closer',
+      1_250,
+      (size) => `${'[CELEX Nr. 373L0183 '.repeat(Math.ceil(size / 20))}]`,
+      ['373L0183'],
+    ],
+    [
+      'one long line ending in a break',
+      1_250,
+      (size) => `[CELEX-Nr.: 32016L0680 ${'§1 x'.repeat(size / 4)}\ny]`,
+      ['32016L0680'],
+    ],
+    [
+      'breaks throughout',
+      1_250,
+      (size) => `[CELEX-Nr.: 32016L0680${'  \r\n'.repeat(size / 4)}]`,
+      ['32016L0680'],
+    ],
+  ])('stays linear on %s', (_shape, smallest, make, expected) => {
+    // Doubling sizes spanning 64×, each checked against the bound before the next runs.
+    const times: number[] = [];
+    for (let size = smallest; size <= smallest * 64; size *= 2) {
+      const text = make(size);
+      expect(parseCelexReferences(text), `${size} characters`).toEqual(expected);
+      const ms = cpuMs(text);
+      expect(ms, `${size} characters`).toBeLessThan(BOUND_MS);
+      times.push(ms);
+    }
+    expect(times).toHaveLength(7);
+    expect(times.at(-1)! / times[0]!).toBeLessThan(256);
   });
 });

@@ -24,7 +24,7 @@ import { risSearchDrafts } from '@/mcp-server/tools/definitions/ris-search-draft
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import { buildDraftsRequest, type DraftsSearchParams } from '@/services/ris/request-builder.js';
 
-import { contractError, expectArgumentRejection } from './_wire.js';
+import { contentText, contractError, expectArgumentRejection } from './_wire.js';
 
 const { searchDrafts } = vi.hoisted(() => ({ searchDrafts: vi.fn() }));
 
@@ -400,5 +400,151 @@ describe('risSearchDrafts — record mapping and format() parity', () => {
     expect(text).toContain(`**RIS view:** ${record.document_url}`);
     expect(text).toContain('WFA (Material)');
     expect(text).toContain('Übereinkommen in deutscher Sprache (Attachment)');
+  });
+});
+
+// search-begut-review-window.json and search-regv-abkuerzung.json are live captures (review
+// drafts in Begutachtung on 2026-10-21; the newest government bills), cut to the records these
+// cases need, with each record's inline formula images trimmed to two.
+describe('risSearchDrafts — review start, abbreviation, and keywords (#68)', () => {
+  const BEGUT_KEYWORDS = 'BEGUT_1174CDB5_3F55_443A_A112_175692DE8744';
+  const BEGUT_ABBREVIATION = 'BEGUT_6A7272C6_F603_4C66_A8EE_3A8A4B956566';
+  const BEGUT_SEMICOLONS = 'BEGUT_36D925A7_3CDE_452E_ACCF_486628CEDFFB';
+  const BEGUT_START_ONLY = 'BEGUT_343BEE2A_632B_4190_AA2C_B6762CD6F563';
+  const REGV_ABBREVIATION = 'REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3';
+  const REGV_SPARSE = 'REGV_B54220C1_6C61_4BC1_ACE5_4D33FFC44FF3';
+  const REGV_KEYWORDS = 'REGV_B9F6BD64_87F1_4603_8824_DAF146D597A4';
+  const NEW_KEYS = ['review_start', 'abbreviation', 'keywords'] as const;
+
+  async function search(fixtureName: string, input: Record<string, unknown>) {
+    searchDrafts.mockResolvedValue(parseSearchResponse(fixture(fixtureName)));
+    const result = await runToolContract(risSearchDrafts, input as never);
+    expect(result.isError).not.toBe(true);
+    const { results } = risSearchDrafts.output.parse(result.structuredContent);
+    const text = contentText(result);
+    const blockFor = (documentNumber: string) =>
+      text.split('\n\n').find((block) => block.includes(`**Document:** ${documentNumber}`)) ?? '';
+    return { blockFor, byId: new Map(results.map((r) => [r.document_number, r])), results };
+  }
+
+  const reviewDrafts = () =>
+    search('search-begut-review-window.json', {
+      stage: 'review_drafts',
+      in_review_on: '2026-10-21',
+    });
+  const governmentBills = () =>
+    search('search-regv-abkuerzung.json', { stage: 'government_bills' });
+
+  /** Each record's new keys as present on the record — a key set to `undefined` stays visible. */
+  const newFields = (record: Record<string, unknown>) =>
+    Object.fromEntries(NEW_KEYS.filter((key) => key in record).map((key) => [key, record[key]]));
+
+  /** The block's tail: rendition links, then one line per companion, both pre-#68 lines. */
+  const tailLines = (
+    record: ReturnType<typeof risSearchDrafts.output.parse>['results'][number],
+  ) => {
+    const u = record.content_urls;
+    return [
+      `**Text:** [HTML](${u.html}) · [PDF](${u.pdf}) · [RTF](${u.rtf}) · [XML](${u.xml})`,
+      '**Materials:**',
+      ...record.materials.map((m) => `- ${m.name ?? m.type} (${m.type}) — ${m.url}`),
+    ];
+  };
+
+  it('carries review_start, abbreviation, and keywords as RIS sends them, and no key it omits', async () => {
+    const drafts = await reviewDrafts();
+    expect(drafts.results.map((r) => [r.document_number, newFields(r)])).toStrictEqual([
+      [BEGUT_KEYWORDS, { keywords: 'F-Gase, Biozide, Chemikalien', review_start: '2026-10-15' }],
+      [BEGUT_ABBREVIATION, { abbreviation: 'BauV-Novelle Flüssiggas', review_start: '2026-10-21' }],
+      [BEGUT_START_ONLY, { review_start: '2026-10-21' }],
+      [
+        BEGUT_SEMICOLONS,
+        {
+          abbreviation: 'KSp-G',
+          keywords: 'Geologische Speicherung; Kohlenstoffdioxid; CO2',
+          review_start: '2026-09-22',
+        },
+      ],
+    ]);
+    const bills = await governmentBills();
+    expect(bills.results.map((r) => [r.document_number, newFields(r)])).toStrictEqual([
+      [REGV_ABBREVIATION, { abbreviation: 'BattBegG' }],
+      [REGV_SPARSE, {}],
+      [
+        REGV_KEYWORDS,
+        {
+          keywords:
+            'WiEReG, Wirtschaftliche Eigentümer, Geldwäsche, Geldwäscherei, Terrorismusfinanzierung',
+        },
+      ],
+    ]);
+  });
+
+  it('renders a review draft block in field order, start before deadline on one line', async () => {
+    const { blockFor, byId } = await reviewDrafts();
+    const record = byId.get(BEGUT_SEMICOLONS)!;
+    expect(blockFor(BEGUT_SEMICOLONS).split('\n')).toStrictEqual([
+      '## Bundesgesetz, mit dem das Bundesgesetz über das Verbot der geologischen Speicherung von Kohlenstoffdioxid aufgehoben und das Bundesgesetz über die geologische Speicherung von Kohlenstoffdioxid (KSp-G) erlassen wird',
+      `**Document:** ${BEGUT_SEMICOLONS} (review_drafts)`,
+      '**Short title:** Kohlenstoffdioxid-Speicherungsgesetz',
+      '**Abbreviation:** KSp-G',
+      '**Ministry:** BMF (Bundesministerium für Finanzen)',
+      '**Review start:** 2026-09-22 | **Review deadline:** 2026-10-30',
+      '**Keywords:** Geologische Speicherung; Kohlenstoffdioxid; CO2',
+      `**RIS view:** https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Begut&Dokumentnummer=${BEGUT_SEMICOLONS}`,
+      ...tailLines(record),
+    ]);
+    expect(record.materials).toHaveLength(3);
+  });
+
+  it('renders a government bill block in field order, decided alone on the dates line', async () => {
+    const { blockFor, byId } = await governmentBills();
+    const record = byId.get(REGV_ABBREVIATION)!;
+    expect(blockFor(REGV_ABBREVIATION).split('\n')).toStrictEqual([
+      '## Bundesgesetz, mit dem das Altbatteriengesetz erlassen und das Abfallwirtschaftsgesetz 2002 geändert wird (EU-Batterienverordnung Begleitgesetz – BattBegG)',
+      `**Document:** ${REGV_ABBREVIATION} (government_bills)`,
+      '**Short title:** EU-Batterienverordnung Begleitgesetz',
+      '**Abbreviation:** BattBegG',
+      '**Ministry:** BMLUK (Bundesministerium für Land- und Forstwirtschaft, Klima- und Umweltschutz, Regionen und Wasserwirtschaft)',
+      '**Decided:** 2026-10-14',
+      `**RIS view:** https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=RegV&Dokumentnummer=${REGV_ABBREVIATION}`,
+      ...tailLines(record),
+    ]);
+    expect(record.materials).toHaveLength(4);
+  });
+
+  it('renders each new field on its own line exactly when structuredContent carries it', async () => {
+    const labels = {
+      abbreviation: '**Abbreviation:**',
+      keywords: '**Keywords:**',
+      review_start: '**Review start:**',
+    } as const;
+    let rendered = 0;
+    let omitted = 0;
+    for (const { blockFor, results } of [await reviewDrafts(), await governmentBills()]) {
+      for (const record of results) {
+        const lines = blockFor(record.document_number).split('\n');
+        expect(lines[1]).toBe(`**Document:** ${record.document_number} (${record.stage})`);
+        for (const key of NEW_KEYS) {
+          const value = record[key];
+          const hits = lines.filter((line) => line.includes(labels[key]));
+          if (value === undefined) {
+            expect(hits).toStrictEqual([]);
+            omitted++;
+            continue;
+          }
+          // review_start opens the dates line; the other two fill a line of their own.
+          expect(hits).toStrictEqual([
+            key === 'review_start'
+              ? `${labels[key]} ${value} | **Review deadline:** ${record.review_deadline}`
+              : `${labels[key]} ${value}`,
+          ]);
+          rendered++;
+        }
+      }
+    }
+    // 4 review starts, 2 abbreviations and 2 keyword strings on the drafts; 1 and 1 on the bills.
+    expect(rendered).toBe(10);
+    expect(omitted).toBe(11);
   });
 });

@@ -20,7 +20,13 @@ import type { TrackChangesParams } from '@/services/ris/request-builder.js';
 import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisChange } from '@/services/ris/types.js';
 
-import { failSearchError, isoDateString, pageSizeParam } from './_shared.js';
+import {
+  failSearchError,
+  isoDateString,
+  joinNotices,
+  pageSizeParam,
+  servePageSize,
+} from './_shared.js';
 
 const APPLICATION_CODES = RIS_APPLICATIONS.map((app) => app.code) as [string, ...string[]];
 
@@ -67,6 +73,18 @@ const ChangeRecordSchema = z
       .optional()
       .describe(
         'RIS law number (Gesetzesnummer) the section belongs to — consolidated-law rows only. Group a feed by law with it, or pass it to ris_search_legislation law_id for the law’s versions.',
+      ),
+    in_force_from: z
+      .string()
+      .optional()
+      .describe(
+        'First day this version is in force (Inkrafttretensdatum), relayed as RIS writes it — consolidated-law rows only. RIS writes 9000-01-01 for a start still awaiting an event. The version is in force on date D when in_force_from ≤ D and in_force_until is absent or ≥ D.',
+      ),
+    in_force_until: z
+      .string()
+      .optional()
+      .describe(
+        'Last day this version is in force (Ausserkrafttretensdatum), relayed as RIS writes it — consolidated-law rows only. Absent when RIS records no end date, which does not mean the version is in force now: it can start in the future. RIS writes 9000-01-01 for an end still awaiting an event, the day the version after it starts. The version is in force on date D when in_force_from ≤ D and in_force_until is absent or ≥ D.',
       ),
     case_numbers: z
       .array(z.string().describe('One case number (Geschäftszahl).'))
@@ -138,6 +156,8 @@ function toRecord(change: RisChange, bindingStatus: RisBindingStatus): ChangeRec
   const consolidated = md.controller === 'Bundesrecht' || md.controller === 'Landesrecht';
   const sectionLabel = consolidated ? md.sectionLabel : undefined;
   const lawId = consolidated ? md.lawId : undefined;
+  const inForceFrom = consolidated ? md.inForceFrom : undefined;
+  const inForceUntil = consolidated ? md.inForceUntil : undefined;
   const caseNumbers = md.controller === 'Judikatur' ? md.caseNumbers : [];
   const decisionDate = md.controller === 'Judikatur' ? md.decisionDate : undefined;
   const { html, pdf, rtf, xml } = hit.contentUrls;
@@ -145,6 +165,8 @@ function toRecord(change: RisChange, bindingStatus: RisBindingStatus): ChangeRec
     binding_status: bindingStatus,
     ...(caseNumbers.length > 0 && { case_numbers: [...caseNumbers] }),
     ...(decisionDate !== undefined && { decision_date: decisionDate }),
+    ...(inForceFrom !== undefined && { in_force_from: inForceFrom }),
+    ...(inForceUntil !== undefined && { in_force_until: inForceUntil }),
     ...(lawId !== undefined && { law_id: lawId }),
     ...(sectionLabel !== undefined && { section_label: sectionLabel }),
     content_urls: {
@@ -170,7 +192,7 @@ function toRecord(change: RisChange, bindingStatus: RisBindingStatus): ChangeRec
 export const risTrackChanges = tool('ris_track_changes', {
   title: 'Track RIS Changes',
   description:
-    'Track every document added or changed in one RIS application within an exact date window (changed_from/changed_to), optionally including deletions (include_deleted) — the delta-sync and monitoring primitive for mirrors and watchers, and the only surface that reports removals. Unlike the search tools’ coarse, additive-only changed_since intervals, this is exact-dated and deletion-aware. application accepts every RIS application code listed by ris_list_reference topic applications, including BrKons, LrKons, Dsk, and BgblAuth. Each changed document comes back in a compact cross-class record — document_number (for ris_get_document), title, the section_label and law_id of a consolidated-law row or the case_numbers and decision_date of a court decision, dates, binding_status, and rendition URLs — plus its last-changed date; removed documents come back as deleted records with a deletion timestamp. One application per call; page explicitly for large windows.',
+    'Track every document added or changed in one RIS application within an exact date window (changed_from/changed_to), optionally including deletions (include_deleted) — the delta-sync and monitoring primitive for mirrors and watchers, and the only surface that reports removals. Unlike the search tools’ coarse, additive-only changed_since intervals, this is exact-dated and deletion-aware. application accepts every RIS application code listed by ris_list_reference topic applications, including BrKons, LrKons, Dsk, and BgblAuth. Each changed document comes back in a compact cross-class record — document_number (for ris_get_document), title, the section_label, law_id, and in-force window (in_force_from/in_force_until) of a consolidated-law row or the case_numbers and decision_date of a court decision, dates, binding_status, and rendition URLs — plus its last-changed date; removed documents come back as deleted records with a deletion timestamp. One application per call; page explicitly for large windows.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     application: z
@@ -222,7 +244,9 @@ export const risTrackChanges = tool('ris_track_changes', {
     notice: z
       .string()
       .optional()
-      .describe('Zero-hit guidance — names the likely cause and the concrete next call.'),
+      .describe(
+        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call.',
+      ),
   },
   errors: [
     {
@@ -239,7 +263,7 @@ export const risTrackChanges = tool('ris_track_changes', {
       when: 'RIS is unreachable, returned a server error, or served an HTML error page.',
       retryable: true,
       recovery:
-        'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the window.',
+        'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size to 10 or narrow the window.',
       thrownBy: 'service',
     },
     {
@@ -248,7 +272,7 @@ export const risTrackChanges = tool('ris_track_changes', {
       when: 'RIS did not answer the change feed within the request deadline.',
       retryable: true,
       recovery:
-        'RIS did not answer in time — retry the same call shortly, or make it cheaper upstream: reduce page_size or narrow the change window.',
+        'RIS did not answer in time — retry the same call shortly, or make it cheaper upstream: reduce page_size to 10 or narrow the change window.',
       thrownBy: 'service',
     },
   ],
@@ -257,6 +281,7 @@ export const risTrackChanges = tool('ris_track_changes', {
     const { changed_from: changedFrom, changed_to: changedTo } = input;
     // application is a Zod enum of the reference codes, so the lookup always resolves.
     const bindingStatus = (APPLICATION_BY_CODE.get(input.application) as RisApplication).binding;
+    const served = servePageSize(input.page_size);
 
     const params: TrackChangesParams = {
       application: input.application,
@@ -264,7 +289,7 @@ export const risTrackChanges = tool('ris_track_changes', {
       ...(changedTo !== undefined && { changedTo }),
       ...(input.include_deleted === true && { includeDeleted: true }),
       ...(input.page !== undefined && { page: input.page }),
-      ...(input.page_size !== undefined && { pageSize: input.page_size }),
+      ...(served.pageSize !== undefined && { pageSize: served.pageSize }),
     };
 
     // Map request-builder and service failures onto this tool's declared contract so reason
@@ -288,11 +313,13 @@ export const risTrackChanges = tool('ris_track_changes', {
       ctx.enrich({ truncated: true });
     }
 
-    if (result.total === 0) {
-      ctx.enrich.notice(
-        `0 changes in ${input.application} between ${changedFrom ?? 'the start of the feed'} and ${changedTo ?? 'now'}. Windows are exact dates — widen the range, or use the search tools' changed_since for coarse recency filtering.`,
-      );
-    }
+    const notice = joinNotices(
+      served.notice,
+      result.total === 0
+        ? `0 changes in ${input.application} between ${changedFrom ?? 'the start of the feed'} and ${changedTo ?? 'now'}. Windows are exact dates — widen the range, or use the search tools' changed_since for coarse recency filtering.`
+        : undefined,
+    );
+    if (notice !== undefined) ctx.enrich.notice(notice);
 
     return { results: result.changes.map((change) => toRecord(change, bindingStatus)) };
   },
@@ -329,6 +356,12 @@ export const risTrackChanges = tool('ris_track_changes', {
         lines.push(`**Case numbers:** ${r.case_numbers.join(', ')}`);
       }
       if (r.law_id !== undefined) lines.push(`**Law ID:** ${r.law_id}`);
+      // A missing end date is not "in force now": a version can start in the future.
+      if (r.in_force_from !== undefined || r.in_force_until !== undefined) {
+        lines.push(
+          `**In force:** ${r.in_force_from ?? 'unknown'} → ${r.in_force_until ?? 'no end date'}`,
+        );
+      }
       if (r.decision_date !== undefined) lines.push(`**Decided:** ${r.decision_date}`);
       if (r.organ !== undefined) lines.push(`**Organ:** ${r.organ}`);
       lines.push(`**Binding:** ${r.binding_status}`);

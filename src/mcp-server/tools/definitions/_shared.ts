@@ -9,7 +9,7 @@ import { z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError, validationError } from '@cyanheads/mcp-ts-core/errors';
 
 import { foldStateName } from '@/services/ris/reference/index.js';
-import { UNRESOLVED_MINISTRY_REASON } from '@/services/ris/request-builder.js';
+import { type RisPageSize, UNRESOLVED_MINISTRY_REASON } from '@/services/ris/request-builder.js';
 
 /** Months with 30 days — the only non-February lengths a day of 31 can overshoot. */
 const THIRTY_DAY_MONTHS = new Set([4, 6, 9, 11]);
@@ -62,21 +62,66 @@ export const filterText = z
     'Blank or whitespace-only — send a value, or omit the field to leave it unfiltered.',
   );
 
+const PAGE_SIZE_REJECTION =
+  'Expected a whole number 1–100 (default 20) — it is served as a page of 10 or 20; raise page to read further results.';
+
 /**
- * Documents per page on every paginated tool. RIS pages by page number over a fixed page
- * size, so `page` / `pageSize` / `totalCount` / `truncated` stay exact at either size here;
- * the service still speaks all four RIS sizes, but pages of 50 or 100 records are too large
- * to return on both response surfaces, so callers read further with `page` instead.
+ * Documents per page on every paginated tool: any whole number 1–100, served by
+ * {@link servePageSize} at one of the two RIS sizes the tools send. RIS takes only 10, 20, 50,
+ * or 100 (`DokumenteProSeite`), and pages of 50 or 100 records are too large to return on both
+ * response surfaces, so the service's larger sizes stay unused here. The 100 ceiling, RIS's
+ * largest page, bounds absurd input; `min`/`max`/`int` reach the advertised JSON Schema, so a
+ * schema-validating client rejects 0, 1.5, or 101 before the call.
  */
 export const pageSizeParam = z
-  .literal([10, 20], {
-    error:
-      'Expected 10 or 20 (default 20) — larger pages are not served; raise page to read further results.',
-  })
+  .number({ error: PAGE_SIZE_REJECTION })
+  .int({ error: PAGE_SIZE_REJECTION })
+  .min(1, { error: PAGE_SIZE_REJECTION })
+  .max(100, { error: PAGE_SIZE_REJECTION })
   .optional()
   .describe(
-    'Documents per page: 10 or 20 (default 20). For more results, keep the size and raise page.',
+    'Documents per page, 1–100 (default 20). Served as a page of 10 (1–10) or 20 (11–100), with a notice when that differs. For more results, keep the size and raise page.',
   );
+
+/** A page size the paginated tools send RIS. */
+type ServedPageSize = Extract<RisPageSize, 10 | 20>;
+
+/** How one requested `page_size` is served. */
+export interface ServedPage {
+  /** The enrichment sentence disclosing a served size that differs from the request. */
+  readonly notice?: string;
+  /** The size to send RIS; absent when page_size was omitted, so RIS applies its default 20. */
+  readonly pageSize?: ServedPageSize;
+}
+
+/**
+ * Map a requested `page_size` onto the size the tools send RIS: 10 for 1–10, 20 for 11–100.
+ * The served size depends on the request alone, so a caller holding page_size constant while
+ * raising page reads every row once, and `page` / `pageSize` / `totalCount` / `truncated` stay
+ * exact at the served size. Rounding 11–19 up rather than down never serves fewer rows than the
+ * default 20 would.
+ */
+export function servePageSize(requested: number | undefined): ServedPage {
+  if (requested === undefined) return {};
+  const pageSize: ServedPageSize = requested <= 10 ? 10 : 20;
+  if (pageSize === requested) return { pageSize };
+  return {
+    notice: `page_size ${requested} served as ${pageSize} — RIS pages hold 10 or 20 documents, so page steps through pages of ${pageSize}.`,
+    pageSize,
+  };
+}
+
+/**
+ * Join notice sentences, in order, into the one string `ctx.enrich.notice` carries — it is
+ * last-wins, so a page-size disclosure and zero-hit guidance must share a single call.
+ * Undefined when no sentence applies.
+ */
+export function joinNotices(...notices: [...(string | undefined)[], string]): string;
+export function joinNotices(...notices: readonly (string | undefined)[]): string | undefined;
+export function joinNotices(...notices: readonly (string | undefined)[]): string | undefined {
+  const present = notices.filter((notice) => notice !== undefined);
+  return present.length > 0 ? present.join(' ') : undefined;
+}
 
 /**
  * A state-valued enum parameter that also accepts the state's German or English name in any

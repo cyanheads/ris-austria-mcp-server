@@ -72,8 +72,8 @@ import type { RisChangeSet, RisDocumentContent, RisSearchResult } from './types.
  * reaching a verdict the MCP SDK's 60s default request timeout had already taken from the
  * caller.
  *
- * `SEARCH_TIMEOUT_MS` covers that band up to its long tail. The tools accept page sizes 10
- * and 20 only (#40), which keeps a tool-issued search in the 6–10.5s band; the deadline
+ * `SEARCH_TIMEOUT_MS` covers that band up to its long tail. The tools send page sizes 10
+ * and 20 only (#40, #70), which keeps a tool-issued search in the 6–10.5s band; the deadline
  * still sizes for 50 and 100, which `RisPageSize` keeps in the service vocabulary. The tail
  * past it is out of reach at any deadline that still leaves room to deliver the response, so
  * the `upstream_timeout` recovery hints name the lever that shortens the scan (a smaller

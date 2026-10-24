@@ -4,13 +4,15 @@
  * calendar date must be an input error at each of them rather than a shape-valid string sent
  * upstream — where RIS's rejection is either an opaque error or, in ris_lookup_citation,
  * silently reinterpreted as a citation miss (#14). Every free-text filter on the filter tools
- * rejects a blank or whitespace-only value (#39), and every paginated tool takes page_size 10
- * or 20 only (#40) — both swept from the advertised schemas, so a parameter added later cannot
- * skip the rule. Every state-valued parameter folds a German, capitalized, umlauted, or English
+ * rejects a blank or whitespace-only value (#39), and every paginated tool takes a whole-number
+ * page_size 1–100 (#40, #70) — both swept from the advertised schemas, so a parameter added
+ * later cannot skip the rule; one shared mapping serves that request at 10 or 20 with a notice
+ * when the size differs. Every state-valued parameter folds a German, capitalized, umlauted, or English
  * state name to its code while advertising the same JSON Schema as before (#58). The
  * search-failure mapper gives a local rejection a recovery naming the field to correct, never
  * the page-first advice RIS's own errors need (#59). Fully offline: only input schemas,
- * schema-level rejections, and the error mapper are exercised, no handler and no service.
+ * schema-level rejections, the error mapper, and the page-size and notice helpers are
+ * exercised, no handler and no service.
  * @module tests/tools/_shared.test
  */
 
@@ -23,6 +25,8 @@ import {
   failMinistrySearchError,
   failSearchError,
   isoDateString,
+  joinNotices,
+  servePageSize,
 } from '@/mcp-server/tools/definitions/_shared.js';
 import { risGetDocument } from '@/mcp-server/tools/definitions/ris-get-document.tool.js';
 import { risListReference } from '@/mcp-server/tools/definitions/ris-list-reference.tool.js';
@@ -406,7 +410,7 @@ describe('free-text filters — blank and whitespace-only rejected at the schema
   });
 });
 
-describe('page_size — 10 or 20 on every paginated tool (#40)', () => {
+describe('page_size — 1–100 on every paginated tool (#40, #70)', () => {
   const PAGINATED = FILTER_TOOLS.filter(
     ({ definition }) => advertisedInput(definition).properties?.page_size !== undefined,
   );
@@ -422,14 +426,21 @@ describe('page_size — 10 or 20 on every paginated tool (#40)', () => {
   });
 
   describe.each(PAGINATED)('$definition.name', ({ base, definition }) => {
-    it('advertises exactly 10 and 20', () => {
-      const node = advertisedInput(definition).properties?.page_size as SchemaNode;
-      const values = node.enum ?? node.anyOf?.map((branch) => branch.const);
-      expect(values).toEqual([10, 20]);
+    it('advertises a whole number from 1 to 100', () => {
+      expect(advertisedInput(definition).properties?.page_size).toStrictEqual({
+        description:
+          'Documents per page, 1–100 (default 20). Served as a page of 10 (1–10) or 20 (11–100), with a notice when that differs. For more results, keep the size and raise page.',
+        maximum: 100,
+        minimum: 1,
+        type: 'integer',
+      });
     });
 
-    it.each([10, 20])('accepts %d', (size) => {
-      expect(definition.input.safeParse({ ...base, page_size: size }).success).toBe(true);
+    it('accepts every whole number from 1 to 100', () => {
+      const rejected = Array.from({ length: 100 }, (_, index) => index + 1).filter(
+        (size) => !definition.input.safeParse({ ...base, page_size: size }).success,
+      );
+      expect(rejected).toEqual([]);
     });
 
     it('accepts an omitted page_size (RIS serves 20)', () => {
@@ -438,14 +449,58 @@ describe('page_size — 10 or 20 on every paginated tool (#40)', () => {
       expect((outcome.data as Record<string, unknown>).page_size).toBeUndefined();
     });
 
-    it.each([50, 100, 30, '20'])('rejects %j, naming 10, 20, and page', (size) => {
+    /**
+     * Each of these also fails over the wire. A numeric string such as "20" is left out: the
+     * framework repairs it to a number before the schema runs, so clients get it served
+     * (paging.test.ts); a non-numeric string reaches the schema's type check and fails here.
+     */
+    it.each([0, -1, 1.5, 101, 1e9, 'twenty'])('rejects %j, naming 1–100 and page', (size) => {
       const outcome = definition.input.safeParse({ ...base, page_size: size });
       expect(outcome.success).toBe(false);
       const [issue] = outcome.error?.issues ?? [];
       expect(issue?.path).toEqual(['page_size']);
-      expect(issue?.message).toContain('Expected 10 or 20');
-      expect(issue?.message).toContain('raise page');
+      expect(issue?.message).toBe(
+        'Expected a whole number 1–100 (default 20) — it is served as a page of 10 or 20; raise page to read further results.',
+      );
     });
+  });
+});
+
+describe('servePageSize — the one requested → served mapping (#70)', () => {
+  it('leaves an omitted page_size to RIS: no size sent, no notice', () => {
+    expect(servePageSize(undefined)).toStrictEqual({});
+  });
+
+  it.each([10, 20])('sends %d as requested, with no notice', (size) => {
+    expect(servePageSize(size)).toStrictEqual({ pageSize: size });
+  });
+
+  it.each([
+    [1, 10],
+    [2, 10],
+    [9, 10],
+    [11, 20],
+    [12, 20],
+    [19, 20],
+    [21, 20],
+    [99, 20],
+    [100, 20],
+  ])('serves %d as %d, with the notice naming both', (requested, served) => {
+    expect(servePageSize(requested)).toStrictEqual({
+      notice: `page_size ${requested} served as ${served} — RIS pages hold 10 or 20 documents, so page steps through pages of ${served}.`,
+      pageSize: served,
+    });
+  });
+});
+
+describe('joinNotices — one notice string, in order (#70)', () => {
+  it.each([
+    [[undefined, undefined], undefined],
+    [[undefined, 'Zero hits.'], 'Zero hits.'],
+    [['Served as 20.', undefined], 'Served as 20.'],
+    [['Served as 20.', 'Zero hits.'], 'Served as 20. Zero hits.'],
+  ] as const)('%j → %j', (notices, joined) => {
+    expect(joinNotices(...notices)).toBe(joined);
   });
 });
 

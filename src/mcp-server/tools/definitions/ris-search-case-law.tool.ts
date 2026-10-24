@@ -35,9 +35,11 @@ import {
   filterText,
   foldStateNames,
   isoDateString,
+  joinNotices,
   localRejectionRecovery,
   pageSizeParam,
   rewriteUnsupportedParam,
+  servePageSize,
   type UnsupportedParam,
 } from './_shared.js';
 
@@ -420,7 +422,9 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
     notice: z
       .string()
       .optional()
-      .describe('Zero-hit guidance — names the likely cause and the concrete next call.'),
+      .describe(
+        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call.',
+      ),
   },
   errors: [
     {
@@ -443,7 +447,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       when: 'RIS is unreachable, returned a server error, or served an HTML error page.',
       retryable: true,
       recovery:
-        'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the query.',
+        'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size to 10 or narrow the query.',
       thrownBy: 'service',
     },
     {
@@ -452,7 +456,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       when: 'RIS did not answer the search within the request deadline.',
       retryable: true,
       recovery:
-        'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size, or narrow the date range.',
+        'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size to 10, or narrow the date range.',
       thrownBy: 'service',
     },
   ],
@@ -567,6 +571,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       }
       issuingBody = match;
     }
+    const served = servePageSize(input.page_size);
 
     const params: CaseLawSearchParams = {
       court,
@@ -594,7 +599,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       ...(input.sort_by !== undefined && { sortBy: input.sort_by }),
       ...(input.sort_direction !== undefined && { sortDirection: input.sort_direction }),
       ...(input.page !== undefined && { page: input.page }),
-      ...(input.page_size !== undefined && { pageSize: input.page_size }),
+      ...(served.pageSize !== undefined && { pageSize: served.pageSize }),
     };
 
     const courtEntry = RIS_COURTS.find((entry) => entry.code === court);
@@ -621,6 +626,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       ctx.enrich({ truncated: true });
     }
 
+    let zeroHit: string | undefined;
     if (result.total === 0) {
       const fragments = [
         `0 decisions in ${court}. Other courts are separate calls — repeat per court.`,
@@ -660,8 +666,10 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
           'Justiz subject_area and decision_kind tags are not yet populated in the RIS corpus (every value returns 0 hits) — drop the filter and use query or norm instead.',
         );
       }
-      ctx.enrich.notice(fragments.join(' '));
+      zeroHit = fragments.join(' ');
     }
+    const notice = joinNotices(served.notice, zeroHit);
+    if (notice !== undefined) ctx.enrich.notice(notice);
 
     return { results: result.hits.map((hit) => toRecord(hit, courtEntry?.application ?? court)) };
   },

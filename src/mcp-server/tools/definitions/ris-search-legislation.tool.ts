@@ -27,7 +27,9 @@ import {
   filterText,
   foldStateNames,
   isoDateString,
+  joinNotices,
   pageSizeParam,
+  servePageSize,
 } from './_shared.js';
 
 const STATE_CODES = RIS_STATES.map((s) => s.code) as [RisStateCode, ...RisStateCode[]];
@@ -121,7 +123,9 @@ export const LegislationRecordSchema = z
     in_force_until: z
       .string()
       .optional()
-      .describe('Date this version left force (Ausserkrafttretensdatum). Absent while in force.'),
+      .describe(
+        'Last day this version is in force (Ausserkrafttretensdatum). Absent when RIS records no end date, which does not mean the version is in force now: it can start in the future. RIS writes 9000-01-01 for a date still awaiting an event. The version is in force on date D when in_force_from ≤ D and in_force_until is absent or ≥ D.',
+      ),
     promulgation: z
       .string()
       .optional()
@@ -354,7 +358,9 @@ export const risSearchLegislation = tool('ris_search_legislation', {
     notice: z
       .string()
       .optional()
-      .describe('Zero-hit guidance — names the likely cause and the concrete next call.'),
+      .describe(
+        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call.',
+      ),
   },
   errors: [
     {
@@ -378,7 +384,7 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       when: 'RIS is unreachable, returned a server error, or served an HTML error page.',
       retryable: true,
       recovery:
-        'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size or narrow the query.',
+        'RIS is temporarily unavailable — retry after a short delay. If it persists, reduce page_size to 10 or narrow the query.',
       thrownBy: 'service',
     },
     {
@@ -387,7 +393,7 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       when: 'RIS did not answer the search within the request deadline.',
       retryable: true,
       recovery:
-        'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size, or narrow the date range.',
+        'RIS did not answer in time — retry the same search shortly, or make it cheaper upstream: drop leading wildcards, reduce page_size to 10, or narrow the date range.',
       thrownBy: 'service',
     },
   ],
@@ -482,6 +488,7 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       application === 'Erv' || includeAllVersions || windowParam !== undefined
         ? undefined
         : (explicitAsOf ?? todayInAustria());
+    const served = servePageSize(input.page_size);
 
     const params: LegislationSearchParams = {
       application,
@@ -503,7 +510,7 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       ...(input.sort_by !== undefined && { sortBy: input.sort_by }),
       ...(input.sort_direction !== undefined && { sortDirection: input.sort_direction }),
       ...(input.page !== undefined && { page: input.page }),
-      ...(input.page_size !== undefined && { pageSize: input.page_size }),
+      ...(served.pageSize !== undefined && { pageSize: served.pageSize }),
     };
 
     // Map request-builder and service failures onto this tool's declared contract so reason
@@ -526,6 +533,7 @@ export const risSearchLegislation = tool('ris_search_legislation', {
     }
     if (appliedInForceAsOf !== undefined) ctx.enrich({ appliedInForceAsOf });
 
+    let zeroHit: string | undefined;
     if (result.total === 0) {
       const fragments = ['0 documents matched.'];
       if (appliedInForceAsOf !== undefined) {
@@ -558,8 +566,10 @@ export const risSearchLegislation = tool('ris_search_legislation', {
           'For a specific citation, ris_lookup_citation resolves it deterministically instead of keyword search.',
         );
       }
-      ctx.enrich.notice(fragments.join(' '));
+      zeroHit = fragments.join(' ');
     }
+    const notice = joinNotices(served.notice, zeroHit);
+    if (notice !== undefined) ctx.enrich.notice(notice);
 
     return { results: result.hits.map((hit) => toRecord(hit, application)) };
   },
@@ -586,7 +596,7 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       }
       if (r.in_force_from !== undefined || r.in_force_until !== undefined) {
         lines.push(
-          `**In force:** ${r.in_force_from ?? 'unknown'} → ${r.in_force_until ?? 'still in force'}`,
+          `**In force:** ${r.in_force_from ?? 'unknown'} → ${r.in_force_until ?? 'no end date'}`,
         );
       }
       if (r.promulgation !== undefined) lines.push(`**Promulgated:** ${r.promulgation}`);

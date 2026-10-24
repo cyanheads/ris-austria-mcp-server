@@ -491,3 +491,148 @@ describe('risTrackChanges — row identity: section label, law id, case numbers 
     expect(text).toContain('## B\n**Document:** B\n**Section:** § 3\n**Law ID:** 20000001');
   });
 });
+
+describe('risTrackChanges — in-force window on consolidated-law rows (#69)', () => {
+  /** Run one call over the wire; return the parsed records by id and the text block per id. */
+  async function callWire(payload: unknown, input: Record<string, unknown>) {
+    trackChanges.mockResolvedValue(parseHistoryResponse(payload));
+    const result = await runToolContract(risTrackChanges, input as never);
+    expect(result.isError).not.toBe(true);
+    const { results } = risTrackChanges.output.parse(result.structuredContent);
+    const text = contentText(result);
+    const blockFor = (documentNumber: string) =>
+      text.split('\n\n').find((block) => block.includes(`**Document:** ${documentNumber}`)) ?? '';
+    return { blockFor, byId: new Map(results.map((r) => [r.document_number, r])), text };
+  }
+
+  /** history-brkons.json with fields of one record's BrKons node replaced. */
+  function brkonsWith(documentNumber: string, fields: Record<string, string>): unknown {
+    const page = structuredClone(fixture('history-brkons.json')) as {
+      OgdSearchResult: {
+        OgdDocumentResults: {
+          OgdDocumentReference: {
+            Data: {
+              Metadaten: {
+                Bundesrecht: { BrKons: Record<string, string> };
+                Technisch: { ID: string };
+              };
+            };
+          }[];
+        };
+      };
+    };
+    const ref = page.OgdSearchResult.OgdDocumentResults.OgdDocumentReference.find(
+      (candidate) => candidate.Data.Metadaten.Technisch.ID === documentNumber,
+    );
+    if (ref === undefined) throw new Error(`No record ${documentNumber}`);
+    Object.assign(ref.Data.Metadaten.Bundesrecht.BrKons, fields);
+    return page;
+  }
+
+  it('carries a BrKons row’s in-force window, rendered from → until right after the law id', async () => {
+    const { blockFor, byId } = await callWire(fixture('history-brkons.json'), {
+      application: 'BrKons',
+    });
+    expect(byId.get('NOR40264172')).toMatchObject({
+      in_force_from: '2025-01-17',
+      in_force_until: '2026-10-16',
+      law_id: '20012655',
+      section_label: '§ 16',
+      short_title: 'DORA-Vollzugsgesetz',
+    });
+    expect(blockFor('NOR40264172').split('\n')).toEqual([
+      '## DORA-Vollzugsgesetz § 16',
+      '**Document:** NOR40264172',
+      '**Short title:** DORA-Vollzugsgesetz',
+      '**Law ID:** 20012655',
+      '**In force:** 2025-01-17 → 2026-10-16',
+      '**Organ:** BKA (Bundeskanzleramt)',
+      '**Binding:** consolidated_informational',
+      '**Changed:** 2026-10-16 | **Published:** 2024-07-23',
+      '**Deleted:** no',
+      `**RIS view:** ${byId.get('NOR40264172')!.document_url}`,
+      expect.stringMatching(/^\*\*Text:\*\* \[HTML\]\(/u),
+    ]);
+  });
+
+  it('renders a row with no end date as "→ no end date", never as still in force', async () => {
+    const { blockFor, byId, text } = await callWire(fixture('history-lrkons.json'), {
+      application: 'LrKons',
+    });
+    const future = byId.get('LST40036626')!;
+    expect(future.in_force_from).toBe('2027-01-01');
+    expect(future).not.toHaveProperty('in_force_until');
+    expect(blockFor('LST40036626')).toContain('\n**In force:** 2027-01-01 → no end date\n');
+    expect(blockFor('LOO40027136')).toContain('\n**In force:** 2026-10-16 → no end date\n');
+    expect(text).not.toMatch(/still in force/iu);
+  });
+
+  // NOR40113657 (PAG § 36) starts on 9000-01-01; its predecessor NOR40113654 ends then.
+  it.each([
+    {
+      id: 'NOR40264172',
+      fields: { Ausserkrafttretensdatum: '9000-01-01', Inkrafttretensdatum: '2010-01-01' },
+      window: { in_force_from: '2010-01-01', in_force_until: '9000-01-01' },
+      line: '**In force:** 2010-01-01 → 9000-01-01',
+    },
+    {
+      id: 'NOR40264174',
+      fields: { Inkrafttretensdatum: '9000-01-01' },
+      window: { in_force_from: '9000-01-01' },
+      line: '**In force:** 9000-01-01 → no end date',
+    },
+    {
+      id: 'NOR40264172',
+      fields: { Ausserkrafttretensdatum: '2026-12-31', Inkrafttretensdatum: '' },
+      window: { in_force_until: '2026-12-31' },
+      line: '**In force:** unknown → 2026-12-31',
+    },
+  ])('relays the RIS window verbatim as "$line"', async ({ id, fields, window, line }) => {
+    const { blockFor, byId } = await callWire(brkonsWith(id, fields), { application: 'BrKons' });
+    const row = byId.get(id)!;
+    expect({
+      ...(row.in_force_from !== undefined && { in_force_from: row.in_force_from }),
+      ...(row.in_force_until !== undefined && { in_force_until: row.in_force_until }),
+    }).toStrictEqual(window);
+    expect(blockFor(id).split('\n')).toContain(line);
+  });
+
+  it('gives deletion rows and other applications’ rows no in-force keys or line', async () => {
+    const deletions = await callWire(fixture('history-with-deleted.json'), {
+      application: 'BrKons',
+      include_deleted: true,
+    });
+    expect(deletions.byId.get('NOR40234331')).toMatchObject({
+      in_force_from: '2021-05-26',
+      in_force_until: '2026-06-16',
+    });
+    const deletion = deletions.byId.get('NOR30003318')!;
+    expect(deletion).not.toHaveProperty('in_force_from');
+    expect(deletion).not.toHaveProperty('in_force_until');
+    expect(deletions.blockFor('NOR30003318')).not.toContain('**In force:**');
+
+    // Gr metadata carries an Inkrafttretensdatum (2026-10-16); only consolidated-law rows relay it.
+    for (const [name, application, id] of [
+      ['history-gr.json', 'Gr', 'GEMRE_KA_20914_902_2_2_2026'],
+      ['history-vwgh.json', 'Vwgh', 'JWR_1983160049_19850221X07'],
+    ] as const) {
+      const other = await callWire(fixture(name), { application });
+      const row = other.byId.get(id)!;
+      expect(row).not.toHaveProperty('in_force_from');
+      expect(row).not.toHaveProperty('in_force_until');
+      expect(other.blockFor(id)).not.toBe('');
+      expect(other.text).not.toContain('**In force:**');
+    }
+  });
+
+  it('states the in-force rule and the 9000-01-01 placeholder in both field descriptions', () => {
+    const { shape } = risTrackChanges.output.shape.results.element;
+    for (const field of [shape.in_force_from, shape.in_force_until]) {
+      expect(field.description).toContain('9000-01-01');
+      expect(field.description).toContain(
+        'in force on date D when in_force_from ≤ D and in_force_until is absent or ≥ D',
+      );
+    }
+    expect(shape.in_force_until.description).not.toMatch(/still in force|absent while in force/iu);
+  });
+});
