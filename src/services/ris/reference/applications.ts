@@ -60,7 +60,7 @@ export interface RisApplication {
   readonly code: string;
   /**
    * Path segment of the application's content URLs on the content host
-   * (`https://www.ris.bka.gv.at/Dokumente/{segment}/{DOKNR}/{DOKNR}.{ext}`), harvested from
+   * (`https://ogd.ris.bka.gv.at/Dokumente/{segment}/{DOKNR}/{DOKNR}.{ext}`), harvested from
    * live search hits 2026-07-05. Null for BgblAlt, whose documents carry no content URLs
    * (metadata only — scans are hosted by the Austrian National Library).
    */

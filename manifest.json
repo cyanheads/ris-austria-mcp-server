@@ -55,7 +55,7 @@
     "ris_content_base_url": {
       "type": "string",
       "title": "RIS Content Base URL",
-      "description": "RIS document content host that rendition URLs are built on. document_url also accepts www. and ogd.ris.bka.gv.at. Leave blank for the official host.",
+      "description": "RIS document content host that rendition URLs are built on and documents are fetched from. document_url also accepts www. and ogd.ris.bka.gv.at. Leave blank for the default, https://ogd.ris.bka.gv.at — www.ris.bka.gv.at answers automated clients with a bot-check page.",
       "required": false,
       "default": ""
     }

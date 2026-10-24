@@ -1,8 +1,9 @@
 /**
  * @fileoverview Offline RisService tests: the content-URL SSRF guard, per-application
- * content-URL construction from the path-segment map, the HTTP-500 error-envelope
- * translation (fetch stubbed — no network), a request-builder rejection failing before any
- * request is sent, and the init/accessor contract.
+ * content-URL construction from the path-segment map on the default content host, the
+ * HTTP-500 error-envelope translation and the content host's bot-check page (fetch stubbed —
+ * no network), a request-builder rejection failing before any request is sent, and the
+ * init/accessor contract.
  * Network-bound methods are otherwise exercised at build time against the live API.
  * @module tests/services/ris/ris-service
  */
@@ -21,6 +22,8 @@ import {
 } from '@/services/ris/ris-service.js';
 
 const CONTENT_BASE = 'https://www.ris.bka.gv.at';
+/** The default content host (`RIS_CONTENT_BASE_URL` unset) that rendition URLs are built on. */
+const DEFAULT_CONTENT_HOST = 'https://ogd.ris.bka.gv.at';
 
 /** Read a fixture as the raw body text RIS puts on the wire. */
 function rawFixture(name: string): string {
@@ -129,13 +132,13 @@ describe('RisService.buildDocumentContentUrl', () => {
 
   it('builds content URLs from the per-application path-segment map', () => {
     expect(service.buildDocumentContentUrl('BrKons', 'NOR11013238', 'html')).toBe(
-      `${CONTENT_BASE}/Dokumente/Bundesnormen/NOR11013238/NOR11013238.html`,
+      `${DEFAULT_CONTENT_HOST}/Dokumente/Bundesnormen/NOR11013238/NOR11013238.html`,
     );
     expect(service.buildDocumentContentUrl('GrA', 'GEMREA_OB_41203_20260703_3', 'pdf')).toBe(
-      `${CONTENT_BASE}/Dokumente/GemeinderechtAuth/GEMREA_OB_41203_20260703_3/GEMREA_OB_41203_20260703_3.pdf`,
+      `${DEFAULT_CONTENT_HOST}/Dokumente/GemeinderechtAuth/GEMREA_OB_41203_20260703_3/GEMREA_OB_41203_20260703_3.pdf`,
     );
     expect(service.buildDocumentContentUrl('Vfgh', 'JFR_20260616_26V00023_01', 'xml')).toBe(
-      `${CONTENT_BASE}/Dokumente/Vfgh/JFR_20260616_26V00023_01/JFR_20260616_26V00023_01.xml`,
+      `${DEFAULT_CONTENT_HOST}/Dokumente/Vfgh/JFR_20260616_26V00023_01/JFR_20260616_26V00023_01.xml`,
     );
   });
 
@@ -177,7 +180,7 @@ describe('RisService.buildDocumentContentUrl', () => {
         'Materialien_0001_2716E555_EB43_4642_A87A_3CF88FFCDB08',
       ),
     ).toBe(
-      `${CONTENT_BASE}/Dokumente/Begut/BEGUT_8E53444F_FF2D_4C7A_944B_B79785E8F290/Materialien_0001_2716E555_EB43_4642_A87A_3CF88FFCDB08.html`,
+      `${DEFAULT_CONTENT_HOST}/Dokumente/Begut/BEGUT_8E53444F_FF2D_4C7A_944B_B79785E8F290/Materialien_0001_2716E555_EB43_4642_A87A_3CF88FFCDB08.html`,
     );
   });
 
@@ -418,6 +421,7 @@ describe('RisService.fetchDocumentContent — upstream classification and retry 
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   /** Stub the network with one canned non-2xx response, and report the call count. */
@@ -478,6 +482,74 @@ describe('RisService.fetchDocumentContent — upstream classification and retry 
       data: { status: 501, retryable: false },
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Run one content fetch against a fetch stub with fake timers, so a retry's backoff elapses
+   * without a real sleep. Resolves to the settled error.
+   */
+  async function fetchFailure(fetchMock: ReturnType<typeof vi.fn>): Promise<McpError> {
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+    const pending = service
+      .fetchDocumentContent(URL_UNDER_TEST, createMockContext())
+      .catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(60_000);
+    return (await pending) as McpError;
+  }
+
+  /** The content CDN's bot-check page as captured live from www.ris.bka.gv.at (2026-10-24). */
+  const SECURITY_CHECK = rawFixture('error-503-security-check.html');
+
+  it('keeps a 503 without the bot-check page retryable — the cold-render tail', async () => {
+    // The CDN also answers 503 when a cold render outruns it, and a second attempt can be
+    // served from the cache the first one warmed — so a 503 alone never decides.
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(new Response('<html>Service Unavailable</html>', { status: 503 })),
+    );
+    const err = await fetchFailure(fetchMock);
+
+    expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect(err.data?.reason).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['as captured (stylesheets and images trimmed)', SECURITY_CHECK],
+    // The live page is about 30.7 KB (it echoes the request path), past the error-body scan, so only its first 500 bytes are
+    // captured — the marker has to sit inside that head.
+    [
+      'at the live page size',
+      SECURITY_CHECK.replace(
+        '/* stylesheet trimmed */',
+        `/*${' '.repeat(30_590 - SECURITY_CHECK.length)}*/`,
+      ),
+    ],
+  ])(
+    'classifies a 503 bot-check page %s as content_host_blocked, in one attempt',
+    async (_label, body) => {
+      const fetchMock = vi.fn(() => Promise.resolve(new Response(body, { status: 503 })));
+      const err = await fetchFailure(fetchMock);
+
+      expect(err).toBeInstanceOf(McpError);
+      expect(err.code).toBe(JsonRpcErrorCode.ConfigurationError);
+      expect(err.data).toMatchObject({ reason: 'content_host_blocked', retryable: false });
+      expect(err.message).toContain('https://www.ris.bka.gv.at');
+      // A challenge answers every request the same way, so a retry only spends the budget.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('classifies the bot-check page when it arrives on the retry', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('<html>Service Unavailable</html>', { status: 503 }))
+      .mockResolvedValueOnce(new Response(SECURITY_CHECK, { status: 503 }));
+    const err = await fetchFailure(fetchMock);
+
+    expect(err.code).toBe(JsonRpcErrorCode.ConfigurationError);
+    expect(err.data?.reason).toBe('content_host_blocked');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('logs a fetched rendition by file name, never by URL', async () => {

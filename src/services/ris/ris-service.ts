@@ -1,9 +1,10 @@
 /**
  * @fileoverview RisService — the single gateway to the RIS OGD REST API v2.6
- * (`data.bka.gv.at`) and the document content hosts (`www.ris.bka.gv.at`, which this
- * service constructs rendition URLs on, and `ogd.ris.bka.gv.at`, which search results
- * carry). Tool handlers call the per-class search methods and never touch HTTP or the
- * JSON-XML envelope.
+ * (`data.bka.gv.at`) and the document content hosts (`ogd.ris.bka.gv.at`, which search
+ * results carry and this service constructs rendition URLs on and fetches from by default,
+ * and `www.ris.bka.gv.at`, which serves the same tree to browsers but answers automated
+ * clients with a bot-check page). Tool handlers call the per-class search methods and never
+ * touch HTTP or the JSON-XML envelope.
  *
  * Resilience: `withRetry` (base delay 1.5s — rate-limited-API calibration) wraps the full
  * fetch + parse pipeline, under a wall-clock budget shared by every attempt so a slow
@@ -14,7 +15,8 @@
  * arrive in-band on a 200 or as the same envelope on a 500 error response, which
  * `fetchJson` translates rather than letting the status decide. An upstream 5xx carrying no
  * such envelope uses the framework's `ServiceUnavailable` classification; HTTP 501 opts
- * out of retry, and caller cancellation remains `RequestCancelled`.
+ * out of retry, and caller cancellation remains `RequestCancelled`. A content host's bot-check
+ * page is a `ConfigurationError` with reason `content_host_blocked`, never retried.
  * Content fetches are allowlisted to the `/Dokumente/` tree on exactly those two origins, plus
  * a configured content host (SSRF guard).
  * @module services/ris/ris-service
@@ -23,6 +25,7 @@
 import type { Context } from '@cyanheads/mcp-ts-core';
 import type { AppConfig } from '@cyanheads/mcp-ts-core/config';
 import {
+  configurationError,
   McpError,
   serviceUnavailable,
   timeout,
@@ -127,6 +130,30 @@ function failFastOnDeadline(error: unknown): unknown {
   return timeout(error.message, { ...error.data, retryable: false }, { cause: error });
 }
 
+/**
+ * The title of the page the content CDN serves a client it takes for a bot, as HTTP 503
+ * (measured 2026-10-24: every path on `www.ris.bka.gv.at`, whatever the User-Agent). The same
+ * CDN also answers 503 when a cold render outruns it, which a retry can clear, so the
+ * challenge is told apart by its page, never by the status. The title opens the document,
+ * inside the head of the error body `fetchWithTimeout` captures into `data.body`.
+ */
+const BOT_CHECK_TITLE = /<title>\s*Security Check\s*<\/title>/iu;
+
+/**
+ * Turn a content host's bot-check page into a non-retryable `content_host_blocked` failure —
+ * the challenge answers every request alike, so neither `withRetry` nor the caller can clear
+ * it; only pointing `RIS_CONTENT_BASE_URL` at a host that serves automated clients does.
+ */
+function failOnBotCheck(error: unknown, origin: string): unknown {
+  const body = error instanceof McpError ? error.data?.body : undefined;
+  if (typeof body !== 'string' || !BOT_CHECK_TITLE.test(body)) return error;
+  return configurationError(
+    `RIS content host ${origin} answered with a bot-check page ("Security Check") instead of the document.`,
+    { reason: 'content_host_blocked', retryable: false },
+    { cause: error },
+  );
+}
+
 /** Rendition formats a content URL can be constructed for. */
 export const RIS_CONTENT_FORMATS = ['html', 'pdf', 'rtf', 'xml'] as const;
 export type RisContentFormat = (typeof RIS_CONTENT_FORMATS)[number];
@@ -139,17 +166,17 @@ const CONTENT_PATH_SEGMENTS = new Map<string, string | null>(
 );
 
 /**
- * The origins RIS serves document renditions from: `www.` is the host this server constructs
- * URLs on, and `ogd.` is the host every `content_urls` and draft `materials[].url` in the OGD
- * API's search output now carries. Both serve the same `/Dokumente/` tree byte for byte.
- * Matched exactly — never by suffix — so another `*.bka.gv.at` host, a lookalike, a port, or
- * `http://` stays unfetchable.
+ * The origins RIS serves document renditions from: `ogd.` is the host every `content_urls`
+ * and draft `materials[].url` in the OGD API's search output carries, and the default content
+ * host; `www.` serves the same `/Dokumente/` tree to browsers, so a URL copied from one stays
+ * accepted (and is fetched from the configured host). Matched exactly — never by suffix — so
+ * another `*.bka.gv.at` host, a lookalike, a port, or `http://` stays unfetchable.
  */
 const RIS_CONTENT_ORIGINS = ['https://www.ris.bka.gv.at', 'https://ogd.ris.bka.gv.at'];
 
 /**
  * Every origin a `document_url` may carry: the two RIS content origins, plus the configured
- * content host's own, which is the default `www.` origin unless an operator repoints
+ * content host's own, which is the default `ogd.` origin unless an operator repoints
  * `RIS_CONTENT_BASE_URL` — whose constructed URLs must then pass the same check.
  */
 export function fetchableOrigins(contentBaseUrl: string): string[] {
@@ -301,6 +328,8 @@ export class RisService {
           expectedStatuses: [404],
           headers: { 'User-Agent': this.userAgent() },
           signal: ctx.signal,
+        }).catch((error: unknown) => {
+          throw failOnBotCheck(error, target.origin);
         });
         const text = await response.text();
         const contentType = response.headers.get('content-type');

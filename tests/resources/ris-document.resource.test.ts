@@ -11,6 +11,7 @@
 import { readFileSync } from 'node:fs';
 
 import {
+  configurationError,
   JsonRpcErrorCode,
   McpError,
   notFound,
@@ -354,5 +355,21 @@ describe('risDocumentResource — error mapping', () => {
     expect(err.data?.recovery).toMatchObject({
       hint: expect.stringContaining('renders a document on first request'),
     });
+  });
+
+  it('maps a bot-check page to content_host_blocked with the operator recovery (#75)', async () => {
+    fetchDocumentContent.mockRejectedValue(
+      configurationError(
+        'RIS content host https://www.ris.bka.gv.at answered with a bot-check page instead of the document.',
+        { reason: 'content_host_blocked', retryable: false },
+      ),
+    );
+    const err = await readError('ris://document/BrKons/NOR40264172');
+    expect(err.code).toBe(JsonRpcErrorCode.ConfigurationError);
+    expect(err.data).toMatchObject({ reason: 'content_host_blocked', retryable: false });
+    const hint = (err.data?.recovery as { hint?: string } | undefined)?.hint ?? '';
+    expect(hint).toContain('RIS_CONTENT_BASE_URL');
+    expect(hint).toContain('https://ogd.ris.bka.gv.at');
+    expect(hint).toContain('server operator');
   });
 });

@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import {
+  configurationError,
   JsonRpcErrorCode,
   McpError,
   notFound,
@@ -40,7 +41,7 @@ import {
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import type { RisContentFormat } from '@/services/ris/ris-service.js';
 
-import { contentText, contractError } from './_wire.js';
+import { contentText, contractError, readCommonMark, type WireError } from './_wire.js';
 
 const { buildDocumentContentUrl, fetchDocumentContent } = vi.hoisted(() => ({
   buildDocumentContentUrl: vi.fn(),
@@ -98,6 +99,14 @@ function midSizedArticlesHtml(): string {
 function headingFreeDecisionHtml(paragraphs: number): string {
   const body = 'Der Beschwerdeführer brachte vor. '.repeat(8);
   return Array.from({ length: paragraphs }, (_, i) => `<p>xPARAx${i}x ${body}</p>`).join('\n');
+}
+
+/**
+ * `url` on the default content host. A `document_url`'s origin is dropped, so every rendition
+ * URL the tool constructs or fetches lands there, whichever RIS origin the input carried (#75).
+ */
+function onContentHost(url: string): string {
+  return url.replace(/^https:\/\/www\./u, 'https://ogd.');
 }
 
 /** Read a captured RIS rendition fixture as its raw body text. */
@@ -452,6 +461,54 @@ describe('risGetDocument — the two RIS content origins (#43)', () => {
   });
 });
 
+describe('risGetDocument — the content host (#75)', () => {
+  const PATH = '/Dokumente/Bundesnormen/NOR40264172/NOR40264172.html';
+
+  // www. answers automated clients with a bot-check page, so a URL a caller copied from an
+  // older result — or from a browser — is only readable because the origin it arrived on is
+  // dropped and the rendition is fetched from the configured content host.
+  it.each([
+    ['www.', `https://www.ris.bka.gv.at${PATH}`],
+    ['ogd.', `https://ogd.ris.bka.gv.at${PATH}`],
+  ])('fetches a document_url on %s from the default content host', async (_label, url) => {
+    fetchDocumentContent.mockResolvedValue({ text: '<p>Body</p>', byteSize: 11, url });
+    const result = await runToolContract(risGetDocument, { document_url: url });
+
+    expect(result.isError).not.toBe(true);
+    expect(fetchDocumentContent).toHaveBeenCalledOnce();
+    const fetched = new URL(fetchDocumentContent.mock.calls[0]?.[0] as string);
+    expect(fetched.origin).toBe('https://ogd.ris.bka.gv.at');
+    expect(fetched.pathname).toBe(PATH);
+  });
+
+  it('maps a bot-check page to content_host_blocked — not retryable, operator recovery on both surfaces', async () => {
+    fetchDocumentContent.mockRejectedValue(
+      configurationError(
+        'RIS content host https://www.ris.bka.gv.at answered with a bot-check page instead of the document.',
+        { reason: 'content_host_blocked', retryable: false },
+      ),
+    );
+    const result = await runToolContract(risGetDocument, {
+      document_number: 'NOR40264172',
+      application: 'BrKons',
+    });
+
+    expect(result.isError).toBe(true);
+    const { error } = result.structuredContent as { error: WireError };
+    expect(error.code).toBe(JsonRpcErrorCode.ConfigurationError);
+    expect(error.data).toMatchObject({ reason: 'content_host_blocked', retryable: false });
+    const hint = (error.data?.recovery as { hint?: string } | undefined)?.hint ?? '';
+    expect(hint).toContain('RIS_CONTENT_BASE_URL');
+    expect(hint).toContain('https://ogd.ris.bka.gv.at');
+    expect(hint).toContain('server operator');
+
+    const text = readCommonMark(contentText(result));
+    expect(text).toContain(error.message);
+    expect(text).toContain(hint);
+    expect(text).toContain('reason content_host_blocked · not retryable');
+  });
+});
+
 describe('risGetDocument — format handling', () => {
   it('converts the HTML rendition to markdown by default', async () => {
     fetchDocumentContent.mockResolvedValue({
@@ -512,20 +569,20 @@ describe('risGetDocument — format handling', () => {
     expect(result.text).toBeUndefined();
     expect(result.binding_status).toBe('authentic');
     expect(result.content_urls.html).toBe(
-      'https://www.ris.bka.gv.at/Dokumente/BgblAuth/NOR40262691/NOR40262691.html',
+      'https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/NOR40262691/NOR40262691.html',
     );
     expect(result.content_urls.pdf).toBe(
-      'https://www.ris.bka.gv.at/Dokumente/BgblAuth/NOR40262691/NOR40262691.pdf',
+      'https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/NOR40262691/NOR40262691.pdf',
     );
     expect(result.content_urls.rtf).toBe(
-      'https://www.ris.bka.gv.at/Dokumente/BgblAuth/NOR40262691/NOR40262691.rtf',
+      'https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/NOR40262691/NOR40262691.rtf',
     );
     expect(result.content_urls.xml).toBe(
-      'https://www.ris.bka.gv.at/Dokumente/BgblAuth/NOR40262691/NOR40262691.xml',
+      'https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/NOR40262691/NOR40262691.xml',
     );
     // BgblAuth is authentic-binding — the signed .pdfsig is derived from the .pdf URL.
     expect(result.authentic_pdf_url).toBe(
-      'https://www.ris.bka.gv.at/Dokumente/BgblAuth/NOR40262691/NOR40262691.pdfsig',
+      'https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/NOR40262691/NOR40262691.pdfsig',
     );
     expect(fetchDocumentContent).not.toHaveBeenCalled();
   });
@@ -595,7 +652,10 @@ describe('risGetDocument — companion documents (materials)', () => {
   it('fetches the companion rendition itself, not the parent document', async () => {
     const { ctx, result } = await callWithUrl(`${FOLDER}/${ERLAEUTERUNGEN}.html`);
 
-    expect(fetchDocumentContent).toHaveBeenCalledWith(`${FOLDER}/${ERLAEUTERUNGEN}.html`, ctx);
+    expect(fetchDocumentContent).toHaveBeenCalledWith(
+      onContentHost(`${FOLDER}/${ERLAEUTERUNGEN}.html`),
+      ctx,
+    );
     expect(result.text).toContain('Erläuterungen');
     expect(result.application).toBe('Begut');
     expect(result.document_number).toBe('BEGUT_8E53444F_FF2D_4C7A_944B_B79785E8F290');
@@ -613,12 +673,15 @@ describe('risGetDocument — companion documents (materials)', () => {
       .split('/')
       .pop()
       ?.replace(/\.\w+$/u, '');
-    expect(fetchDocumentContent).toHaveBeenCalledWith(`${FOLDER}/${stem}.html`, ctx);
+    expect(fetchDocumentContent).toHaveBeenCalledWith(onContentHost(`${FOLDER}/${stem}.html`), ctx);
   });
 
   it('fetches the companion XML rendition for format: xml', async () => {
     const { ctx } = await callWithUrl(`${FOLDER}/${ERLAEUTERUNGEN}.html`, 'xml');
-    expect(fetchDocumentContent).toHaveBeenCalledWith(`${FOLDER}/${ERLAEUTERUNGEN}.xml`, ctx);
+    expect(fetchDocumentContent).toHaveBeenCalledWith(
+      onContentHost(`${FOLDER}/${ERLAEUTERUNGEN}.xml`),
+      ctx,
+    );
   });
 
   // RIS names companions two ways and the ordinal+UUID shape belongs to its 2026 records
@@ -638,7 +701,7 @@ describe('risGetDocument — companion documents (materials)', () => {
   ])('fetches a companion named with %s', async (_label, folder, stem) => {
     const { ctx, result } = await callWithUrl(`${folder}/${stem}.html`);
 
-    expect(fetchDocumentContent).toHaveBeenCalledWith(`${folder}/${stem}.html`, ctx);
+    expect(fetchDocumentContent).toHaveBeenCalledWith(onContentHost(`${folder}/${stem}.html`), ctx);
     expect(result.text).toContain('Erläuterungen');
     expect(result.document_number).toBe(folder.split('/').pop());
   });
@@ -650,7 +713,7 @@ describe('risGetDocument — companion documents (materials)', () => {
       // The extension passed in is discarded — format picks the rendition, for a legacy-named
       // companion exactly as for a 2026-named one.
       expect(fetchDocumentContent).toHaveBeenCalledWith(
-        `${LEGACY_FOLDER}/${LEGACY_COMPANION}.${format === 'xml' ? 'xml' : 'html'}`,
+        onContentHost(`${LEGACY_FOLDER}/${LEGACY_COMPANION}.${format === 'xml' ? 'xml' : 'html'}`),
         ctx,
       );
       expect(result.format).toBe(format);
@@ -662,9 +725,9 @@ describe('risGetDocument — companion documents (materials)', () => {
     const { result } = await callWithUrl(`${LEGACY_FOLDER}/${LEGACY_COMPANION}.html`, 'urls_only');
 
     expect(result.content_urls).toEqual({
-      xml: `${LEGACY_FOLDER}/${LEGACY_COMPANION}.xml`,
-      html: `${LEGACY_FOLDER}/${LEGACY_COMPANION}.html`,
-      pdf: `${LEGACY_FOLDER}/${LEGACY_COMPANION}.pdf`,
+      xml: onContentHost(`${LEGACY_FOLDER}/${LEGACY_COMPANION}.xml`),
+      html: onContentHost(`${LEGACY_FOLDER}/${LEGACY_COMPANION}.html`),
+      pdf: onContentHost(`${LEGACY_FOLDER}/${LEGACY_COMPANION}.pdf`),
     });
     expect(result.document_number).toBe('BEGUT_COO_2026_100_2_1907098');
     expect(fetchDocumentContent).not.toHaveBeenCalled();
@@ -718,9 +781,9 @@ describe('risGetDocument — companion documents (materials)', () => {
     const { result } = await callWithUrl(`${FOLDER}/${ERLAEUTERUNGEN}.html`, 'urls_only');
 
     expect(result.content_urls).toEqual({
-      xml: `${FOLDER}/${ERLAEUTERUNGEN}.xml`,
-      html: `${FOLDER}/${ERLAEUTERUNGEN}.html`,
-      pdf: `${FOLDER}/${ERLAEUTERUNGEN}.pdf`,
+      xml: onContentHost(`${FOLDER}/${ERLAEUTERUNGEN}.xml`),
+      html: onContentHost(`${FOLDER}/${ERLAEUTERUNGEN}.html`),
+      pdf: onContentHost(`${FOLDER}/${ERLAEUTERUNGEN}.pdf`),
     });
     expect(result.content_urls.rtf).toBeUndefined();
     expect(result.authentic_pdf_url).toBeUndefined();
@@ -1098,7 +1161,7 @@ describe('risGetDocument — format_unavailable degradation (notice, not error)'
     expect(result.text).toBeUndefined();
     expect(result.content_urls).toEqual({});
     expect(result.authentic_pdf_url).toBe(
-      'https://www.ris.bka.gv.at/Dokumente/Bvb/BVB_BU_JE_20260703_9/BVB_BU_JE_20260703_9.pdfsig',
+      'https://ogd.ris.bka.gv.at/Dokumente/Bvb/BVB_BU_JE_20260703_9/BVB_BU_JE_20260703_9.pdfsig',
     );
     const notice = getEnrichment(ctx).notice as string;
     expect(notice).toContain('Bvb publishes only the signed authentic PDF');
@@ -1116,7 +1179,7 @@ describe('risGetDocument — format_unavailable degradation (notice, not error)'
     const result = await risGetDocument.handler(input, ctx);
     expect(result.text).toBeUndefined();
     expect(result.content_urls.pdf).toBe(
-      'https://www.ris.bka.gv.at/Dokumente/Upts/UPTS_2026_1/UPTS_2026_1.pdf',
+      'https://ogd.ris.bka.gv.at/Dokumente/Upts/UPTS_2026_1/UPTS_2026_1.pdf',
     );
     expect(result.authentic_pdf_url).toBeUndefined();
     const notice = getEnrichment(ctx).notice as string;
@@ -1388,7 +1451,7 @@ describe('risGetDocument — overflow (outline + selective retrieval)', () => {
       expect(result.text).toBeUndefined();
       expect(result.sections).toBeUndefined();
       expect(result.content_urls.html).toBe(
-        'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
+        'https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
       );
     },
   );
@@ -1397,10 +1460,10 @@ describe('risGetDocument — overflow (outline + selective retrieval)', () => {
 describe('risGetDocument — raw html/xml output budget (#36)', () => {
   const encoder = new TextEncoder();
   const CONTENT_URLS = {
-    xml: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml',
-    html: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
-    pdf: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf',
-    rtf: 'https://www.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf',
+    xml: 'https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml',
+    html: 'https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
+    pdf: 'https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf',
+    rtf: 'https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf',
   };
 
   /**
@@ -1570,10 +1633,10 @@ describe('risGetDocument — raw html/xml output budget (#36)', () => {
       kind: 'link',
       truncated: true,
       byte_size: 255_292,
-      content_urls: { html: `${folder}/${stem}.html` },
+      content_urls: { html: onContentHost(`${folder}/${stem}.html`) },
     });
     expect((result.structuredContent as { notice: string }).notice).toContain(
-      `${folder}/${stem}.html`,
+      onContentHost(`${folder}/${stem}.html`),
     );
   });
 });
@@ -1584,17 +1647,18 @@ describe('risGetDocument — raw html/xml output budget (#36)', () => {
 // raw-format budget existed; the four RegV rows carry the statutory list labels (#52) and
 // mid-line ordinals without a backslash (#60) of that fixture's Absatz and Ziffer lists, and
 // the two that include Artikel 1 carry the hard breaks between its Absatz (72) list lines.
+// Every row's content_urls sit on the default content host, https://ogd.ris.bka.gv.at (#75).
 describe('risGetDocument — markdown output unchanged by the raw-format budget (#36)', () => {
   const digest = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 16);
   const BASELINE: Record<string, [structured: string, content: string]> = {
-    'whole, sr-only twins': ['99cba55643aa6270', '408d3da17dbaf608'],
-    'whole, Artikel sections under budget': ['29a9d583780ac5a3', '626e07c6eac9a94a'],
-    'selected section': ['41c3909823098680', 'f83348e8afaa81e5'],
-    'partial selector miss': ['61c7d6f505cb8c67', '81c4974a049421c2'],
-    'total selector miss': ['0307654a50498359', 'b8c99c82abc50204'],
-    'section outline': ['353a4fa79173ce10', 'c04c529f97cc110e'],
-    'window outline': ['abc2c3d56e0a8260', 'c9a32de64890a501'],
-    'selector ignored': ['78251c0ea7676a3f', '8ad18359c21c0908'],
+    'whole, sr-only twins': ['3618bb356cb6d1d1', '42dc3255e35eec5f'],
+    'whole, Artikel sections under budget': ['a4358f7346a268cd', '8af8e3a6bd0e0b78'],
+    'selected section': ['b0dccc140973b627', '8e33eb4dd297f7ba'],
+    'partial selector miss': ['435c2a4f0233c771', '450c921055b870e5'],
+    'total selector miss': ['b46dc06024b4776a', '9946c17767cdf80e'],
+    'section outline': ['bd5fe148be19cf31', '893c9be4a5f9789b'],
+    'window outline': ['7303b0c1463eaad0', '8be13cea4cca90a3'],
+    'selector ignored': ['3917182db880452a', '2f9fb0e8a236af87'],
   };
 
   it.each<[label: string, buildHtml: () => string, input: { sections?: string[] }]>([

@@ -5,6 +5,7 @@
  */
 
 import { createApp } from '@cyanheads/mcp-ts-core';
+import { getServerConfig } from './config/server-config.js';
 import { risDocumentResource } from './mcp-server/resources/definitions/ris-document.resource.js';
 import { risGetDocument } from './mcp-server/tools/definitions/ris-get-document.tool.js';
 import { risListReference } from './mcp-server/tools/definitions/ris-list-reference.tool.js';
@@ -51,6 +52,8 @@ await createApp({
   ],
   resources: [risDocumentResource],
   setup(core) {
+    // Parse RIS_* here so a bad value stops startup behind the config banner, not every call.
+    getServerConfig();
     initRisService(core.config);
   },
 });

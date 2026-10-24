@@ -43,10 +43,10 @@
         },
         {
           "name": "RIS_CONTENT_BASE_URL",
-          "description": "RIS document content host that rendition URLs are built on. document_url also accepts www. and ogd.ris.bka.gv.at.",
+          "description": "RIS document content host that rendition URLs are built on and documents are fetched from. The default serves automated clients; www.ris.bka.gv.at answers them with a bot-check page. document_url also accepts www. and ogd.ris.bka.gv.at.",
           "format": "string",
           "isRequired": false,
-          "default": "https://www.ris.bka.gv.at"
+          "default": "https://ogd.ris.bka.gv.at"
         }
       ],
       "transport": {
@@ -116,10 +116,10 @@
         },
         {
           "name": "RIS_CONTENT_BASE_URL",
-          "description": "RIS document content host that rendition URLs are built on. document_url also accepts www. and ogd.ris.bka.gv.at.",
+          "description": "RIS document content host that rendition URLs are built on and documents are fetched from. The default serves automated clients; www.ris.bka.gv.at answers them with a bot-check page. document_url also accepts www. and ogd.ris.bka.gv.at.",
           "format": "string",
           "isRequired": false,
-          "default": "https://www.ris.bka.gv.at"
+          "default": "https://ogd.ris.bka.gv.at"
         }
       ],
       "transport": {

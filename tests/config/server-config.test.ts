@@ -20,7 +20,9 @@ describe('RIS environment configuration', () => {
       const { getServerConfig } = await import('@/config/server-config.js');
       expect(getServerConfig()).toEqual({
         apiBaseUrl: 'https://data.bka.gv.at/ris/api/v2.6',
-        contentBaseUrl: 'https://www.ris.bka.gv.at',
+        // www.ris.bka.gv.at answers automated clients with a bot-check page; ogd. serves
+        // the same /Dokumente/ tree to them (#75).
+        contentBaseUrl: 'https://ogd.ris.bka.gv.at',
         contact: undefined,
       });
     },

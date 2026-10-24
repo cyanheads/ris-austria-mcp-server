@@ -14,9 +14,9 @@ const ServerConfigSchema = z.object({
     .describe('RIS OGD REST API base URL.'),
   contentBaseUrl: z
     .url()
-    .default('https://www.ris.bka.gv.at')
+    .default('https://ogd.ris.bka.gv.at')
     .describe(
-      'RIS document content host that rendition URLs are constructed on. document_url accepts its origin alongside the two RIS content origins, https://www.ris.bka.gv.at and https://ogd.ris.bka.gv.at.',
+      'RIS document content host that rendition URLs are constructed on and every document is fetched from. The default serves automated clients; https://www.ris.bka.gv.at answers them with a bot-check page. document_url accepts its origin alongside the two RIS content origins, https://www.ris.bka.gv.at and https://ogd.ris.bka.gv.at.',
     ),
   contact: z
     .string()
@@ -32,7 +32,8 @@ let _config: ServerConfig | undefined;
 
 /**
  * Lazily parse and cache the server config from the environment.
- * Lazy so Workers-style runtimes can inject env vars before first use.
+ * Lazy so Workers-style runtimes can inject env vars before first use; `setup()` reads it once
+ * so a bad value fails startup.
  */
 export function getServerConfig(): ServerConfig {
   _config ??= parseEnvConfig(ServerConfigSchema, {

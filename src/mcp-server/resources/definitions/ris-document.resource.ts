@@ -61,6 +61,14 @@ export const risDocumentResource = resource('ris://document/{application}/{docum
         'The RIS content host is temporarily unavailable — retry the read after a short delay.',
     },
     {
+      reason: 'content_host_blocked',
+      code: JsonRpcErrorCode.ConfigurationError,
+      when: 'The configured RIS content host answered with a bot-check page ("Security Check") instead of the document — it refuses automated clients, so every read through it fails the same way.',
+      retryable: false,
+      recovery:
+        'Retrying will not help: the RIS content host this server is configured with answers automated clients with a bot-check page. Call ris_get_document with format: urls_only for the rendition URLs without a fetch, and report it to the server operator: RIS_CONTENT_BASE_URL should be https://ogd.ris.bka.gv.at (the default), the host that serves RIS documents to automated clients; if it already is, that host is challenging the server’s network address.',
+    },
+    {
       reason: 'upstream_timeout',
       code: JsonRpcErrorCode.Timeout,
       when: 'The content host did not return the rendition within the fetch deadline — typically a cold render, which it performs on first request before caching the result.',
@@ -79,6 +87,9 @@ export const risDocumentResource = resource('ris://document/{application}/{docum
       ctx,
     ).catch((err: unknown) => {
       if (err instanceof McpError) {
+        if (err.data?.reason === 'content_host_blocked') {
+          throw ctx.fail('content_host_blocked', err.message);
+        }
         if (
           err.code === JsonRpcErrorCode.ValidationError ||
           err.code === JsonRpcErrorCode.NotFound

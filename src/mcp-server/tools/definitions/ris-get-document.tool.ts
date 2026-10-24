@@ -377,7 +377,8 @@ function decodePathSegment(segment: string): string | undefined {
  * values (no throw). Enforces the same origin + `/Dokumente/` allowlist as the service's
  * fetch guard, then reverse-maps the content-path segment to its application. The origin a
  * URL arrived on is not carried forward: the rendition is fetched from the URL the service
- * constructs, which RIS serves identically on both content origins.
+ * constructs on the configured content host, which serves the same tree. That is what keeps a
+ * `www.` URL readable — `www.` answers automated clients with a bot-check page.
  */
 export function parseDocumentUrl(url: string, contentBaseUrl: string): ParsedDocumentUrl {
   let parsed: URL;
@@ -1009,6 +1010,14 @@ export const risGetDocument = tool('ris_get_document', {
         'The RIS content host is temporarily unavailable — retry the fetch after a short delay.',
     },
     {
+      reason: 'content_host_blocked',
+      code: JsonRpcErrorCode.ConfigurationError,
+      when: 'The configured RIS content host answered with a bot-check page ("Security Check") instead of the document — it refuses automated clients, so every read through it fails the same way.',
+      retryable: false,
+      recovery:
+        'Retrying will not help: the RIS content host this server is configured with answers automated clients with a bot-check page. Re-call with format: urls_only for the rendition URLs without a fetch, and report it to the server operator: RIS_CONTENT_BASE_URL should be https://ogd.ris.bka.gv.at (the default), the host that serves RIS documents to automated clients; if it already is, that host is challenging the server’s network address.',
+    },
+    {
       reason: 'upstream_timeout',
       code: JsonRpcErrorCode.Timeout,
       when: 'The content host did not return the rendition within the fetch deadline — typically a cold render, which it performs on first request before caching the result.',
@@ -1060,6 +1069,9 @@ export const risGetDocument = tool('ris_get_document', {
       resolvedContentName,
     ).catch((err: unknown) => {
       if (err instanceof McpError) {
+        if (err.data?.reason === 'content_host_blocked') {
+          throw ctx.fail('content_host_blocked', err.message);
+        }
         if (err.code === JsonRpcErrorCode.ValidationError) {
           throw ctx.fail('invalid_addressing', err.message);
         }
