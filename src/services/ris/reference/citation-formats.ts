@@ -21,10 +21,10 @@ export const RIS_CITATION_FORMATS = [
   {
     kind: 'norm',
     description:
-      'A provision of a law: section sign or Artikel plus the official abbreviation, in either order — section-first ("§ 6 DSG") or abbreviation-first ("DSG §1", the shape ris_search_case_law returns in norms_cited) — or a bare abbreviation for the whole law.',
-    examples: ['§ 6 DSG', 'Art 10 B-VG', 'DSG §1', 'DSGVO Art32', 'ABGB'],
+      'A provision of a law: section sign or Artikel plus the official abbreviation, in either order — section-first ("§ 6 DSG") or abbreviation-first ("DSG §1", the shape ris_search_case_law returns in norms_cited) — or a bare abbreviation for the whole law. A comma-joined entry citing several provisions of one law ("DSG §1, §24", as VfGH headnotes write it) resolves its first provision and names the rest as their own cites.',
+    examples: ['§ 6 DSG', 'Art 10 B-VG', 'DSG §1', 'EMRK Art8', 'DSG §1, §24', 'ABGB'],
     resolvesVia:
-      'Consolidated federal law (BrKons) via title + section-range filters, as in force on the requested date; a state hint routes to consolidated state law (LrKons). The hit whose abbreviation is the cited one wins, then the cited one plus a year ("EStG" → EStG 1988), the exact §/Artikel label ahead of a prefixed one.',
+      'Consolidated federal law (BrKons) via title + section-range filters, as in force on the requested date; a state hint routes to consolidated state law (LrKons). The hit whose abbreviation is the cited one wins, then the cited one plus a year ("EStG" → EStG 1988), the exact §/Artikel label ahead of a prefixed one. An EU act RIS does not consolidate (DSGVO, the Charter as GRC or EU-Grundrechte-Charta, EuGVVO, EuInsVO 2015, EuUVO), or a cite led by a CELEX other than the TFEU’s or TEU’s, returns found: false pointing to EUR-Lex, decided before any RIS request; a leading TFEU/TEU CELEX ("12010E267 AEUV Art267") is dropped and the rest resolves.',
   },
   {
     kind: 'gazette',

@@ -36,7 +36,7 @@ import {
   toRecord as toLegislationRecord,
 } from '@/mcp-server/tools/definitions/ris-search-legislation.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
-import { RIS_COURTS } from '@/services/ris/reference/index.js';
+import { RIS_CITATION_FORMATS, RIS_COURTS } from '@/services/ris/reference/index.js';
 import {
   buildCaseLawRequest,
   buildGazetteRequest,
@@ -73,6 +73,10 @@ function todayInAustria(): string {
     year: 'numeric',
   }).format(new Date());
 }
+
+/** The norm route's guidance for a citation it could not read — nothing was searched. */
+const UNREADABLE_NORM = (citation: string) =>
+  `Could not read a norm citation from '${citation}'. A norm citation names a law by its abbreviation, with or without a §/Artikel number: '§ 6 DSG', 'Art 10 B-VG', 'DSG §1', or 'ABGB'. Formats: ris_list_reference topic citation_formats. For keyword search use ris_search_legislation with query.`;
 
 /** Await a handler call expected to reject, and narrow the rejection to an McpError. */
 async function captureError(result: unknown | Promise<unknown>): Promise<McpError> {
@@ -264,6 +268,25 @@ describe('risLookupCitation — norm route', () => {
     });
   });
 
+  it('a state-law miss keeps the state in both retries, which otherwise search federal law', async () => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    const result = await lookup({ citation: '§ 16 ABGB', state: 'wien' });
+    expect(result).toEqual({
+      found: false,
+      kind: 'norm',
+      guidance: `No document for ABGB § 16 in force on ${todayInAustria()}. If the provision existed at another time, retry ris_search_legislation with title: 'ABGB', section_from/to: '16', section_type: 'Paragraph', scope: 'wien', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: 'ABGB*', scope: 'wien'.`,
+    });
+    const recipe = /retry ris_search_legislation with (.+?)\. If the abbreviation/.exec(
+      result.guidance ?? '',
+    )?.[1];
+    const retry = risSearchLegislation.input.parse({
+      title: /title: '([^']+)'/.exec(recipe ?? '')?.[1],
+      scope: /scope: '([^']+)'/.exec(recipe ?? '')?.[1],
+      include_all_versions: true,
+    });
+    expect(retry.scope).toBe('wien');
+  });
+
   it('resolves to found:false (never throws) when the routed search rejects with ValidationError', async () => {
     searchLegislation.mockRejectedValue(
       validationError("The 'FassungVom' element is invalid.", {}),
@@ -397,17 +420,15 @@ describe('risLookupCitation — abbreviation-first norm citations (#5)', () => {
   // expected title, expected section, expected sectionType] — the parser anchors on the
   // §/Artikel marker, so the abbreviation (before the marker) is the search title and any trailing
   // sub-provision (Abs / Z / lit) is dropped. The fixture rows are verbatim norms_cited strings
-  // lifted from the two search fixtures (asserted real below).
+  // lifted from the two search fixtures (asserted real below). The issue's DSGVO rows name an EU
+  // act RIS does not consolidate, so they are decided offline instead (#67 suite below).
   const CASES: ReadonlyArray<[string, string, string, 'Paragraph' | 'Artikel']> = [
-    // The four shapes from the issue.
+    // The Austrian shapes from the issue.
     ['DSG §1', 'DSG', '1', 'Paragraph'],
     ['DSG § 1', 'DSG', '1', 'Paragraph'],
     ['DSG §24', 'DSG', '24', 'Paragraph'],
-    ['DSGVO Art32', 'DSGVO', '32', 'Artikel'],
     // The dominant real shape — a trailing sub-provision stripped back to the core norm.
     ['DSG §22 Abs1', 'DSG', '22', 'Paragraph'],
-    ['DSGVO Art6 Abs1 litc', 'DSGVO', '6', 'Artikel'],
-    ['DSGVO Art4 Z2', 'DSGVO', '4', 'Artikel'],
     // Multi-token abbreviations (hyphen, embedded year) — anchored on the marker, not whitespace.
     ['B-VG Art7', 'B-VG', '7', 'Artikel'],
     ['TKG 2021 §5', 'TKG 2021', '5', 'Paragraph'],
@@ -1744,18 +1765,33 @@ async function cpuMicros(input: Record<string, unknown>): Promise<number> {
 }
 
 /**
- * Resolve `build(size)` as the citation, beside `input`, at each doubling size from 5,000 to
- * 320,000 characters: every size stays under 250 ms of CPU, and the largest under 256× the
- * smallest.
+ * Resolve `build(size)` as the citation, beside `input`, at each doubling size across a 64×
+ * span — 5,000 to 320,000 characters by default: every size stays under 250 ms of CPU, and the
+ * largest under 256× the smallest. A regex-heavy shape starts lower (`from` 1,250 tops out at
+ * 80,000) to stay under the input size where Bun's regex engine switches modes. Every size
+ * also ends the same way as the smallest — the same found, kind, and request count — so a size
+ * that turned fast by taking another route fails.
  */
 async function expectLinearResolution(
   build: (size: number) => string,
   input: Record<string, unknown>,
+  from = 5_000,
 ): Promise<void> {
+  const requests = () =>
+    searchLegislation.mock.calls.length +
+    searchCaseLaw.mock.calls.length +
+    searchGazette.mock.calls.length;
+  const outcome = async (size: number) => {
+    const before = requests();
+    const { found, kind } = await lookup({ ...input, citation: build(size) });
+    return { found, kind, requests: requests() - before };
+  };
   const time = (size: number) => cpuMicros({ ...input, citation: build(size) });
-  await time(5_000); // warm-up
+  const expected = await outcome(from);
+  await time(from); // warm-up
   const timings: number[] = [];
-  for (let size = 5_000; size <= 320_000; size *= 2) {
+  for (let size = from; size <= from * 64; size *= 2) {
+    expect(await outcome(size), `${size} chars`).toStrictEqual(expected);
     const micros = Math.min(await time(size), await time(size));
     expect(micros, `${size} chars`).toBeLessThan(250_000);
     timings.push(Math.max(micros, 1));
@@ -1779,12 +1815,11 @@ describe('risLookupCitation — kind override', () => {
     const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: 'Ro 2026/03/0016', kind: 'norm' });
     const result = await risLookupCitation.handler(input, ctx);
-    const today = todayInAustria();
 
     expect(result).toEqual({
       found: false,
       kind: 'norm',
-      guidance: `No document for Ro 2026/03/0016 in force on ${today}. If the provision existed at another time, retry ris_search_legislation with title: 'Ro 2026/03/0016', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: 'Ro 2026/03/0016*'. State law resolves only with an explicit state hint.`,
+      guidance: UNREADABLE_NORM('Ro 2026/03/0016'),
     });
     // Auto-classification would have routed "Ro 2026/03/0016" to case_number (court vwgh) —
     // the forced kind: 'norm' must bypass that entirely, calling neither search method.
@@ -2529,5 +2564,695 @@ describe('risLookupCitation — a "list them" recipe reproduces the search that 
       createMockContext({ errors: risLookupCitation.errors }),
     );
     await expectRecipeReproduces(result.guidance);
+  });
+});
+
+/** Resolve one citation with no mock queued beyond `beforeEach`'s reset. */
+async function lookup(input: Record<string, unknown>) {
+  const ctx = createMockContext({ errors: risLookupCitation.errors });
+  return await risLookupCitation.handler(risLookupCitation.input.parse(input), ctx);
+}
+
+const EUR_LEX = 'https://eur-lex.europa.eu/legal-content/DE/TXT/?uri=CELEX:';
+const CASE_LAW_HINT =
+  'ris_search_case_law with a court (vfgh, vwgh, bvwg, dsk, or justiz) and norm:';
+const RIS_DOES_NOT_CONSOLIDATE = 'RIS does not consolidate EU law, so nothing was searched.';
+
+/**
+ * The EU-miss guidance for `label` (the cite as the miss names it), the act it is (`null`: a
+ * CELEX the EU-act set does not hold, named alone), and the case-law norm (`null`: no section).
+ */
+const euMiss = (label: string, act: string | null, celex: string, norm: string | null) =>
+  `${label} is EU law: ${act === null ? '' : `${act}, `}CELEX ${celex}. ${RIS_DOES_NOT_CONSOLIDATE} Read it on EUR-Lex: ${EUR_LEX}${celex}.${norm === null ? '' : ` Austrian decisions citing it: ${CASE_LAW_HINT} '${norm}'.`}`;
+
+describe('risLookupCitation — an EU-act cite is decided offline as an EU miss (#67)', () => {
+  /*
+   * Every search mock resolves a real BrKons page, so a cite that still reached RIS would come
+   * back found: true (the old route ranked the DSG hit first for "DSGVO") — the miss below can
+   * only come from the offline decision.
+   */
+  beforeEach(() => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    searchCaseLaw.mockResolvedValue(page('search-brkons-celex.json'));
+    searchGazette.mockResolvedValue(page('search-brkons-celex.json'));
+  });
+
+  const DSGVO = 'Regulation (EU) 2016/679';
+  const CHARTER = 'the Charter of Fundamental Rights of the European Union';
+  // [citation, the guidance every hint gets]
+  const EU_CITES: ReadonlyArray<[string, string]> = [
+    ['DSGVO Art32', euMiss('DSGVO Art 32', DSGVO, '32016R0679', 'DSGVO Art32')],
+    ['Art 32 DSGVO', euMiss('DSGVO Art 32', DSGVO, '32016R0679', 'DSGVO Art32')],
+    ['GRC Art47', euMiss('GRC Art 47', CHARTER, '12016P/TXT', 'GRC Art47')],
+    ['EU-GRC Art8', euMiss('EU-GRC Art 8', CHARTER, '12016P/TXT', 'EU-GRC Art8')],
+    [
+      'EU-Grundrechte-Charta Art47',
+      euMiss('EU-Grundrechte-Charta Art 47', CHARTER, '12016P/TXT', 'EU-Grundrechte-Charta Art47'),
+    ],
+    [
+      'EuGVVO 2012 Art25',
+      euMiss(
+        'EuGVVO 2012 Art 25',
+        'Regulation (EU) No 1215/2012',
+        '32012R1215',
+        'EuGVVO 2012 Art25',
+      ),
+    ],
+    // Courts cite two regulations as EuGVVO, so EUR-Lex is named without a CELEX.
+    [
+      'EuGVVO Art5',
+      `EuGVVO Art 5 is EU law: Regulation (EC) No 44/2001 or Regulation (EU) No 1215/2012, which courts both cite as EuGVVO. ${RIS_DOES_NOT_CONSOLIDATE} Find the act on EUR-Lex: https://eur-lex.europa.eu. Austrian decisions citing it: ${CASE_LAW_HINT} 'EuGVVO Art5'.`,
+    ],
+    [
+      'EuInsVO 2015 Art6',
+      euMiss('EuInsVO 2015 Art 6', 'Regulation (EU) 2015/848', '32015R0848', 'EuInsVO 2015 Art6'),
+    ],
+    ['EuUVO Art5', euMiss('EuUVO Art 5', 'Regulation (EC) No 4/2009', '32009R0004', 'EuUVO Art5')],
+    ['DSGVO', euMiss('DSGVO', DSGVO, '32016R0679', null)],
+    ['GRC', euMiss('GRC', CHARTER, '12016P/TXT', null)],
+    ['DSGVO ErwGr47', euMiss('DSGVO', DSGVO, '32016R0679', null)],
+    ['DSGVO Erwägungsgrund141', euMiss('DSGVO', DSGVO, '32016R0679', null)],
+    // The #5 rows that cite the DSGVO with a trailing sub-provision.
+    ['DSGVO Art6 Abs1 litc', euMiss('DSGVO Art 6', DSGVO, '32016R0679', 'DSGVO Art6')],
+    ['DSGVO Art4 Z2', euMiss('DSGVO Art 4', DSGVO, '32016R0679', 'DSGVO Art4')],
+    // Matching is case-insensitive with whitespace collapsed.
+    ['dsgvo  art 32', euMiss('dsgvo Art 32', DSGVO, '32016R0679', 'dsgvo Art32')],
+  ];
+
+  it.each(EU_CITES)(
+    '"%s" returns the same EU miss with no hint, a state hint, or in_force_as_of, and searches nothing',
+    async (citation, guidance) => {
+      const results = [
+        await lookup({ citation }),
+        await lookup({ citation, state: 'wien' }),
+        await lookup({ citation, in_force_as_of: '2020-01-01' }),
+      ];
+      expect(searchLegislation).not.toHaveBeenCalled();
+      expect(searchCaseLaw).not.toHaveBeenCalled();
+      expect(searchGazette).not.toHaveBeenCalled();
+      for (const result of results) {
+        expect(result).toStrictEqual({ found: false, kind: 'norm', guidance });
+      }
+    },
+  );
+
+  it('pins the whole guidance and its content[] rendering for "DSGVO Art32"', async () => {
+    const result = await lookup({ citation: 'DSGVO Art32' });
+    const guidance = `DSGVO Art 32 is EU law: Regulation (EU) 2016/679, CELEX 32016R0679. ${RIS_DOES_NOT_CONSOLIDATE} Read it on EUR-Lex: ${EUR_LEX}32016R0679. Austrian decisions citing it: ${CASE_LAW_HINT} 'DSGVO Art32'.`;
+    expect(result).toEqual({ found: false, kind: 'norm', guidance });
+
+    const text = (risLookupCitation.format!(result)[0] as { type: 'text'; text: string }).text;
+    expect(text).toBe(`**found**: false\n**kind**: norm\n\n${guidance}`);
+  });
+
+  it('stays a result through the production output parse, under a forced kind: "norm" too', async () => {
+    const result = await runToolContract(risLookupCitation, {
+      citation: 'DSGVO',
+      kind: 'norm',
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({ found: false, kind: 'norm' });
+    expect(searchLegislation).not.toHaveBeenCalled();
+  });
+
+  // [citation, its guidance] — a CELEX the EU-act set does not hold names no act.
+  const CELEX_LED: ReadonlyArray<[string, string]> = [
+    ['32016R0679 DSGVO Art6 Abs1', euMiss('DSGVO Art 6', DSGVO, '32016R0679', 'DSGVO Art6')],
+    ['32016R0679 DSGVO', euMiss('DSGVO', DSGVO, '32016R0679', null)],
+    [
+      '31995L0046 Datenschutz-RL Art7 litf',
+      euMiss('Datenschutz-RL Art 7', null, '31995L0046', 'Datenschutz-RL Art7'),
+    ],
+    [
+      '12010P/TXT Grundrechte Charta Art47',
+      euMiss('Grundrechte Charta Art 47', null, '12010P/TXT', 'Grundrechte Charta Art47'),
+    ],
+  ];
+
+  it.each(CELEX_LED)(
+    'a leading CELEX "%s" makes an EU miss carrying its own CELEX, with no RIS request',
+    async (citation, guidance) => {
+      const result = await lookup({ citation });
+      expect(searchLegislation).not.toHaveBeenCalled();
+      expect(searchCaseLaw).not.toHaveBeenCalled();
+      expect(result).toStrictEqual({ found: false, kind: 'norm', guidance });
+    },
+  );
+
+  it.each([
+    ['32016R0679 Art6', 'Art 6'],
+    ['32016R0679 Art6 Abs1', 'Art 6'],
+    ['32016R0679 § 5 lit a', '§ 5'],
+  ])(
+    'labels "%s", a CELEX and a bare section, by the CELEX it names',
+    async (citation, provision) => {
+      const result = await lookup({ citation });
+      expect(searchLegislation).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        found: false,
+        kind: 'norm',
+        guidance: `${provision} of CELEX 32016R0679 is EU law. ${RIS_DOES_NOT_CONSOLIDATE} Read it on EUR-Lex: ${EUR_LEX}32016R0679.`,
+      });
+    },
+  );
+
+  it.each([
+    ['12010E267 AEUV Art267', 'AEUV Art267', 'AEUV', '267'],
+    ['12010M004 EUV Art4 Abs3', 'EUV Art4', 'EUV', '4'],
+    // The whole-treaty CELEX names the same consolidated treaty.
+    ['12012E/TXT AEUV Art267', 'AEUV Art267', 'AEUV', '267'],
+    ['12016M/TXT EUV Art6', 'EUV Art6', 'EUV', '6'],
+  ])(
+    'a TFEU/TEU CELEX "%s" is stripped and resolves exactly as "%s"',
+    async (led, plain, title, section) => {
+      const ledResult = await lookup({ citation: led });
+      const plainResult = await lookup({ citation: plain });
+      expect(searchLegislation).toHaveBeenCalledTimes(2);
+      expect(searchLegislation.mock.calls[0]?.[0]).toEqual({
+        application: 'BrKons',
+        inForceAsOf: todayInAustria(),
+        pageSize: 100,
+        title,
+        sectionFrom: section,
+        sectionTo: section,
+        sectionType: 'Artikel',
+      });
+      expect(searchLegislation.mock.calls[1]?.[0]).toEqual(searchLegislation.mock.calls[0]?.[0]);
+      expect(ledResult).toEqual(plainResult);
+      expect(ledResult.found).toBe(true);
+    },
+  );
+
+  // [citation, the provision it names]
+  const PROVISION_ONLY: ReadonlyArray<[string, string]> = [
+    ['Art6 Abs1', 'Art 6'],
+    ['Art 6 Abs 1 Z 3', 'Art 6'],
+    ['§ 5 Abs 1', '§ 5'],
+    ['§ 1 lit b', '§ 1'],
+    ['§ 6 Abs 1 Z 3', '§ 6'],
+    ['§ 6 Abs. 1', '§ 6'],
+    ['§6 Z3', '§ 6'],
+    ['§ 6 lit. b', '§ 6'],
+    // No sub-provision at all: "Art 6" used to search the title "Art 6".
+    ['§ 6', '§ 6'],
+    ['Art 6', 'Art 6'],
+    ['Artikel 10a', 'Art 10a'],
+    // Abs and Satz read in any case.
+    ['Art6 abs1', 'Art 6'],
+    ['Art 6 ABS 1', 'Art 6'],
+    ['§ 5 satz 2', '§ 5'],
+    ['§ 5 Abs 1 satz 2', '§ 5'],
+  ];
+
+  it.each(PROVISION_ONLY)(
+    'never reads a sub-provision as the abbreviation — "%s" names %s but no law, with no search',
+    async (citation, provision) => {
+      const result = await lookup({ citation });
+      expect(searchLegislation).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        found: false,
+        kind: 'norm',
+        guidance: `'${citation}' names a provision, ${provision}, but no law, so nothing was searched. Add the law's abbreviation: '<abbr> ${provision}'. Formats: ris_list_reference topic citation_formats.`,
+      });
+    },
+  );
+
+  it.each([
+    ['§ 3 LitG', 'LitG', '3'],
+    ['§ 1 ZPO', 'ZPO', '1'],
+    ['§ 2 Z-Gesetz', 'Z-Gesetz', '2'],
+  ])(
+    'keeps Z and lit case-sensitive — "%s" still searches the law %s',
+    async (citation, title, section) => {
+      await lookup({ citation });
+      expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject({ title, sectionFrom: section });
+    },
+  );
+
+  it.each(['Abs 1', 'DSG §', 'DSG § Abs 1'])(
+    '"%s", which names neither a section nor a law it can read, is reported unread — no search, no title retry',
+    async (citation) => {
+      const result = await lookup({ citation });
+      expect(searchLegislation).not.toHaveBeenCalled();
+      expect(result).toEqual({ found: false, kind: 'norm', guidance: UNREADABLE_NORM(citation) });
+    },
+  );
+
+  it('answers a provision without a law offline under a state hint and in_force_as_of too', async () => {
+    const result = await runToolContract(risLookupCitation, {
+      citation: 'Art6 Abs1',
+      state: 'wien',
+      in_force_as_of: '2020-01-01',
+    });
+    const guidance = `'Art6 Abs1' names a provision, Art 6, but no law, so nothing was searched. Add the law's abbreviation: '<abbr> Art 6'. Formats: ris_list_reference topic citation_formats.`;
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(result.structuredContent).toEqual({ found: false, kind: 'norm', guidance });
+    expect((result.content[0] as { text: string }).text).toBe(
+      `**found**: false\n**kind**: norm\n\n${guidance}`,
+    );
+  });
+
+  it.each([
+    ['AEUV Art267', 'AEUV', '267', 'Artikel'],
+    ['EUV Art6', 'EUV', '6', 'Artikel'],
+    ['EMRK Art8', 'EMRK', '8', 'Artikel'],
+    ['DSG §1', 'DSG', '1', 'Paragraph'],
+    ['§ 6 DSG', 'DSG', '6', 'Paragraph'],
+    ['EU-JZG §1', 'EU-JZG', '1', 'Paragraph'],
+    ['§ 22 Abs 1 DSG', 'DSG', '22', 'Paragraph'],
+    ['LitG §3', 'LitG', '3', 'Paragraph'],
+  ])('"%s" still routes to RIS unchanged', async (citation, title, section, sectionType) => {
+    const result = await lookup({ citation });
+    expect(searchLegislation.mock.calls[0]?.[0]).toEqual({
+      application: 'BrKons',
+      inForceAsOf: todayInAustria(),
+      pageSize: 100,
+      title,
+      sectionFrom: section,
+      sectionTo: section,
+      sectionType,
+    });
+    expect(result.found).toBe(true);
+  });
+
+  it('a bare non-member that only starts with "EU" still routes to RIS', async () => {
+    await lookup({ citation: 'EU-JZG' });
+    expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject({ title: 'EU-JZG' });
+  });
+
+  it('advertises EMRK Art8 rather than DSGVO Art32, and the EUR-Lex miss, on the tool and in citation_formats', () => {
+    const norm = RIS_CITATION_FORMATS.find((format) => format.kind === 'norm')!;
+    const formats = [norm.description, norm.resolvesVia, ...norm.examples].join(' ');
+    for (const surface of [risLookupCitation.description, formats]) {
+      expect(surface).toContain('EMRK Art8');
+      expect(surface).not.toContain('DSGVO Art32');
+      expect(surface).toContain('returns found: false pointing to EUR-Lex');
+    }
+    expect(norm.examples).toContain('EMRK Art8');
+  });
+});
+
+describe('risLookupCitation — a comma-joined norms_cited entry resolves its first provision (#72)', () => {
+  const NOTE_HEAD = (today: string, title: string, section: string) =>
+    `Resolved via ris_search_legislation (BrKons) — title "${title}", § ${section}, in force ${today}.`;
+
+  it('"DSG §1, §24" searches and resolves exactly what "DSG §1" does, naming DSG §24', async () => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    const joined = await lookup({ citation: 'DSG §1, §24' });
+    const single = await lookup({ citation: 'DSG §1' });
+    const today = todayInAustria();
+
+    expect(searchLegislation).toHaveBeenCalledTimes(2);
+    expect(searchLegislation.mock.calls[0]?.[0]).toEqual(searchLegislation.mock.calls[1]?.[0]);
+    expect(joined.record).toEqual(single.record);
+    expect(joined.alternatives_count).toBe(single.alternatives_count);
+    expect(joined.resolution_note).toBe(
+      `${NOTE_HEAD(today, 'DSG', '1')} The entry also cites DSG §24 — look it up as its own citation. 76 more matched — list them with ris_search_legislation title: "DSG", section_from: "1", section_to: "1", section_type: Paragraph, in_force_as_of: "${today}".`,
+    );
+    const text = (risLookupCitation.format!(joined)[0] as { type: 'text'; text: string }).text;
+    expect(text).toContain(`**resolution_note**: ${joined.resolution_note}`);
+  });
+
+  it('names every remaining provision, as written, under a multi-token abbreviation', async () => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    const result = await lookup({ citation: 'Gemeinsamer Meldestandard-G §5, §112, §113' });
+    expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject({
+      title: 'Gemeinsamer Meldestandard-G',
+      sectionFrom: '5',
+      sectionTo: '5',
+      sectionType: 'Paragraph',
+    });
+    expect(result.resolution_note).toContain(
+      ' The entry also cites Gemeinsamer Meldestandard-G §112 and Gemeinsamer Meldestandard-G §113 — look each up as its own citation. ',
+    );
+  });
+
+  it.each([
+    ['DSG §1 Abs1, §24 Abs2 Z3', 'DSG', '1', 'Paragraph', 'DSG §24 Abs2 Z3'],
+    ['B-VG Art7, Art139 Abs1', 'B-VG', '7', 'Artikel', 'B-VG Art139 Abs1'],
+    ['DSG §1,§24', 'DSG', '1', 'Paragraph', 'DSG §24'],
+  ])(
+    '"%s" keeps each provision’s sub-provisions',
+    async (citation, title, section, sectionType, named) => {
+      searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+      const result = await lookup({ citation });
+      expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject({
+        title,
+        sectionFrom: section,
+        sectionType,
+      });
+      expect(result.resolution_note).toContain(
+        ` The entry also cites ${named} — look it up as its own citation.`,
+      );
+    },
+  );
+
+  it('a first provision that misses returns its own miss, and the guidance names the rest', async () => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    const result = await lookup({ citation: 'DSG §1, §24, §27' });
+    const today = todayInAustria();
+    expect(result).toEqual({
+      found: false,
+      kind: 'norm',
+      guidance: `No document for DSG § 1 in force on ${today}. If the provision existed at another time, retry ris_search_legislation with title: 'DSG', section_from/to: '1', section_type: 'Paragraph', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: 'DSG*'. State law resolves only with an explicit state hint. The entry also cites DSG §24 and DSG §27 — look each up as its own citation.`,
+    });
+  });
+
+  it('a first provision naming an EU act returns the EU miss, the rest named, with no RIS request', async () => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    const result = await lookup({ citation: 'EU-Grundrechte-Charta Art7, Art8, Art52' });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      found: false,
+      kind: 'norm',
+      guidance: `EU-Grundrechte-Charta Art 7 is EU law: the Charter of Fundamental Rights of the European Union, CELEX 12016P/TXT. ${RIS_DOES_NOT_CONSOLIDATE} Read it on EUR-Lex: ${EUR_LEX}12016P/TXT. Austrian decisions citing it: ${CASE_LAW_HINT} 'EU-Grundrechte-Charta Art7'. The entry also cites EU-Grundrechte-Charta Art8 and EU-Grundrechte-Charta Art52 — look each up as its own citation.`,
+    });
+  });
+
+  it.each([
+    // A comma inside a title, not followed by a provision token, stays part of the abbreviation.
+    ['Bundesgesetz über A, B und C §5', 'Bundesgesetz über A, B und C', '5'],
+    ['Foo, Artenschutz §2', 'Foo, Artenschutz', '2'],
+  ])(
+    '"%s" reads its title comma as part of the abbreviation, as before',
+    async (citation, title, section) => {
+      searchLegislation.mockResolvedValue(zeroHits());
+      await lookup({ citation });
+      expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject({ title, sectionFrom: section });
+    },
+  );
+
+  it('a comma followed by a word, not a provision, still parses as nothing', async () => {
+    const result = await lookup({ citation: 'DSG §1, Artenschutz' });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      found: false,
+      kind: 'norm',
+      guidance: UNREADABLE_NORM('DSG §1, Artenschutz'),
+    });
+  });
+
+  it('round-trips the comma-joined entries a real VfGH page emits — norms_cited itself unchanged', async () => {
+    const vfgh = page('search-ecli-vfgh-g13-2025.json');
+    const record = toCaseLawRecord(vfgh.hits[0]!, 'Vfgh') as { norms_cited: string[] };
+    expect(record.norms_cited).toContain('DSG §1, §24, §27');
+    expect(record.norms_cited).toContain(
+      'GesundheitstelematikG 2012 §2, §24b, §24c, §24d, §24e, §24f, §24g, §24h, §28b',
+    );
+
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    const result = await lookup({ citation: 'DSG §1, §24, §27' });
+    expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject({ title: 'DSG', sectionFrom: '1' });
+    expect(result.resolution_note).toContain(' The entry also cites DSG §24 and DSG §27 — ');
+  });
+});
+
+describe('risLookupCitation — a trailing "allg" (whole-act reference) is dropped (#67)', () => {
+  // [cite with "allg", the same cite without it, the title both search (null: an offline EU miss)]
+  it.each([
+    ['KO allg', 'KO', 'KO'],
+    ['AHVB 1986 allg', 'AHVB 1986', 'AHVB 1986'],
+    ['DSGVO allg', 'DSGVO', null],
+    ['32016R0679 DSGVO allg', '32016R0679 DSGVO', null],
+  ])('"%s" resolves exactly as "%s" does', async (withAllg, plain, title) => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    const result = await lookup({ citation: withAllg });
+    const reference = await lookup({ citation: plain });
+    expect(result).toEqual(reference);
+    if (title === null) {
+      expect(searchLegislation).not.toHaveBeenCalled();
+      expect(result).toStrictEqual({
+        found: false,
+        kind: 'norm',
+        guidance: euMiss('DSGVO', 'Regulation (EU) 2016/679', '32016R0679', null),
+      });
+    } else {
+      expect(searchLegislation).toHaveBeenCalledTimes(2);
+      expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject({ title });
+      expect(searchLegislation.mock.calls[0]?.[0]).not.toHaveProperty('sectionFrom');
+      expect(searchLegislation.mock.calls[1]?.[0]).toEqual(searchLegislation.mock.calls[0]?.[0]);
+    }
+  });
+
+  it('drops it under a forced kind: "norm" too', async () => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    await lookup({ citation: 'KO allg', kind: 'norm' });
+    expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject({ title: 'KO' });
+  });
+
+  it.each([
+    // A law's own "Allg" is capitalized and never the cite's trailing word on its own.
+    ['Allg GAG', { title: 'Allg GAG' }],
+    ['GdO Allg Krnt 1998', { title: 'GdO Allg Krnt 1998' }],
+    ['ABGB Allg', { title: 'ABGB Allg' }],
+    // Not a standalone token.
+    ['VwRallg', { title: 'VwRallg' }],
+    ['EURallg', { title: 'EURallg' }],
+    // A cite with a section keeps its own parse.
+    ['StGB §28 allg', { title: 'StGB', sectionFrom: '28' }],
+  ])('leaves "%s" as written', async (citation, params) => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    await lookup({ citation });
+    expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject(params);
+  });
+});
+
+describe('risLookupCitation — a recital cite is answered offline (#67)', () => {
+  // A cite that still reached RIS would come back found: true from this page.
+  beforeEach(() => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+  });
+
+  it.each([
+    'ErwGr 47 DSGVO',
+    'ErwGr47 DSGVO',
+    'Erwägungsgrund 141 DSGVO',
+    'Erwaegungsgrund 5 DSGVO',
+  ])('section-first "%s" gets the same EU miss as "DSGVO ErwGr47"', async (citation) => {
+    const result = await lookup({ citation });
+    const reference = await lookup({ citation: 'DSGVO ErwGr47' });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(result).toEqual(reference);
+    expect(result.guidance).toBe(
+      `DSGVO is EU law: Regulation (EU) 2016/679, CELEX 32016R0679. ${RIS_DOES_NOT_CONSOLIDATE} Read it on EUR-Lex: ${EUR_LEX}32016R0679.`,
+    );
+  });
+
+  it('a section-first recital keeps the EU miss under a state hint', async () => {
+    const result = await lookup({ citation: 'ErwGr 47 DSGVO', state: 'wien' });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(result).toStrictEqual({
+      found: false,
+      kind: 'norm',
+      guidance: euMiss('DSGVO', 'Regulation (EU) 2016/679', '32016R0679', null),
+    });
+  });
+
+  // [citation, its act (null: none cited), recital number]
+  const RECITALS: ReadonlyArray<[string, string | null, string]> = [
+    ['DSRL-PJ ErwGr37', 'DSRL-PJ', '37'],
+    ['XYZ ErwGr5', 'XYZ', '5'],
+    ['ErwGr 37 DSRL-PJ', 'DSRL-PJ', '37'],
+    ['Erwägungsgrund 47', null, '47'],
+    ['ErwGr 47', null, '47'],
+  ];
+
+  it.each(RECITALS)(
+    '"%s" — a recital of an act outside the EU-act set, or of none — searches nothing',
+    async (citation, act, recital) => {
+      const result = await lookup({ citation });
+      expect(searchLegislation).not.toHaveBeenCalled();
+      const cited = act === null ? `recital ${recital} but no act` : `recital ${recital} of ${act}`;
+      expect(result).toEqual({
+        found: false,
+        kind: 'norm',
+        guidance: `'${citation}' cites ${cited}. Only EU acts carry recitals, and RIS does not consolidate EU law, so nothing was searched. Find the act on EUR-Lex: https://eur-lex.europa.eu.`,
+      });
+    },
+  );
+
+  it('labels a CELEX and a bare recital by the CELEX it names', async () => {
+    const result = await lookup({ citation: '32016R0679 ErwGr 82' });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(result.guidance).toBe(
+      `ErwGr 82 of CELEX 32016R0679 is EU law. ${RIS_DOES_NOT_CONSOLIDATE} Read it on EUR-Lex: ${EUR_LEX}32016R0679.`,
+    );
+  });
+});
+
+describe('risLookupCitation — a leading CELEX is read only under kind auto or norm (#67)', () => {
+  it('a forced kind: "case_number" searches the citation as given, its leading CELEX kept', async () => {
+    searchCaseLaw.mockResolvedValue(zeroHits());
+    await lookup({ citation: '32016R0679 Ro 2020/01/0001', kind: 'case_number', court: 'vwgh' });
+    expect(searchCaseLaw).toHaveBeenCalledTimes(1);
+    expect(searchCaseLaw.mock.calls[0]?.[0]).toMatchObject({
+      caseNumber: '32016R0679 Ro 2020/01/0001',
+    });
+  });
+
+  it('a forced kind: "case_number" never turns an EU case-law CELEX into an offline answer', async () => {
+    searchCaseLaw.mockResolvedValue(zeroHits());
+    const result = await lookup({
+      citation: '62014CJ0362 Schrems',
+      kind: 'case_number',
+      court: 'vwgh',
+    });
+    expect(searchCaseLaw.mock.calls[0]?.[0]).toMatchObject({ caseNumber: '62014CJ0362 Schrems' });
+    expect(result.kind).toBe('case_number');
+  });
+});
+
+const CJEU_GUIDANCE = (cite: string, court: string, celex: string) =>
+  `'${cite}' cites EU case law: a decision of ${court}, CELEX ${celex}. RIS holds Austrian law and decisions only, so nothing was searched. Read it on EUR-Lex: ${EUR_LEX}${celex}.`;
+
+describe('risLookupCitation — a leading EU case-law CELEX is named as an EU court decision (#67)', () => {
+  // A cite that still reached RIS would come back found: true from these pages.
+  beforeEach(() => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    searchCaseLaw.mockResolvedValue(page('search-vfgh-gz-joined.json'));
+    searchGazette.mockResolvedValue(page('search-brkons-celex.json'));
+  });
+
+  // Real norms_cited strings (vwgh, justiz): [citation, court named, CELEX]
+  const CJEU_CITES: ReadonlyArray<[string, string, string]> = [
+    ['62014CJ0362 Schrems', 'the Court of Justice of the European Union', '62014CJ0362'],
+    [
+      '62021CJ0300 Österreichische Post VORAB',
+      'the Court of Justice of the European Union',
+      '62021CJ0300',
+    ],
+    [
+      '62009TJ0332 Electrabel / Europäische Kommission',
+      'the General Court of the European Union',
+      '62009TJ0332',
+    ],
+  ];
+
+  it.each(CJEU_CITES)(
+    '"%s" returns kind unknown naming the court decision, with no RIS request',
+    async (citation, court, celex) => {
+      const result = await lookup({ citation });
+      expect(searchLegislation).not.toHaveBeenCalled();
+      expect(searchCaseLaw).not.toHaveBeenCalled();
+      expect(searchGazette).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        found: false,
+        kind: 'unknown',
+        guidance: CJEU_GUIDANCE(citation, court, celex),
+      });
+      for (const absent of ['is EU law', 'does not consolidate', 'ris_search_legislation']) {
+        expect(result.guidance).not.toContain(absent);
+      }
+    },
+  );
+
+  it('keeps kind: "norm" when the route is forced, with the same guidance', async () => {
+    const result = await lookup({ citation: '62014CJ0362 Schrems', kind: 'norm' });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      found: false,
+      kind: 'norm',
+      guidance: CJEU_GUIDANCE(
+        '62014CJ0362 Schrems',
+        'the Court of Justice of the European Union',
+        '62014CJ0362',
+      ),
+    });
+  });
+
+  it('stays a result through the production output parse, guidance on both surfaces', async () => {
+    const result = await runToolContract(risLookupCitation, { citation: '62014CJ0362 Schrems' });
+    const guidance = CJEU_GUIDANCE(
+      '62014CJ0362 Schrems',
+      'the Court of Justice of the European Union',
+      '62014CJ0362',
+    );
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toEqual({ found: false, kind: 'unknown', guidance });
+    expect((result.content[0] as { text: string }).text).toBe(
+      `**found**: false\n**kind**: unknown\n\n${guidance}`,
+    );
+  });
+});
+
+describe('risLookupCitation — the EU-act and comma-joined parsing stays linear in the citation length (#67, #72)', () => {
+  it.each([
+    ['a leading CELEX before a whitespace run', (n: number) => `32016R0679${' '.repeat(n)}x`],
+    ['a comma before a whitespace run', (n: number) => `DSG §1,${' '.repeat(n)}x`],
+    [
+      'repeated commas before section signs',
+      (n: number) => `DSG §1${', §'.repeat(Math.floor(n / 3))}`,
+    ],
+    [
+      'repeated commas before Artikel words',
+      (n: number) => `DSG §1${', art '.repeat(Math.floor(n / 6))}`,
+    ],
+    [
+      'repeated comma-joined provisions',
+      (n: number) => `DSG §1${', §2'.repeat(Math.floor(n / 4))}`,
+    ],
+    ['a recital marker after a whitespace run', (n: number) => `DSGVO${' '.repeat(n)}ErwGr`],
+    ['repeated recital cites', (n: number) => `DSGVO ${'ErwGr1 x '.repeat(Math.floor(n / 9))}`],
+    [
+      'repeated sub-provisions after a section',
+      (n: number) => `Art6 ${'Abs1 '.repeat(Math.floor(n / 5))}`,
+    ],
+    ['one long line ending in a break', (n: number) => `${'§1 x'.repeat(Math.floor(n / 4))}\ny`],
+    ['breaks throughout', (n: number) => `DSG §1,${'  \r\n'.repeat(Math.floor(n / 4))}§2`],
+  ] as const)('%s', async (_shape, build) => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    await expectLinearResolution(build, {}, 1_250);
+  });
+
+  it('a leading CELEX-shaped digit run, across the full 5k–320k span', async () => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    await expectLinearResolution((n) => `32016R${'0'.repeat(n)} DSGVO`, {});
+  });
+
+  it.each([
+    ['a section before a whitespace run', (n: number) => `§1${' '.repeat(n)}x`],
+    [
+      'repeated sub-provision openers with no number',
+      (n: number) => `§1${' Abs'.repeat(Math.floor(n / 4))}`,
+    ],
+    ['repeated section signs with no number', (n: number) => `${'§'.repeat(n)} x`],
+    [
+      'repeated sub-provisions ending in a word',
+      (n: number) => `Art6${' Z1'.repeat(Math.floor(n / 3))} x`,
+    ],
+  ] as const)('a provision without a law: %s', async (_shape, build) => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    await expectLinearResolution(build, {}, 1_250);
+  });
+
+  it('a provision without a law: a section digit run, across the full 5k–320k span', async () => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    await expectLinearResolution((n) => `§${'1'.repeat(n)} Abs`, {});
+  });
+
+  it.each([
+    [
+      'repeated lowercase sub-provisions ending in a word',
+      (n: number) => `Art6${' abs1'.repeat(Math.floor(n / 5))} x`,
+    ],
+    ['a section-first recital before a whitespace run', (n: number) => `ErwGr 1${' '.repeat(n)}x`],
+    [
+      'repeated section-first recital markers',
+      (n: number) => `ErwGr 1 ${'ErwGr 1 '.repeat(Math.floor(n / 8))}`,
+    ],
+    ['a recital marker before a whitespace run', (n: number) => `ErwGr${' '.repeat(n)}1 x`],
+    ['an abbreviation before a whitespace run and "allg"', (n: number) => `KO${' '.repeat(n)}allg`],
+    [
+      'many abbreviation words before "allg"',
+      (n: number) => `${'Ab '.repeat(Math.floor(n / 3))}allg`,
+    ],
+  ] as const)('%s', async (_shape, build) => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    await expectLinearResolution(build, {}, 1_250);
+  });
+
+  it('a recital digit run, across the full 5k–320k span', async () => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    await expectLinearResolution((n) => `ErwGr ${'1'.repeat(n)} XYZ`, {});
   });
 });

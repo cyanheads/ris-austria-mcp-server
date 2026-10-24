@@ -71,14 +71,142 @@ const LINE_BREAKS = /[\n\r\p{Zl}\p{Zp}]+/gu;
 
 /** Gazette prefixes that signal a promulgation citation (federal, imperial, or state). */
 const GAZETTE_PREFIX = /\b(?:BGBl|RGBl|StGBl|LGBl)\b|GBl[ÖO]/i;
-/** An explicit norm citation — a section sign, or an Artikel keyword followed by a number. */
-const NORM_EXPLICIT = /§|\bart(?:ikel)?\.?\s*\d/i;
 /** A bare law abbreviation (whole-law reference) — letters/hyphens, an optional trailing year. */
 const BARE_ABBREVIATION = /^[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß.]*(?:[-\s][A-Za-zÄÖÜäöüß0-9]+)*$/;
+/**
+ * A sub-provision token (Absatz, Ziffer, litera, Satz) — never a law abbreviation. Abs and Satz
+ * match in any case ("Art6 abs1"); Z and lit only as RIS writes them, so a law named "LitG" or
+ * "ZPO" is not caught.
+ */
+const SUB_PROVISION_TOKEN = String.raw`(?:[Aa][Bb][Ss]\.?\s*\d+[a-z]?|Z\.?\s*\d+[a-z]?|lit\.?\s*[a-z]{1,2}|[Ss][Aa][Tt][Zz]\s*\d+)`;
+/** A sub-provision token on its own. */
+const SUB_PROVISION = new RegExp(`^${SUB_PROVISION_TOKEN}$`);
+/**
+ * A §/Artikel number with no law — nothing after it but sub-provisions ("Art6 Abs1", "§ 6 Abs 1
+ * Z 3", "§ 6"). The Artikel keyword is matched case-insensitively letter by letter, so the
+ * sub-provision tokens keep their own case rules. Group 1 is set for a § section.
+ */
+const SECTION_ONLY = new RegExp(
+  String.raw`^(?:(§)§*|[Aa][Rr][Tt](?:[Ii][Kk][Ee][Ll])?\.?)\s*(\d+(?:\s?[a-zA-Z])?)(?:\s*${SUB_PROVISION_TOKEN})*\s*$`,
+);
+/** The EU recital marker (Erwägungsgrund, abbreviated ErwGr) as a regex source, matched with `i`. */
+const RECITAL_MARKER = String.raw`(?:erwgr|erwägungsgrund|erwaegungsgrund)\.?\s*(\d+)`;
+/**
+ * An explicit norm citation — a section sign, or an Artikel keyword or EU recital marker
+ * (ErwGr / Erwägungsgrund) followed by a number.
+ */
+const NORM_EXPLICIT = new RegExp(String.raw`§|\bart(?:ikel)?\.?\s*\d|\b${RECITAL_MARKER}`, 'i');
+/** A recital cited with no act ("Erwägungsgrund 47"). Group 1 is the recital number. */
+const RECITAL_ONLY = new RegExp(`^${RECITAL_MARKER}$`, 'i');
+/** A section-first recital cite ("ErwGr 47 DSGVO"): group 1 the number, group 2 the act. */
+const RECITAL_FIRST = new RegExp(String.raw`^${RECITAL_MARKER}\s+(\S.*)$`, 'i');
+/** An abbreviation-first recital cite ("DSGVO ErwGr47"): group 1 the act, group 2 the number. */
+const RECITAL_AFTER = new RegExp(
+  String.raw`^([A-Za-zÄÖÜäöüß](?:.*?\S)?)\s+${RECITAL_MARKER}(?:\s+\S.*)?$`,
+  'i',
+);
+/**
+ * A comma that opens another provision of the same law — VfGH headnotes cite several in one
+ * entry ("DSG §1, §24"). Only a comma followed by a §/Artikel number splits, so a comma that is
+ * part of a title stays in the abbreviation.
+ */
+const PROVISION_COMMA = /,\s*(?=§+\s*\d|art(?:ikel)?\.?\s*\d)/i;
+/**
+ * A leading CELEX number — VwGH prefixes an EU norm with it ("32016R0679 DSGVO Art6 Abs1"):
+ * sector digit, year, act-type letters, then the number or the "/TXT" a treaty text carries.
+ */
+const LEADING_CELEX = /^([1-9]\d{4}[A-Z]{1,2}(?:\d+[A-Z]?|\/TXT))\s+(\S.*)$/;
+/**
+ * A sector-1 TFEU (E) or TEU (M) CELEX, of one article ("12010E267") or the whole treaty
+ * ("12012E/TXT") — RIS consolidates both treaties.
+ */
+const TREATY_CELEX = /^1\d{4}[EM](?:\d|\/TXT$)/;
+/** The CELEX sector of EU case law ("62014CJ0362") — a court decision, never an act. */
+const CASE_LAW_SECTOR = '6';
+/**
+ * The EU court a case-law CELEX names, by the first letter of its document type ("CJ", "TJ") —
+ * `norms_cited` carries judgments of both courts this way.
+ */
+const EU_COURT_BY_LETTER = new Map([
+  ['C', 'the Court of Justice of the European Union'],
+  ['T', 'the General Court of the European Union'],
+]);
+
+/** An EU act RIS does not consolidate. */
+interface EuAct {
+  /** The act as named in guidance. */
+  readonly act: string;
+  /** Absent when the abbreviation names more than one act. */
+  readonly celex?: string;
+}
+
+const CHARTER: EuAct = {
+  act: 'the Charter of Fundamental Rights of the European Union',
+  celex: '12016P/TXT',
+};
+
+/**
+ * EU acts cited by an abbreviation RIS consolidated law does not hold, keyed by the abbreviation
+ * as compared (`comparableAbbreviation`: case-insensitive, whitespace collapsed) — matched exactly,
+ * so an Austrian abbreviation that only starts with "EU" ("EU-JZG") is never caught. Derived
+ * 2026-10-24 from `norms_cited` across dsk, bvwg, vwgh, vfgh, and justiz (OGH headnotes): each
+ * abbreviation returned found: false when looked up live with an Artikel, and each CELEX resolves
+ * on EUR-Lex. AEUV, EUV, and EMRK are absent on purpose — RIS consolidates all three.
+ */
+const EU_ACTS: ReadonlyMap<string, EuAct> = new Map([
+  ['dsgvo', { act: 'Regulation (EU) 2016/679', celex: '32016R0679' }],
+  ['grc', CHARTER],
+  ['eu-grc', CHARTER],
+  ['eu-grundrechte-charta', CHARTER],
+  ['eugvvo 2012', { act: 'Regulation (EU) No 1215/2012', celex: '32012R1215' }],
+  [
+    'eugvvo',
+    {
+      act: 'Regulation (EC) No 44/2001 or Regulation (EU) No 1215/2012, which courts both cite as EuGVVO',
+    },
+  ],
+  ['euinsvo 2015', { act: 'Regulation (EU) 2015/848', celex: '32015R0848' }],
+  ['euuvo', { act: 'Regulation (EC) No 4/2009', celex: '32009R0004' }],
+]);
+
+/** The EU act an abbreviation names, if it is one RIS does not consolidate. */
+function euActOf(abbreviation: string): EuAct | undefined {
+  return EU_ACTS.get(comparableAbbreviation(abbreviation));
+}
+
+/** A citation split from the CELEX number it leads with, when it leads with one. */
+function splitLeadingCelex(citation: string): { celex: string; rest: string } | null {
+  const match = LEADING_CELEX.exec(citation);
+  if (match?.[1] === undefined || match[2] === undefined) return null;
+  return { celex: match[1], rest: match[2] };
+}
+
+/**
+ * A citation without its trailing "allg" (allgemein — a reference to the act as a whole), when it
+ * follows a bare abbreviation: Justiz (OGH) headnotes cite "DSGVO allg", "KO allg", "AHVB 1986
+ * allg". Lowercase only: a law's own "Allg" is capitalized ("Allg GAG", "GdO Allg Krnt 1998") and
+ * no abbreviation ends in it. A cite with a section ("StGB §28 allg") is left to its own parse.
+ */
+function dropGeneralReference(citation: string): string {
+  if (!citation.endsWith('allg') || !/\s/.test(citation.charAt(citation.length - 5))) {
+    return citation;
+  }
+  const head = citation.slice(0, -4).trimEnd();
+  return BARE_ABBREVIATION.test(head) && !head.includes('/') && !NORM_EXPLICIT.test(head)
+    ? head
+    : citation;
+}
 
 /** Parsed norm citation. */
 interface NormParse {
   readonly abbreviation: string;
+  /**
+   * The other provisions of a comma-joined entry, each as its own cite ("DSG §24" from
+   * "DSG §1, §24"). Absent for a single provision.
+   */
+  readonly others?: readonly string[];
+  /** The recital number of an EU recital cite ("47" from "DSGVO ErwGr47"); no section then. */
+  readonly recital?: string;
   readonly section?: string;
   readonly sectionType?: 'Artikel' | 'Paragraph';
 }
@@ -89,33 +217,21 @@ function sectionMarker(sectionType: NormParse['sectionType']): string {
 }
 
 /**
- * Parse a norm citation into an abbreviation and optional §/Artikel number. Handles both
- * orders: section-first ("§ 6 DSG", "Art 10 B-VG") and abbreviation-first ("DSG §1",
- * "DSGVO Art32", "DSG §22 Abs1") — the latter is the shape ris_search_case_law emits in its
- * `norms_cited` output, so a cited norm round-trips straight back into this lookup. Sub-provision
- * refs (Abs / Z / lit / Satz) are dropped either way — RIS filters on the §/Artikel number only,
- * and the document carries every Absatz.
+ * Parse the abbreviation-first shape — the abbreviation precedes the §/Artikel marker ("DSG §1",
+ * "EMRK Art8"), optionally with a trailing sub-provision that is discarded ("DSG §22 Abs1",
+ * "DSGVO Art6 Abs1 litc", "DSGVO Art4 Z2"). Anchored on the marker, not on whitespace, so a
+ * multi-token abbreviation stays whole ("B-VG", "TKG 2021"); the leading letter (and, for the
+ * §-branch, the §-free abbreviation body) keeps a section-first string out of this branch.
+ * `parseNorm` runs it BEFORE the section-first branches — whose un-anchored regexes would
+ * otherwise read "§22 Abs1" as "§ <section> <abbreviation>" and mis-parse the abbreviation to
+ * "Abs1" — and BEFORE the BARE_ABBREVIATION fallback, which would otherwise swallow "EMRK Art8"
+ * as a literal abbreviation and resolve nothing.
+ *
+ * The abbreviation ends on a non-space and the section-first `§` run is matched from its head,
+ * so a whitespace run or a run of `§` is scanned once rather than from every position in it.
+ * The captures are the ones the plain lazy forms take.
  */
-function parseNorm(input: string): NormParse | null {
-  const s = input.trim();
-  const stripSubRefs = (rest: string): string =>
-    rest.replace(/^(?:Abs\.?\s*\d+\w?\s+|Z\s*\d+\s+|lit\.?\s*\w+\s+|Satz\s*\d+\s+)+/i, '').trim();
-
-  /*
-   * Abbreviation-first shape — the abbreviation precedes the §/Artikel marker ("DSG §1",
-   * "DSGVO Art32"), optionally with a trailing sub-provision that is discarded ("DSG §22 Abs1",
-   * "DSGVO Art6 Abs1 litc", "DSGVO Art4 Z2"). Anchored on the marker, not on whitespace, so a
-   * multi-token abbreviation stays whole ("B-VG", "TKG 2021"); the leading letter (and, for the
-   * §-branch, the §-free abbreviation body) keeps a section-first string out of this branch.
-   * These run BEFORE the section-first branches — whose un-anchored regexes would otherwise read
-   * "§22 Abs1" as "§ <section> <abbreviation>" and mis-parse the abbreviation to "Abs1" — and
-   * BEFORE the BARE_ABBREVIATION fallback, which would otherwise swallow "DSGVO Art32" as a
-   * literal abbreviation and resolve nothing.
-   *
-   * The abbreviation ends on a non-space and the section-first `§` run is matched from its
-   * head, so a whitespace run or a run of `§` is scanned once rather than from every position
-   * in it. The captures are the ones the plain lazy forms take.
-   */
+function parseAbbreviationFirst(s: string): NormParse | null {
   const abbrevParagraph =
     /^([A-Za-zÄÖÜäöüß](?:[^§]*?[^§\s])?)\s+§+\s*(\d+\s?[a-zA-Z]?)(?:\s+\S.*)?$/.exec(s);
   if (abbrevParagraph) {
@@ -140,6 +256,75 @@ function parseNorm(input: string): NormParse | null {
       };
     }
   }
+  return null;
+}
+
+/**
+ * Parse a norm citation into an abbreviation and optional §/Artikel number. Handles both
+ * orders: section-first ("§ 6 DSG", "Art 10 B-VG") and abbreviation-first ("DSG §1",
+ * "EMRK Art8", "DSG §22 Abs1") — the latter is the shape ris_search_case_law emits in its
+ * `norms_cited` output, so a cited norm round-trips straight back into this lookup. Sub-provision
+ * refs (Abs / Z / lit / Satz) are dropped either way — RIS filters on the §/Artikel number only,
+ * and the document carries every Absatz — and a parse whose abbreviation is itself a lone
+ * sub-provision is no parse. The norm route reads a section with no law ("Art6 Abs1") through
+ * `parseSectionOnly` before this runs.
+ *
+ * A comma-joined entry ("DSG §1, §24", as VfGH headnotes cite several provisions of one law)
+ * parses its first provision, carrying the rest in `others` as their own cites. An EU recital
+ * cite, in either order ("DSGVO ErwGr47", "ErwGr 47 DSGVO"), parses to its act and recital number,
+ * so the route can name the act.
+ */
+function parseNorm(input: string): NormParse | null {
+  const s = input.trim();
+  const parsed = parseJoined(s) ?? parseSingle(s);
+  return parsed !== null && !SUB_PROVISION.test(parsed.abbreviation) ? parsed : null;
+}
+
+/** A §/Artikel number, or an EU recital, cited without a law. */
+interface SectionOnly {
+  readonly marker: '§' | 'Art' | 'ErwGr';
+  readonly number: string;
+}
+
+/**
+ * The provision a cite names when it names no law ("Art6 Abs1" → Art 6, "Erwägungsgrund 47" →
+ * ErwGr 47), else `null`.
+ */
+function parseSectionOnly(s: string): SectionOnly | null {
+  const section = SECTION_ONLY.exec(s);
+  if (section?.[2] !== undefined) {
+    return {
+      marker: section[1] === undefined ? 'Art' : '§',
+      number: section[2].replace(/\s+/g, ''),
+    };
+  }
+  const recital = RECITAL_ONLY.exec(s);
+  if (recital?.[1] !== undefined) return { marker: 'ErwGr', number: recital[1] };
+  return null;
+}
+
+/** The first provision of an abbreviation-first comma-joined entry, the rest as `others`. */
+function parseJoined(s: string): NormParse | null {
+  const comma = PROVISION_COMMA.exec(s);
+  if (comma === null) return null;
+  const head = parseAbbreviationFirst(s.slice(0, comma.index));
+  if (head === null) return null;
+  const others = s
+    .slice(comma.index)
+    .split(PROVISION_COMMA)
+    .map((provision) => provision.trim())
+    .filter((provision) => provision !== '')
+    .map((provision) => `${head.abbreviation} ${provision}`);
+  return { ...head, others };
+}
+
+/** One norm citation, in either order, or a bare abbreviation. */
+function parseSingle(s: string): NormParse | null {
+  const stripSubRefs = (rest: string): string =>
+    rest.replace(/^(?:Abs\.?\s*\d+\w?\s+|Z\s*\d+\s+|lit\.?\s*\w+\s+|Satz\s*\d+\s+)+/i, '').trim();
+
+  const abbreviationFirst = parseAbbreviationFirst(s);
+  if (abbreviationFirst !== null) return abbreviationFirst;
 
   const paragraph = /(?<!§)§+\s*(\d+\s?[a-zA-Z]?)\s+(\S.*)$/.exec(s);
   if (paragraph) {
@@ -162,6 +347,14 @@ function parseNorm(input: string): NormParse | null {
         sectionType: 'Artikel',
       };
     }
+  }
+  const recitalAfter = RECITAL_AFTER.exec(s);
+  if (recitalAfter?.[1] !== undefined && recitalAfter[2] !== undefined) {
+    return { abbreviation: recitalAfter[1], recital: recitalAfter[2] };
+  }
+  const recitalFirst = RECITAL_FIRST.exec(s);
+  if (recitalFirst?.[1] !== undefined && recitalFirst[2] !== undefined) {
+    return { abbreviation: recitalFirst[2].trim(), recital: recitalFirst[1] };
   }
   if (BARE_ABBREVIATION.test(s) && !s.includes('/')) return { abbreviation: s };
   return null;
@@ -681,19 +874,119 @@ function ecliGuidance(citation: string, court: RisCourtCode): string {
  * both the label and the retry recipe: `section_type` defaults to Paragraph once a section range
  * is set, so an Artikel recipe that omits it searches § N and returns zero even when the Artikel
  * exists. It is emitted for both types — the recipe is meant to be run verbatim, so it states the
- * filter rather than leaning on the default.
+ * filter rather than leaning on the default. A state-law miss carries its state into both
+ * retries as `scope`, which otherwise defaults to federal law.
  */
-function normGuidance(parsed: NormParse, date: string): string {
+function normGuidance(parsed: NormParse, date: string, state: RisStateCode | undefined): string {
   const { abbreviation, section, sectionType } = parsed;
   const head =
     section !== undefined
       ? `No document for ${abbreviation} ${sectionMarker(sectionType)} ${section} in force on ${date}.`
       : `No document for ${abbreviation} in force on ${date}.`;
+  const scope = state !== undefined ? `, scope: '${state}'` : '';
   const retry =
     section !== undefined
-      ? `retry ris_search_legislation with title: '${abbreviation}', section_from/to: '${section}', section_type: '${sectionType ?? 'Paragraph'}', include_all_versions: true.`
-      : `retry ris_search_legislation with title: '${abbreviation}', include_all_versions: true.`;
-  return `${head} If the provision existed at another time, ${retry} If the abbreviation is uncertain, search ris_search_legislation title: '${abbreviation}*'. State law resolves only with an explicit state hint.`;
+      ? `retry ris_search_legislation with title: '${abbreviation}', section_from/to: '${section}', section_type: '${sectionType ?? 'Paragraph'}'${scope}, include_all_versions: true.`
+      : `retry ris_search_legislation with title: '${abbreviation}'${scope}, include_all_versions: true.`;
+  const stateNote =
+    state === undefined ? ' State law resolves only with an explicit state hint.' : '';
+  return `${head} If the provision existed at another time, ${retry} If the abbreviation is uncertain, search ris_search_legislation title: '${abbreviation}*'${scope}.${stateNote}`;
+}
+
+/**
+ * Guidance for a norm-routed citation no norm shape reads ("DSG §1, Artenschutz", a case number
+ * forced to kind: norm) — nothing was searched, and a title search on the unread string is no
+ * retry, so the fix is the citation's shape.
+ */
+function unreadableNormGuidance(citation: string): string {
+  return `Could not read a norm citation from '${citation}'. A norm citation names a law by its abbreviation, with or without a §/Artikel number: '§ 6 DSG', 'Art 10 B-VG', 'DSG §1', or 'ABGB'. Formats: ris_list_reference topic citation_formats. For keyword search use ris_search_legislation with query.`;
+}
+
+/**
+ * Guidance for a cite naming a §/Artikel number but no law ("Art6 Abs1") — nothing to search,
+ * and a title search on the provision itself cannot succeed, so the fix is the missing law.
+ */
+function provisionWithoutLawGuidance(citation: string, provision: SectionOnly): string {
+  if (provision.marker === 'ErwGr') return recitalGuidance(citation, provision.number);
+  const label = `${provision.marker} ${provision.number}`;
+  return `'${citation}' names a provision, ${label}, but no law, so nothing was searched. Add the law's abbreviation: '<abbr> ${label}'. Formats: ris_list_reference topic citation_formats.`;
+}
+
+/**
+ * Guidance for a recital cite whose act is outside the EU-act set, or names no act — decided
+ * offline: only EU acts carry recitals, and none that RIS consolidates (AEUV, EUV, EMRK) does.
+ */
+function recitalGuidance(citation: string, recital: string, act?: string): string {
+  const cited =
+    act !== undefined ? `recital ${recital} of ${act}` : `recital ${recital} but no act`;
+  return `'${citation}' cites ${cited}. Only EU acts carry recitals, and RIS does not consolidate EU law, so nothing was searched. Find the act on EUR-Lex: https://eur-lex.europa.eu.`;
+}
+
+/**
+ * Guidance for a norm citation naming an EU act RIS does not consolidate — decided offline, so
+ * nothing was searched and no RIS retry can succeed. Names the act on EUR-Lex by CELEX (the cited
+ * one, when the citation led with one), and the case-law `norm` filter that finds Austrian
+ * decisions citing the provision, written the way `norms_cited` writes it. A `SectionOnly` cite
+ * reaches it only behind a leading CELEX, which then labels it.
+ */
+function euGuidance(
+  cite: NormParse | SectionOnly | string,
+  act: EuAct | undefined,
+  citedCelex: string | undefined,
+): string {
+  const celex = citedCelex ?? act?.celex;
+  /*
+   * The cite as labelled: its abbreviation and section; a bare section after a CELEX, by that
+   * CELEX ("Art 6 of CELEX 32016R0679"); a rest that did not parse, as written.
+   */
+  let label: string;
+  let identityCelex = celex;
+  let caseLawNorm: string | undefined;
+  if (typeof cite === 'string') {
+    label = cite;
+  } else if ('abbreviation' in cite) {
+    const marker = sectionMarker(cite.sectionType);
+    label =
+      cite.section !== undefined
+        ? `${cite.abbreviation} ${marker} ${cite.section}`
+        : cite.abbreviation;
+    if (cite.section !== undefined) caseLawNorm = `${cite.abbreviation} ${marker}${cite.section}`;
+  } else {
+    label = `${cite.marker} ${cite.number} of CELEX ${celex}`;
+    identityCelex = undefined;
+  }
+  // A cited CELEX the set files under another act names only itself — the act is not guessed.
+  const actName =
+    act !== undefined && (citedCelex === undefined || citedCelex === act.celex)
+      ? act.act
+      : undefined;
+  const identity = [actName, identityCelex !== undefined ? `CELEX ${identityCelex}` : undefined]
+    .filter((part) => part !== undefined)
+    .join(', ');
+  const eurLex =
+    celex !== undefined
+      ? `Read it on EUR-Lex: https://eur-lex.europa.eu/legal-content/DE/TXT/?uri=CELEX:${celex}.`
+      : 'Find the act on EUR-Lex: https://eur-lex.europa.eu.';
+  const caseLaw =
+    caseLawNorm !== undefined
+      ? ` Austrian decisions citing it: ris_search_case_law with a court (vfgh, vwgh, bvwg, dsk, or justiz) and norm: '${caseLawNorm}'.`
+      : '';
+  return `${label} is EU law${identity !== '' ? `: ${identity}` : ''}. RIS does not consolidate EU law, so nothing was searched. ${eurLex}${caseLaw}`;
+}
+
+/**
+ * Guidance for a cite led by an EU case-law CELEX ("62014CJ0362 Schrems", as VwGH and OGH cite a
+ * CJEU judgment) — decided offline: it names a court decision, which no RIS application holds.
+ */
+function euCaseLawGuidance(citation: string, celex: string): string {
+  const court = EU_COURT_BY_LETTER.get(celex.charAt(5)) ?? 'the EU courts';
+  return `'${citation}' cites EU case law: a decision of ${court}, CELEX ${celex}. RIS holds Austrian law and decisions only, so nothing was searched. Read it on EUR-Lex: https://eur-lex.europa.eu/legal-content/DE/TXT/?uri=CELEX:${celex}.`;
+}
+
+/** The sentence naming a comma-joined entry's other provisions; empty for a single provision. */
+function othersPhrase(others: readonly string[] | undefined): string {
+  if (others === undefined || others.length === 0) return '';
+  return ` The entry also cites ${joinCites(others)} — look ${others.length === 1 ? 'it' : 'each'} up as its own citation.`;
 }
 
 /**
@@ -963,7 +1256,7 @@ function todayInAustria(): string {
 export const risLookupCitation = tool('ris_lookup_citation', {
   title: 'Resolve Austrian Legal Citation',
   description:
-    'Resolve a single Austrian legal citation to its canonical RIS document deterministically — no keyword search. Four routes are auto-detected from the citation shape (or forced with kind): a norm citation — section-first ("§ 6 DSG", "Art 10 B-VG"), abbreviation-first ("DSG §1", "DSGVO Art32", the shape ris_search_case_law returns in norms_cited), or a bare abbreviation like "ABGB" — resolves through consolidated federal law, or a Bundesland with a state hint, as in force today or on in_force_as_of; a gazette citation ("BGBl. I Nr. 165/1999", year-first "BGBl I 2018/24", pre-2004 "BGBl. Nr. 194/1961", imperial "RGBl. Nr. 189/1902", "StGBl. Nr. 1/1945", or "LGBl. Nr. 61/2026" with a state hint) routes to the right federal era tier by year — the 1945 Staatsgesetzblatt sits in the 1945–2003 tier beside the BGBl. — or to a state Landesgesetzblatt — falling back to that Bundesland’s pre-e-Recht series when the citation predates its switch; a case number ("Ro 2026/03/0016", "G 287/2022", "14Os49/26a", "2025-0.934.677", "W256 …") is matched to its court — a leading VfGH, VwGH, OGH, BVwG, or DSB names it ("VfGH G 13/2025"), court skips detection, and ambiguous formats probe up to two courts; an ECLI ("ECLI:AT:VFGH:2026:G13.2025") resolves to the decision that carries it; a collection number ("VfSlg 19.632/2012", "VwSlg 18.000 A/2010") resolves through the VfGH/VwGH collection — a VwSlg cite given without its part letter can name one decision in each of the two VwGH series, and comes back as ambiguous with both cites named rather than resolved to one of them. Matches are ranked before one is picked: a norm resolves to the hit whose abbreviation is the cited one, then the cited one plus a year ("EStG" → EStG 1988), the exact §/Artikel label ahead of a prefixed one ("§ 1" before "Art. 2 § 1"); a case number resolves to the decision text, then to a Rechtssatz that decision leads; a gazette cite resolves only to an entry of the gazette it names (StGBl. and BGBl. share numbers in 1945, as the older gazettes do in their changeover years); and a "BGBl. Nr." cite without its part that matches more than one of parts I/II/III (from 1997 they reuse numbers) comes back as ambiguous with each part named. Returns the single best-matching document in the same shape as the corresponding search tool, with alternatives_count when more than one matched. A citation that cannot be classified or resolved returns found: false with next-step guidance — it never throws for a miss; only an upstream RIS outage is an error. For keyword rather than citation lookup, use ris_search_legislation or ris_search_case_law.',
+    'Resolve a single Austrian legal citation to its canonical RIS document deterministically — no keyword search. Four routes are auto-detected from the citation shape (or forced with kind): a norm citation — section-first ("§ 6 DSG", "Art 10 B-VG"), abbreviation-first ("DSG §1", "EMRK Art8", the shape ris_search_case_law returns in norms_cited; a comma-joined entry like "DSG §1, §24" resolves its first provision and names the rest), or a bare abbreviation like "ABGB" — resolves through consolidated federal law, or a Bundesland with a state hint, as in force today or on in_force_as_of, while an EU act RIS does not consolidate (DSGVO, the Charter, EuGVVO) returns found: false pointing to EUR-Lex without a search; a gazette citation ("BGBl. I Nr. 165/1999", year-first "BGBl I 2018/24", pre-2004 "BGBl. Nr. 194/1961", imperial "RGBl. Nr. 189/1902", "StGBl. Nr. 1/1945", or "LGBl. Nr. 61/2026" with a state hint) routes to the right federal era tier by year — the 1945 Staatsgesetzblatt sits in the 1945–2003 tier beside the BGBl. — or to a state Landesgesetzblatt — falling back to that Bundesland’s pre-e-Recht series when the citation predates its switch; a case number ("Ro 2026/03/0016", "G 287/2022", "14Os49/26a", "2025-0.934.677", "W256 …") is matched to its court — a leading VfGH, VwGH, OGH, BVwG, or DSB names it ("VfGH G 13/2025"), court skips detection, and ambiguous formats probe up to two courts; an ECLI ("ECLI:AT:VFGH:2026:G13.2025") resolves to the decision that carries it; a collection number ("VfSlg 19.632/2012", "VwSlg 18.000 A/2010") resolves through the VfGH/VwGH collection — a VwSlg cite given without its part letter can name one decision in each of the two VwGH series, and comes back as ambiguous with both cites named rather than resolved to one of them. Matches are ranked before one is picked: a norm resolves to the hit whose abbreviation is the cited one, then the cited one plus a year ("EStG" → EStG 1988), the exact §/Artikel label ahead of a prefixed one ("§ 1" before "Art. 2 § 1"); a case number resolves to the decision text, then to a Rechtssatz that decision leads; a gazette cite resolves only to an entry of the gazette it names (StGBl. and BGBl. share numbers in 1945, as the older gazettes do in their changeover years); and a "BGBl. Nr." cite without its part that matches more than one of parts I/II/III (from 1997 they reuse numbers) comes back as ambiguous with each part named. Returns the single best-matching document in the same shape as the corresponding search tool, with alternatives_count when more than one matched. A citation that cannot be classified or resolved returns found: false with next-step guidance — it never throws for a miss; only an upstream RIS outage is an error. For keyword rather than citation lookup, use ris_search_legislation or ris_search_case_law.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     citation: z
@@ -1012,7 +1305,26 @@ export const risLookupCitation = tool('ris_lookup_citation', {
   ],
 
   async handler(input, ctx): Promise<LookupResult> {
-    const citation = input.citation.replace(LINE_BREAKS, ' ').trim();
+    const raw = input.citation.replace(LINE_BREAKS, ' ').trim();
+    /*
+     * Under kind auto or norm, a leading CELEX is stripped before classification and kept; a
+     * forced case-number, gazette, or collection route takes the citation as given. An EU
+     * case-law CELEX names a court decision, not an act, and is answered here. A TFEU/TEU CELEX
+     * leaves the rest to resolve as usual, since RIS consolidates both treaties; any other names
+     * an EU act RIS does not hold, so the cite is an EU miss carrying that CELEX.
+     */
+    const readsNorm = input.kind === 'auto' || input.kind === 'norm';
+    const lead = readsNorm ? splitLeadingCelex(raw) : null;
+    if (lead?.celex.startsWith(CASE_LAW_SECTOR)) {
+      return {
+        found: false,
+        kind: input.kind === 'norm' ? 'norm' : 'unknown',
+        guidance: euCaseLawGuidance(raw, lead.celex),
+      };
+    }
+    const rest = lead?.rest ?? raw;
+    const citation = readsNorm ? dropGeneralReference(rest) : rest;
+    const euCelex = lead !== null && !TREATY_CELEX.test(lead.celex) ? lead.celex : undefined;
     const courtHint = input.court;
     const stateHint = input.state;
     const asOf = input.in_force_as_of ?? todayInAustria();
@@ -1043,7 +1355,12 @@ export const risLookupCitation = tool('ris_lookup_citation', {
       }
     };
 
-    const route = input.kind === 'auto' ? classify(citation, courtHint) : input.kind;
+    const route =
+      input.kind !== 'auto'
+        ? input.kind
+        : euCelex !== undefined
+          ? 'norm'
+          : classify(citation, courtHint);
 
     if (route === null) {
       return { found: false, kind: 'unknown', guidance: unknownGuidance(citation) };
@@ -1105,13 +1422,39 @@ export const risLookupCitation = tool('ris_lookup_citation', {
     }
 
     if (route === 'norm') {
-      const parsed = parseNorm(citation);
-      if (!parsed) {
+      // Read first: a bare abbreviation fallback would otherwise take "Art 6" for a title.
+      const sectionOnly = parseSectionOnly(citation);
+      const parsed = sectionOnly === null ? parseNorm(citation) : null;
+      /*
+       * An EU act RIS does not consolidate is decided here, before any request: every retry the
+       * miss guidance would offer (other versions, a wildcard title, a state hint) searches a
+       * corpus that cannot hold it, and a bare abbreviation would match a title that merely
+       * mentions the act. A state hint does not bypass it.
+       */
+      const euAct = parsed !== null ? euActOf(parsed.abbreviation) : undefined;
+      if (euAct !== undefined || euCelex !== undefined) {
         return {
           found: false,
           kind: 'norm',
-          guidance: normGuidance({ abbreviation: citation }, asOf),
+          guidance: `${euGuidance(parsed ?? sectionOnly ?? citation, euAct, euCelex)}${othersPhrase(parsed?.others)}`,
         };
+      }
+      if (sectionOnly !== null) {
+        return {
+          found: false,
+          kind: 'norm',
+          guidance: provisionWithoutLawGuidance(citation, sectionOnly),
+        };
+      }
+      if (parsed?.recital !== undefined) {
+        return {
+          found: false,
+          kind: 'norm',
+          guidance: recitalGuidance(citation, parsed.recital, parsed.abbreviation),
+        };
+      }
+      if (!parsed) {
+        return { found: false, kind: 'norm', guidance: unreadableNormGuidance(citation) };
       }
       const application: LegislationApplication = stateHint !== undefined ? 'LrKons' : 'BrKons';
       const params: LegislationSearchParams = {
@@ -1129,7 +1472,11 @@ export const risLookupCitation = tool('ris_lookup_citation', {
       const result = await runSearch(() => getRisService().searchLegislation(params, ctx));
       const hit = result ? pickRanked(result.hits, normRank(parsed)) : undefined;
       if (!result || hit === undefined) {
-        return { found: false, kind: 'norm', guidance: normGuidance(parsed, asOf) };
+        return {
+          found: false,
+          kind: 'norm',
+          guidance: `${normGuidance(parsed, asOf, stateHint)}${othersPhrase(parsed.others)}`,
+        };
       }
       const alternatives = result.total > 1 ? result.total - 1 : undefined;
       const sectionPhrase =
@@ -1153,7 +1500,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
         found: true,
         kind: 'norm',
         record: toLegislationRecord(hit, application),
-        resolution_note: `Resolved via ris_search_legislation (${application}) — title "${parsed.abbreviation}"${sectionPhrase}, in force ${asOf}.${alternativesRecipe(alternatives, 'ris_search_legislation', recipe)}`,
+        resolution_note: `Resolved via ris_search_legislation (${application}) — title "${parsed.abbreviation}"${sectionPhrase}, in force ${asOf}.${othersPhrase(parsed.others)}${alternativesRecipe(alternatives, 'ris_search_legislation', recipe)}`,
         ...(alternatives !== undefined && { alternatives_count: alternatives }),
       };
     }
