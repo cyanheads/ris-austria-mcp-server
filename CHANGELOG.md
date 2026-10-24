@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.5.4](changelog/0.5.x/0.5.4.md) — 2026-10-24
+
+ris_get_document and the document resource read from ogd.ris.bka.gv.at, since www.ris.bka.gv.at answers automated clients with a bot-check page (now a non-retryable content_host_blocked); ris_lookup_citation reads more norms_cited shapes, period-joined OGH norms included, and answers EC Treaty cites as EU misses.
+
 ## [0.5.3](changelog/0.5.x/0.5.3.md) — 2026-10-24
 
 ris_lookup_citation decides EU-act cites offline with EUR-Lex guidance and resolves comma-joined VfGH norms; page_size accepts 1–100; draft and track-changes records gain review_start, abbreviation, keywords, and in_force_from/in_force_until; celex_references keeps only CELEX numbers.

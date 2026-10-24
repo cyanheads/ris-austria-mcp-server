@@ -1,6 +1,6 @@
 # ris-austria-mcp-server - Directory Structure
 
-Generated on: 2026-10-24 09:06:46
+Generated on: 2026-10-24 20:17:02
 
 ```text
 ris-austria-mcp-server/
@@ -197,6 +197,7 @@ ris-austria-mcp-server/
 │   │       ├── error-500-page-overflow.json
 │   │       ├── error-500-unknown-application.json
 │   │       ├── error-500-vbl-invalid-state.json
+│   │       ├── error-503-security-check.html
 │   │       ├── error-client.json
 │   │       ├── history-brkons.json
 │   │       ├── history-gr.json
@@ -224,6 +225,7 @@ ris-austria-mcp-server/
 │   │       ├── search-bgblpdf-2003-12.json
 │   │       ├── search-bgblpdf-50-1999.json
 │   │       ├── search-bgblpdf-celex.json
+│   │       ├── search-brkons-alvg-1977.json
 │   │       ├── search-brkons-bvg-article-10.json
 │   │       ├── search-brkons-celex.json
 │   │       ├── search-brkons-dsg-section-6.json
