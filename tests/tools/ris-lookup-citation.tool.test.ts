@@ -3465,6 +3465,11 @@ describe('risLookupCitation — a cite reads as its plain form past sub-provisio
     // Unchanged: a lowercase spaced letter joins the section, and a "." ending a law stays.
     ['§ 448 b ZPO', '§ 448b ZPO', 'ZPO', '448b', 'Paragraph'],
     ['Art 15 a B-VG', 'Art 15a B-VG', 'B-VG', '15a', 'Artikel'],
+    // Unchanged: section-first, a spaced capital joins the section too and never reaches the
+    // law; only a Ziffer ("Z 2") is a sub-provision there. The index-letter drop is
+    // abbreviation-first only ("ABGB §1330 A" → § 1330).
+    ['Art 15 A B-VG', 'Art 15A B-VG', 'B-VG', '15A', 'Artikel'],
+    ['§ 1330 A ABGB', '§ 1330A ABGB', 'ABGB', '1330A', 'Paragraph'],
     ['§ 6 DSG.', '§ 6 DSG.', 'DSG.', '6', 'Paragraph'],
   ];
 
@@ -3888,6 +3893,19 @@ describe('risLookupCitation — the EU-act, comma-joined, ". "-joined, and sub-p
     ['repeated spaced "Z" with no number', (n: number) => `§ 1 ${'Z '.repeat(n / 2)}DSG`],
     ['repeated "Z." sub-provisions', (n: number) => `§ 1 ${'Z. 2 '.repeat(n / 5)}x`],
     ['repeated spaced lowercase letters', (n: number) => `DSG §1${' a'.repeat(n / 2)}`],
+    [
+      'repeated spaced capitals after a section-first number',
+      (n: number) => `§ 1 ${'A '.repeat(n / 2)}x`,
+    ],
+    [
+      'repeated section-first numbers before a spaced "Z"',
+      (n: number) => '§ 1 Z '.repeat(Math.floor(n / 6)),
+    ],
+    [
+      'repeated Artikel numbers before a spaced capital',
+      (n: number) => 'Art 1 A '.repeat(Math.floor(n / 8)),
+    ],
+    ['a whitespace run after a section-first spaced "Z"', (n: number) => `§ 1 Z${' '.repeat(n)}x`],
     ['repeated ordinals before a law', (n: number) => `${'1. '.repeat(Math.floor(n / 3))}x §1`],
     ['repeated ordinals and nothing else', (n: number) => '1.'.repeat(n / 2)],
     ['a run of semicolons after a section', (n: number) => `AbgEO §53${';'.repeat(n)}x`],
@@ -3974,6 +3992,11 @@ describe('risLookupCitation — the EU-act, comma-joined, ". "-joined, and sub-p
     ['an ordinal digit run', (n: number) => `${'1'.repeat(n)}. COVID-19-JuBG §1`],
     ['a day-of-month digit run before a month', (n: number) => `${'1'.repeat(n)}. Mai §1`],
     ['a section-first digit run before a parenthesis', (n: number) => `§ ${'1'.repeat(n)}(1) DSG`],
+    [
+      'a section-first digit run before a spaced capital',
+      (n: number) => `§ ${'1'.repeat(n)} A ABGB`,
+    ],
+    ['an Artikel digit run before a Ziffer', (n: number) => `Art ${'1'.repeat(n)} Z 2 B-VG`],
     ['an attached sub-provision digit run', (n: number) => `IPRG §4Abs.${'1'.repeat(n)}!`],
     ['a ". "-joined entry ending in a digit run', (n: number) => `ZPO §1. ZPO §${'1'.repeat(n)}`],
     ['a digit run before a ". "', (n: number) => `ZPO §${'1'.repeat(n)}. ZPO §2`],

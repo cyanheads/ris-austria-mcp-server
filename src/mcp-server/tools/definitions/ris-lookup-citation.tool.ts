@@ -89,11 +89,18 @@ const BARE_ABBREVIATION = new RegExp(
   String.raw`^${ABBREVIATION_START}[A-Za-zÄÖÜäöüß.]*(?:(?:-\s(?=und\s)|[-\s])[A-Za-zÄÖÜäöüß0-9]+)*$`,
 );
 /**
- * A §/Artikel number: digits and a letter suffix, written compact in either case ("3a",
- * "1330A") or after a space in lowercase only ("448 b"). A spaced capital is the next token —
- * "Z" opening "Z 2", or an OGH index letter ("ABGB §1330 A") — never part of the number.
+ * An abbreviation-first §/Artikel number: digits and a letter suffix, written compact in either
+ * case ("3a", "1330A") or after a space in lowercase only ("448 b"). A spaced capital is the
+ * next token — "Z" opening "Z 2", or an OGH index letter ("ABGB §1330 A") — never part of the
+ * number.
  */
 const SECTION_NUMBER = String.raw`\d+(?:[a-zA-Z]|\s[a-z])?`;
+/**
+ * A section-first §/Artikel number: a letter suffix after a space joins in either case ("Art 15 A
+ * B-VG" → 15A), since the law follows and an index letter has nowhere else to go — except a "Z"
+ * opening a Ziffer ("§ 4 Z 2 DSG"), which is a sub-provision.
+ */
+const SECTION_FIRST_NUMBER = String.raw`\d+(?:[a-zA-Z]|\s(?!Z\s*\d)[a-zA-Z])?`;
 /** The Artikel keyword, matched case-insensitively letter by letter so the rest keeps its case. */
 const ARTIKEL = String.raw`[Aa][Rr][Tt](?:[Ii][Kk][Ee][Ll])?\.?`;
 /** A parenthesized Absatz ("(1)", "(1a)"), as legal writing and EU cites write it. */
@@ -449,10 +456,10 @@ const LEADING_SUB_REFS = new RegExp(
 const SECTION_FIRST_GAP = String.raw`(?:\s+|(?=(?:${PAREN_ABSATZ})+\s))`;
 /** A section-first § or Artikel cite: the number, then the rest. */
 const SECTION_FIRST_PARAGRAPH = new RegExp(
-  String.raw`(?<!§)§+\s*(${SECTION_NUMBER})${SECTION_FIRST_GAP}(\S.*)$`,
+  String.raw`(?<!§)§+\s*(${SECTION_FIRST_NUMBER})${SECTION_FIRST_GAP}(\S.*)$`,
 );
 const SECTION_FIRST_ARTIKEL = new RegExp(
-  String.raw`\b${ARTIKEL}\s*(${SECTION_NUMBER})${SECTION_FIRST_GAP}(\S.*)$`,
+  String.raw`\b${ARTIKEL}\s*(${SECTION_FIRST_NUMBER})${SECTION_FIRST_GAP}(\S.*)$`,
 );
 
 /** One norm citation, in either order, or a bare abbreviation. */
