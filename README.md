@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.5.2-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/ris-austria-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.3.1-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/ris-austria-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/ris-austria-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.3-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.5.2-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/ris-austria-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.3.1-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/ris-austria-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/ris-austria-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.4-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -82,7 +82,7 @@ The resource mirrors `ris_get_document`, so tool-only clients lose nothing.
 ### `ris_search_drafts` <sub>tool</sub>
 
 - `stage` is required: `review_drafts` (with `in_review_on`) or `government_bills` (2004+, with `decided_from`/`decided_to`); `ministry` accepts an abbreviation such as "BMF" or a full designation
-- Records carry `review_deadline` or `decided`, plus `materials[]` (Erläuterungen, Textgegenüberstellung, Vorblatt/WFA, annexes) classified by `type`. Pass a `materials[].url` to `ris_get_document` to read one
+- Records carry `review_start` and `review_deadline` or `decided`, `abbreviation` and `keywords` where RIS supplies them, plus `materials[]` (Erläuterungen, Textgegenüberstellung, Vorblatt/WFA, annexes) classified by `type`. Pass a `materials[].url` to `ris_get_document` to read one
 
 ---
 
@@ -98,7 +98,7 @@ The resource mirrors `ris_get_document`, so tool-only clients lose nothing.
 
 - One `citation` per call, classified as a norm ("§ 6 DSG"), gazette number ("BGBl. I Nr. 165/1999"), case number ("VfGH G 13/2025") or ECLI, or collection number ("VfSlg 19.632/2012"). `kind` forces a route, `court` and `state` narrow it, and `in_force_as_of` pins a norm's version (default today)
 - Returns `found`, `kind`, and a `record` in the matching search tool's shape, with `alternatives_count` when several documents matched. A miss returns `found: false` with `guidance` instead of an error
-- A norm resolves to the cited law ("§ 2 EStG" → EStG 1988 § 2); "BGBl. Nr. 50/2025" without its part comes back ambiguous, naming parts I, II, and III
+- A norm resolves to the cited law ("§ 2 EStG" → EStG 1988 § 2), and a comma-joined entry ("DSG §1, §24") resolves its first provision and names the rest; an EU act RIS does not consolidate ("DSGVO Art32") returns `found: false` with its EUR-Lex link, without a RIS request; "BGBl. Nr. 50/2025" without its part comes back ambiguous, naming parts I, II, and III
 
 ---
 
@@ -114,7 +114,7 @@ The resource mirrors `ris_get_document`, so tool-only clients lose nothing.
 
 - `application` (any of the 39 codes) plus `changed_from`/`changed_to`; `include_deleted` adds removals, which no other tool reports
 - Records carry `changed`, `published`, and `binding_status`; deletions set `deleted: true` with `deleted_at`
-- Law rows carry `section_label` and `law_id`, and decision rows carry `case_numbers` and `decision_date`
+- Law rows carry `section_label`, `law_id`, and `in_force_from`/`in_force_until` (no end date is not the same as in force now), and decision rows carry `case_numbers` and `decision_date`
 
 ---
 
@@ -138,7 +138,7 @@ RIS-specific:
 
 - All 39 OGD applications: consolidated law, federal, state, district, and municipal gazettes, 17 court and tribunal collections, the lawmaking pipeline, and sectoral announcements
 - Citations resolve through exact filters (section plus title, gazette number, Geschäftszahl, Sammlungsnummer) rather than keyword search
-- Dates are `YYYY-MM-DD`; search tools page with `page` and `page_size` (10 or 20; default 20); omit a text filter rather than sending it blank
+- Dates are `YYYY-MM-DD`; search tools page with `page` and `page_size` (1–100, served as pages of 10 or 20; default 20); omit a text filter rather than sending it blank
 - Court, application, state, and ministry codes come from `ris_list_reference`
 - Tool descriptions are English; titles, field values, and RIS error messages stay German
 
