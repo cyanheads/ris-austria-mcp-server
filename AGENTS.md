@@ -2,7 +2,7 @@
 
 **Server:** ris-austria-mcp-server
 **Version:** 0.5.3
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.15`
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.16`
 **Engines:** Bun ≥1.4.0, Node ≥24.0.0
 **MCP SDK:** `@modelcontextprotocol/server` ^2.3.1
 **Zod:** ^4.6.7
@@ -108,19 +108,19 @@ export const risDocumentResource = resource('ris://document/{application}/{docum
 });
 ```
 
-The real handler maps `renderDocument` failures onto the resource's three-entry error contract and
+The real handler maps `renderDocument` failures onto the resource's four-entry error contract and
 degrades oversized documents to the same section outline as `ris_get_document`.
 
 ### Server config
 
 ```ts
-// src/config/server-config.ts — lazy-parsed, separate from framework config
+// src/config/server-config.ts — lazy-parsed and cached, first read in setup(); separate from framework config
 import { z } from '@cyanheads/mcp-ts-core';
 import { parseEnvConfig } from '@cyanheads/mcp-ts-core/config';
 
 const ServerConfigSchema = z.object({
   apiBaseUrl: z.url().default('https://data.bka.gv.at/ris/api/v2.6'),
-  contentBaseUrl: z.url().default('https://www.ris.bka.gv.at'),
+  contentBaseUrl: z.url().default('https://ogd.ris.bka.gv.at'),
   contact: z.string().optional(),
 });
 
@@ -158,6 +158,7 @@ await createApp({
   tools: [/* nine ris_* definitions */],
   resources: [risDocumentResource],
   setup(core) {
+    getServerConfig(); // parse RIS_* at startup so a bad value fails behind the config banner
     initRisService(core.config);
   },
 });

@@ -98,7 +98,7 @@ The resource mirrors `ris_get_document`, so tool-only clients lose nothing.
 
 - One `citation` per call, classified as a norm ("§ 6 DSG"), gazette number ("BGBl. I Nr. 165/1999"), case number ("VfGH G 13/2025") or ECLI, or collection number ("VfSlg 19.632/2012"). `kind` forces a route, `court` and `state` narrow it, and `in_force_as_of` pins a norm's version (default today)
 - Returns `found`, `kind`, and a `record` in the matching search tool's shape, with `alternatives_count` when several documents matched. A miss returns `found: false` with `guidance` instead of an error
-- A norm resolves to the cited law ("§ 2 EStG" → EStG 1988 § 2), and a comma-joined entry ("DSG §1, §24") resolves its first provision and names the rest; an EU act RIS does not consolidate ("DSGVO Art32") returns `found: false` with its EUR-Lex link, without a RIS request; "BGBl. Nr. 50/2025" without its part comes back ambiguous, naming parts I, II, and III
+- A norm resolves to the cited law ("§ 2 EStG" → EStG 1988 § 2, "AlVG 1977" → the AlVG, which RIS files without its year), its sub-provisions and a trailing ";" set aside ("Art. 6 (1) B-VG" → B-VG Art 6), an ordinal-led abbreviation read like any other ("1. COVID-19-JuBG §1"), and a comma-joined entry ("DSG §1, §24") or one joining full norms with ". " ("ZPO §179. ZPO §275 Abs2") resolves its first provision and names the rest; an EU act RIS does not consolidate ("DSGVO Art32") returns `found: false` with its EUR-Lex link, without a RIS request; "BGBl. Nr. 50/2025" without its part comes back ambiguous, naming parts I, II, and III
 
 ---
 
@@ -271,7 +271,7 @@ bun run rebuild
 | Variable | Description | Default |
 |:---|:---|:---|
 | `RIS_API_BASE_URL` | RIS OGD REST API base URL. | `https://data.bka.gv.at/ris/api/v2.6` |
-| `RIS_CONTENT_BASE_URL` | Document content host for rendition URLs. | `https://www.ris.bka.gv.at` |
+| `RIS_CONTENT_BASE_URL` | Document content host that rendition URLs are built on and documents are fetched from. `https://www.ris.bka.gv.at` answers automated clients with a bot-check page. | `https://ogd.ris.bka.gv.at` |
 | `RIS_CONTACT` | Contact string appended to the User-Agent. | none |
 | `MCP_TRANSPORT_TYPE` | Transport: `stdio` or `http`. | `stdio` |
 | `MCP_HTTP_PORT` | HTTP server port. | `3010` |
