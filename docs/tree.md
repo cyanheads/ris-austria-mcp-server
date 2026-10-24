@@ -1,6 +1,6 @@
 # ris-austria-mcp-server - Directory Structure
 
-Generated on: 2026-10-17 18:49:17
+Generated on: 2026-10-24 09:06:46
 
 ```text
 ris-austria-mcp-server/
@@ -207,6 +207,7 @@ ris-austria-mcp-server/
 │   │       ├── search-avn.json
 │   │       ├── search-avsv.json
 │   │       ├── search-begut-ogd.json
+│   │       ├── search-begut-review-window.json
 │   │       ├── search-begut.json
 │   │       ├── search-bgblalt-1-1918.json
 │   │       ├── search-bgblalt-1-1920.json
@@ -255,6 +256,7 @@ ris-austria-mcp-server/
 │   │       ├── search-mrp.json
 │   │       ├── search-normenliste-dsg.json
 │   │       ├── search-pruefgewo.json
+│   │       ├── search-regv-abkuerzung.json
 │   │       ├── search-regv.json
 │   │       ├── search-spg.json
 │   │       ├── search-upts-single.json
