@@ -71,23 +71,48 @@ const LINE_BREAKS = /[\n\r\p{Zl}\p{Zp}]+/gu;
 
 /** Gazette prefixes that signal a promulgation citation (federal, imperial, or state). */
 const GAZETTE_PREFIX = /\b(?:BGBl|RGBl|StGBl|LGBl)\b|GBl[ÖO]/i;
-/** A bare law abbreviation (whole-law reference) — letters/hyphens, an optional trailing year. */
-const BARE_ABBREVIATION = /^[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß.]*(?:[-\s][A-Za-zÄÖÜäöüß0-9]+)*$/;
+/** A letter, optionally after an ordinal — digits and a dot ("1. COVID-19-JuBG", "7.ZPMRK"). */
+const ORDINAL_LED_WORD = String.raw`(?:\d+\.\s?)?[A-Za-zÄÖÜäöüß]`;
+/**
+ * The start of a law abbreviation: a letter, optionally after an ordinal. Only an ordinal may
+ * lead, so a bare number or case number never reads as a law, and an ordinal before a whole
+ * month name is a date ("12. Mai", "3.Juli 2020"), never a law either. A month that runs on
+ * into a longer or hyphenated word is part of a title ("1. Mai-Gesetz").
+ */
+const ABBREVIATION_START = String.raw`(?!\d+\.\s?(?:Jänner|Januar|Feber|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)(?![A-Za-zÄÖÜäöüß-]))${ORDINAL_LED_WORD}`;
+/**
+ * A bare law abbreviation or short title (whole-law reference) — words joined by spaces or
+ * hyphens, an optional trailing year. A hyphen may end a word before "und", as German suspends
+ * it ("Steuer- und Zollkoordination 2004").
+ */
+const BARE_ABBREVIATION = new RegExp(
+  String.raw`^${ABBREVIATION_START}[A-Za-zÄÖÜäöüß.]*(?:(?:-\s(?=und\s)|[-\s])[A-Za-zÄÖÜäöüß0-9]+)*$`,
+);
+/**
+ * A §/Artikel number: digits and a letter suffix, written compact in either case ("3a",
+ * "1330A") or after a space in lowercase only ("448 b"). A spaced capital is the next token —
+ * "Z" opening "Z 2", or an OGH index letter ("ABGB §1330 A") — never part of the number.
+ */
+const SECTION_NUMBER = String.raw`\d+(?:[a-zA-Z]|\s[a-z])?`;
+/** The Artikel keyword, matched case-insensitively letter by letter so the rest keeps its case. */
+const ARTIKEL = String.raw`[Aa][Rr][Tt](?:[Ii][Kk][Ee][Ll])?\.?`;
+/** A parenthesized Absatz ("(1)", "(1a)"), as legal writing and EU cites write it. */
+const PAREN_ABSATZ = String.raw`\(\d+[a-z]?\)`;
 /**
  * A sub-provision token (Absatz, Ziffer, litera, Satz) — never a law abbreviation. Abs and Satz
  * match in any case ("Art6 abs1"); Z and lit only as RIS writes them, so a law named "LitG" or
  * "ZPO" is not caught.
  */
-const SUB_PROVISION_TOKEN = String.raw`(?:[Aa][Bb][Ss]\.?\s*\d+[a-z]?|Z\.?\s*\d+[a-z]?|lit\.?\s*[a-z]{1,2}|[Ss][Aa][Tt][Zz]\s*\d+)`;
+const SUB_PROVISION_TOKEN = String.raw`(?:[Aa][Bb][Ss]\.?\s*\d+[a-z]?|Z\.?\s*\d+[a-z]?|lit\.?\s*[a-z]{1,2}|[Ss][Aa][Tt][Zz]\s*\d+|${PAREN_ABSATZ})`;
 /** A sub-provision token on its own. */
 const SUB_PROVISION = new RegExp(`^${SUB_PROVISION_TOKEN}$`);
 /**
- * A §/Artikel number with no law — nothing after it but sub-provisions ("Art6 Abs1", "§ 6 Abs 1
- * Z 3", "§ 6"). The Artikel keyword is matched case-insensitively letter by letter, so the
- * sub-provision tokens keep their own case rules. Group 1 is set for a § section.
+ * A §/Artikel number with no law — nothing after it but sub-provisions and a terminal "." or ","
+ * ("Art6 Abs1", "§ 6 Abs 1 Z 3", "Art6(1)", "§ 6"). The sub-provision tokens keep their own case
+ * rules. Group 1 is set for a § section.
  */
 const SECTION_ONLY = new RegExp(
-  String.raw`^(?:(§)§*|[Aa][Rr][Tt](?:[Ii][Kk][Ee][Ll])?\.?)\s*(\d+(?:\s?[a-zA-Z])?)(?:\s*${SUB_PROVISION_TOKEN})*\s*$`,
+  String.raw`^(?:(§)§*|${ARTIKEL})\s*(\d+(?:\s?[a-zA-Z])?)(?:\s*${SUB_PROVISION_TOKEN})*[.,]?\s*$`,
 );
 /** The EU recital marker (Erwägungsgrund, abbreviated ErwGr) as a regex source, matched with `i`. */
 const RECITAL_MARKER = String.raw`(?:erwgr|erwägungsgrund|erwaegungsgrund)\.?\s*(\d+)`;
@@ -102,7 +127,7 @@ const RECITAL_ONLY = new RegExp(`^${RECITAL_MARKER}$`, 'i');
 const RECITAL_FIRST = new RegExp(String.raw`^${RECITAL_MARKER}\s+(\S.*)$`, 'i');
 /** An abbreviation-first recital cite ("DSGVO ErwGr47"): group 1 the act, group 2 the number. */
 const RECITAL_AFTER = new RegExp(
-  String.raw`^([A-Za-zÄÖÜäöüß](?:.*?\S)?)\s+${RECITAL_MARKER}(?:\s+\S.*)?$`,
+  String.raw`^(${ABBREVIATION_START}(?:.*?\S)?)\s+${RECITAL_MARKER}(?:\s+\S.*)?$`,
   'i',
 );
 /**
@@ -112,15 +137,34 @@ const RECITAL_AFTER = new RegExp(
  */
 const PROVISION_COMMA = /,\s*(?=§+\s*\d|art(?:ikel)?\.?\s*\d)/i;
 /**
+ * A ". " that may open another full norm — OGH (Justiz) headnotes join several, each naming its
+ * own law ("ZPO §179. ZPO §275 Abs2"). Only before the start of an abbreviation, and never after
+ * a sub-provision or Artikel keyword ("Abs. 1", "lit. a", "Art. 7"), whose value follows it. A
+ * Satz is written "Satz 2" or "2. Satz", so a ". " ends one ("EO §85 Abs2 2. Satz. EO §86") but
+ * never opens one, ordinal or not: the Satz is still part of the norm before it. A number after
+ * "idF" (or "idF der" / "idF des") is the ordinal of the amending act it names ("MRG §16 Abs1
+ * idF 3. WÄG Art 2"), never the end of a norm. The idF check sits after the "." so it runs only
+ * at a ".", scanning back over that one digit run. A date after a ". " still splits off ("ZPO §1.
+ * 12. Mai §2"), so the norm before it resolves and the date part is named as written.
+ */
+const NORM_SEPARATOR = new RegExp(
+  String.raw`(?<!\b(?:[Aa][Bb][Ss]|Z|lit|[Aa][Rr][Tt](?:[Ii][Kk][Ee][Ll])?))\.(?<!\bidF\s+(?:de[rs]\s+)?\d+\.)\s+(?=${ORDINAL_LED_WORD})(?!(?:\d+\.\s?)?[Ss][Aa][Tt][Zz](?![A-Za-zÄÖÜäöüß]))`,
+  'g',
+);
+/** A §/Artikel number after a law's name — what makes a part of a ". "-joined entry a norm. */
+const PROVISION_AFTER_LAW = new RegExp(String.raw`\s(?:§+|${ARTIKEL})\s*\d`);
+/**
  * A leading CELEX number — VwGH prefixes an EU norm with it ("32016R0679 DSGVO Art6 Abs1"):
  * sector digit, year, act-type letters, then the number or the "/TXT" a treaty text carries.
  */
 const LEADING_CELEX = /^([1-9]\d{4}[A-Z]{1,2}(?:\d+[A-Z]?|\/TXT))\s+(\S.*)$/;
 /**
  * A sector-1 TFEU (E) or TEU (M) CELEX, of one article ("12010E267") or the whole treaty
- * ("12012E/TXT") — RIS consolidates both treaties.
+ * ("12012E/TXT") — RIS consolidates both treaties. Only from 2008, the first post-Lisbon
+ * consolidation: an earlier E or M CELEX ("11997E175") names the EC Treaty or a pre-Lisbon TEU,
+ * whose articles RIS does not hold.
  */
-const TREATY_CELEX = /^1\d{4}[EM](?:\d|\/TXT$)/;
+const TREATY_CELEX = /^120(?:0[89]|[1-9]\d)[EM](?:\d|\/TXT$)/;
 /** The CELEX sector of EU case law ("62014CJ0362") — a court decision, never an act. */
 const CASE_LAW_SECTOR = '6';
 /**
@@ -144,6 +188,8 @@ const CHARTER: EuAct = {
   act: 'the Charter of Fundamental Rights of the European Union',
   celex: '12016P/TXT',
 };
+/** Renumbered at Amsterdam and consolidated several times, so no one CELEX names it. */
+const EC_TREATY: EuAct = { act: 'the Treaty establishing the European Community (EC Treaty)' };
 
 /**
  * EU acts cited by an abbreviation RIS consolidated law does not hold, keyed by the abbreviation
@@ -151,10 +197,14 @@ const CHARTER: EuAct = {
  * so an Austrian abbreviation that only starts with "EU" ("EU-JZG") is never caught. Derived
  * 2026-10-24 from `norms_cited` across dsk, bvwg, vwgh, vfgh, and justiz (OGH headnotes): each
  * abbreviation returned found: false when looked up live with an Artikel, and each CELEX resolves
- * on EUR-Lex. AEUV, EUV, and EMRK are absent on purpose — RIS consolidates all three.
+ * on EUR-Lex. AEUV, EUV, and EMRK are absent on purpose — RIS consolidates all three. EG and
+ * EGV (the EC Treaty) hold no RIS law of that abbreviation: a title search for "EG" matched EC
+ * agreements with third countries instead (2026-10-24).
  */
 const EU_ACTS: ReadonlyMap<string, EuAct> = new Map([
   ['dsgvo', { act: 'Regulation (EU) 2016/679', celex: '32016R0679' }],
+  ['eg', EC_TREATY],
+  ['egv', EC_TREATY],
   ['grc', CHARTER],
   ['eu-grc', CHARTER],
   ['eu-grundrechte-charta', CHARTER],
@@ -202,7 +252,8 @@ interface NormParse {
   readonly abbreviation: string;
   /**
    * The other provisions of a comma-joined entry, each as its own cite ("DSG §24" from
-   * "DSG §1, §24"). Absent for a single provision.
+   * "DSG §1, §24"), and the other norms of a ". "-joined one as written ("ZPO §275 Abs2" from
+   * "ZPO §179. ZPO §275 Abs2"). Absent for a single provision.
    */
   readonly others?: readonly string[];
   /** The recital number of an EU recital cite ("47" from "DSGVO ErwGr47"); no section then. */
@@ -217,23 +268,46 @@ function sectionMarker(sectionType: NormParse['sectionType']): string {
 }
 
 /**
+ * A citation without the ";" ending it — every VwGH `norms_cited` entry of the 1990s and 2000s
+ * ends in one ("AbgEO §53;"). Only the last character: a ";" elsewhere is left to the parse.
+ */
+function dropTerminalSemicolon(citation: string): string {
+  return citation.endsWith(';') ? citation.slice(0, -1).trimEnd() : citation;
+}
+
+/**
+ * What may follow an abbreviation-first section number: attached sub-provisions ("§6(1)",
+ * "§7Abs2", "§4Abs.1"), then the end, a terminal "." or "," ("DSG §1.", "B-VG Art7,"), or
+ * whitespace and sub-provisions, which are discarded. A compact capital still joins the number
+ * ("§1330A") unless it opens an attached sub-provision ("§4Abs1", "§4Z2"), which the number then
+ * ends before. A "." with more after it is no terminal one, so "ZPO §179. ZPO §275" (two norms)
+ * is left to `parseChain`.
+ */
+const SECTION_TAIL = String.raw`(?:${SUB_PROVISION_TOKEN})*(?:[.,]|\s+\S.*)?$`;
+const ABBREV_PARAGRAPH = new RegExp(
+  String.raw`^(${ABBREVIATION_START}(?:[^§]*?[^§\s])?)\s+§+\s*(${SECTION_NUMBER})${SECTION_TAIL}`,
+);
+const ABBREV_ARTIKEL = new RegExp(
+  String.raw`^(${ABBREVIATION_START}(?:.*?\S)?)\s+${ARTIKEL}\s*(${SECTION_NUMBER})${SECTION_TAIL}`,
+);
+
+/**
  * Parse the abbreviation-first shape — the abbreviation precedes the §/Artikel marker ("DSG §1",
  * "EMRK Art8"), optionally with a trailing sub-provision that is discarded ("DSG §22 Abs1",
- * "DSGVO Art6 Abs1 litc", "DSGVO Art4 Z2"). Anchored on the marker, not on whitespace, so a
- * multi-token abbreviation stays whole ("B-VG", "TKG 2021"); the leading letter (and, for the
- * §-branch, the §-free abbreviation body) keeps a section-first string out of this branch.
- * `parseNorm` runs it BEFORE the section-first branches — whose un-anchored regexes would
- * otherwise read "§22 Abs1" as "§ <section> <abbreviation>" and mis-parse the abbreviation to
- * "Abs1" — and BEFORE the BARE_ABBREVIATION fallback, which would otherwise swallow "EMRK Art8"
- * as a literal abbreviation and resolve nothing.
+ * "DSGVO Art6 Abs1 litc", "DSGVO Art4 Z2", "DSG §6(1)", "IPRG §4Abs.1"). Anchored on the marker,
+ * not on whitespace, so a multi-token abbreviation stays whole ("B-VG", "TKG 2021"); the leading
+ * letter or ordinal (and, for the §-branch, the §-free abbreviation body) keeps a section-first
+ * string out of this branch. `parseNorm` runs it BEFORE the section-first branches — whose
+ * un-anchored regexes would otherwise read "§22 Abs1" as "§ <section> <abbreviation>" and
+ * mis-parse the abbreviation to "Abs1" — and BEFORE the BARE_ABBREVIATION fallback, which would
+ * otherwise swallow "EMRK Art8" as a literal abbreviation and resolve nothing.
  *
  * The abbreviation ends on a non-space and the section-first `§` run is matched from its head,
  * so a whitespace run or a run of `§` is scanned once rather than from every position in it.
  * The captures are the ones the plain lazy forms take.
  */
 function parseAbbreviationFirst(s: string): NormParse | null {
-  const abbrevParagraph =
-    /^([A-Za-zÄÖÜäöüß](?:[^§]*?[^§\s])?)\s+§+\s*(\d+\s?[a-zA-Z]?)(?:\s+\S.*)?$/.exec(s);
+  const abbrevParagraph = ABBREV_PARAGRAPH.exec(s);
   if (abbrevParagraph) {
     const [, abbreviation, section] = abbrevParagraph;
     if (abbreviation !== undefined && section !== undefined) {
@@ -244,8 +318,7 @@ function parseAbbreviationFirst(s: string): NormParse | null {
       };
     }
   }
-  const abbrevArtikel =
-    /^([A-Za-zÄÖÜäöüß](?:.*?\S)?)\s+art(?:ikel)?\.?\s*(\d+\s?[a-zA-Z]?)(?:\s+\S.*)?$/i.exec(s);
+  const abbrevArtikel = ABBREV_ARTIKEL.exec(s);
   if (abbrevArtikel) {
     const [, abbreviation, section] = abbrevArtikel;
     if (abbreviation !== undefined && section !== undefined) {
@@ -264,19 +337,20 @@ function parseAbbreviationFirst(s: string): NormParse | null {
  * orders: section-first ("§ 6 DSG", "Art 10 B-VG") and abbreviation-first ("DSG §1",
  * "EMRK Art8", "DSG §22 Abs1") — the latter is the shape ris_search_case_law emits in its
  * `norms_cited` output, so a cited norm round-trips straight back into this lookup. Sub-provision
- * refs (Abs / Z / lit / Satz) are dropped either way — RIS filters on the §/Artikel number only,
+ * refs (Abs / Z / lit / Satz / "(1)") are dropped either way — RIS filters on the §/Artikel number only,
  * and the document carries every Absatz — and a parse whose abbreviation is itself a lone
  * sub-provision is no parse. The norm route reads a section with no law ("Art6 Abs1") through
  * `parseSectionOnly` before this runs.
  *
  * A comma-joined entry ("DSG §1, §24", as VfGH headnotes cite several provisions of one law)
- * parses its first provision, carrying the rest in `others` as their own cites. An EU recital
- * cite, in either order ("DSGVO ErwGr47", "ErwGr 47 DSGVO"), parses to its act and recital number,
- * so the route can name the act.
+ * parses its first provision, carrying the rest in `others` as their own cites; an entry joining
+ * full norms with ". " ("ZPO §179. ZPO §275 Abs2", as OGH headnotes do) parses its first norm the
+ * same way. An EU recital cite, in either order ("DSGVO ErwGr47", "ErwGr 47 DSGVO"), parses to its
+ * act and recital number, so the route can name the act.
  */
 function parseNorm(input: string): NormParse | null {
   const s = input.trim();
-  const parsed = parseJoined(s) ?? parseSingle(s);
+  const parsed = parseChain(s) ?? parseJoined(s) ?? parseSingle(s);
   return parsed !== null && !SUB_PROVISION.test(parsed.abbreviation) ? parsed : null;
 }
 
@@ -318,15 +392,77 @@ function parseJoined(s: string): NormParse | null {
   return { ...head, others };
 }
 
+/**
+ * The first norm of an entry joining full norms with ". ", the rest as `others` — each later
+ * norm as written, or each of its comma-joined provisions as its own cite. A part ends at a
+ * separator once it names a §/Artikel number after a law, so a "." inside a law's name stays in
+ * it ("Bgld. Kinder- und JugendhilfeG 2013 §5"); an entry whose last part names none is no
+ * chain ("EO §85 Abs2 2. Satz"). Each stretch between separators is tested once.
+ */
+function parseChain(s: string): NormParse | null {
+  let first: string | undefined;
+  const rest: string[] = [];
+  let start = 0;
+  let stretch = 0;
+  let named = false;
+  for (const separator of s.matchAll(NORM_SEPARATOR)) {
+    named ||= PROVISION_AFTER_LAW.test(s.slice(stretch, separator.index));
+    stretch = separator.index + separator[0].length;
+    if (!named) continue;
+    const part = s.slice(start, separator.index).trimEnd();
+    if (first === undefined) first = part;
+    else rest.push(part);
+    start = stretch;
+    named = false;
+  }
+  if (first === undefined || !PROVISION_AFTER_LAW.test(s.slice(stretch))) return null;
+  rest.push(s.slice(start));
+  const head = parseJoined(first) ?? parseAbbreviationFirst(first);
+  if (head === null) return null;
+  return { ...head, others: [...(head.others ?? []), ...rest.flatMap(partCites)] };
+}
+
+/** The cites one later part of a ". "-joined entry names: each comma-joined provision, or itself. */
+function partCites(part: string): string[] {
+  const comma = PROVISION_COMMA.exec(part);
+  if (comma === null) return [part];
+  const joined = parseJoined(part);
+  return joined === null
+    ? [part]
+    : [part.slice(0, comma.index).trimEnd(), ...(joined.others ?? [])];
+}
+
+/**
+ * The sub-provisions leading a section-first rest ("Abs. 1 Z. 2 DSG", "(1) lit. a B-VG"), so
+ * the law after them is the abbreviation. Each token needs whitespace after it, a parenthesized
+ * Absatz another one ("(1)(2)") — never punctuation, which is no law.
+ */
+const LEADING_SUB_REFS = new RegExp(
+  String.raw`^(?:Abs\.?\s*\d+\w?\s+|Z\.?\s*\d+\s+|lit\.?\s*\w+\s+|Satz\s*\d+\s+|${PAREN_ABSATZ}(?:\s+|(?=\()))+`,
+  'i',
+);
+/**
+ * What follows a section-first number before the rest (sub-provisions and the law): whitespace,
+ * or attached parenthesized Absätze and then whitespace ("Art 6(1) B-VG"). "§179(1). ZPO §275"
+ * is no section-first cite of a law named ". ZPO".
+ */
+const SECTION_FIRST_GAP = String.raw`(?:\s+|(?=(?:${PAREN_ABSATZ})+\s))`;
+/** A section-first § or Artikel cite: the number, then the rest. */
+const SECTION_FIRST_PARAGRAPH = new RegExp(
+  String.raw`(?<!§)§+\s*(${SECTION_NUMBER})${SECTION_FIRST_GAP}(\S.*)$`,
+);
+const SECTION_FIRST_ARTIKEL = new RegExp(
+  String.raw`\b${ARTIKEL}\s*(${SECTION_NUMBER})${SECTION_FIRST_GAP}(\S.*)$`,
+);
+
 /** One norm citation, in either order, or a bare abbreviation. */
 function parseSingle(s: string): NormParse | null {
-  const stripSubRefs = (rest: string): string =>
-    rest.replace(/^(?:Abs\.?\s*\d+\w?\s+|Z\s*\d+\s+|lit\.?\s*\w+\s+|Satz\s*\d+\s+)+/i, '').trim();
+  const stripSubRefs = (rest: string): string => rest.replace(LEADING_SUB_REFS, '').trim();
 
   const abbreviationFirst = parseAbbreviationFirst(s);
   if (abbreviationFirst !== null) return abbreviationFirst;
 
-  const paragraph = /(?<!§)§+\s*(\d+\s?[a-zA-Z]?)\s+(\S.*)$/.exec(s);
+  const paragraph = SECTION_FIRST_PARAGRAPH.exec(s);
   if (paragraph) {
     const [, section, rest] = paragraph;
     if (section !== undefined && rest !== undefined) {
@@ -337,7 +473,7 @@ function parseSingle(s: string): NormParse | null {
       };
     }
   }
-  const artikel = /\bart(?:ikel)?\.?\s*(\d+\s?[a-zA-Z]?)\s+(\S.*)$/i.exec(s);
+  const artikel = SECTION_FIRST_ARTIKEL.exec(s);
   if (artikel) {
     const [, section, rest] = artikel;
     if (section !== undefined && rest !== undefined) {
@@ -722,13 +858,14 @@ function comparableAbbreviation(value: string): string {
   return value.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
-/** True when `abbreviation` is the cited one plus a year ("estg 1988" for "estg"). */
-function isCitedPlusYear(abbreviation: string, cited: string): boolean {
-  return (
-    abbreviation.length === cited.length + 5 &&
-    abbreviation.startsWith(`${cited} `) &&
-    /^\d{4}$/.test(abbreviation.slice(cited.length + 1))
-  );
+/** An abbreviation split from a trailing year ("alvg" and "1977" from "alvg 1977"). */
+function splitTrailingYear(abbreviation: string): { base: string; year: string } | undefined {
+  const year = abbreviation.slice(-4);
+  return abbreviation.length > 5 &&
+    abbreviation.charAt(abbreviation.length - 5) === ' ' &&
+    /^\d{4}$/.test(year)
+    ? { base: abbreviation.slice(0, -5), year }
+    : undefined;
 }
 
 /**
@@ -746,20 +883,37 @@ function isExactSectionLabel(label: string | undefined, parsed: NormParse): bool
 
 /**
  * Rank a consolidated-law hit against a norm citation: the cited abbreviation (0–1), then the
- * cited abbreviation plus a year — "EStG 1988" for "EStG" (2–3), each with the exact section
- * label ahead of a prefixed one. A hit whose abbreviation is neither keeps its RIS position
- * behind them (4): `Titel` matches anywhere in the title, so the first hits for "UGB" are the
- * UGB-Formblatt-V and the UGB-Schwellenwerte-Verordnung, and a state law's abbreviation can
- * carry a prefix the cite omits ("Stmk. BauG").
+ * cited abbreviation plus a year — "EStG 1988" for "EStG" (2–3), then, for a cite ending in a
+ * year, the cited abbreviation without it, when the hit's short title carries that year —
+ * "AlVG" for "AlVG 1977", filed under "Arbeitslosenversicherungsgesetz 1977" (4–5). Each tier
+ * puts the exact section label ahead of a prefixed one. The short-title check keeps a cite of a
+ * newer law ("TKG 2021") off an older one RIS files under the bare abbreviation, since `Titel`
+ * also matches a year outside the law's name; the year is any whitespace-separated word of the
+ * short title, since RIS often writes a non-breaking space before it. A hit whose abbreviation
+ * is none of these keeps its RIS position behind them (6): `Titel` matches anywhere in the
+ * title, so the first hits for "UGB" are the UGB-Formblatt-V and the
+ * UGB-Schwellenwerte-Verordnung, and a state law's abbreviation can carry a prefix the cite
+ * omits ("Stmk. BauG").
  */
 function normRank(parsed: NormParse): (hit: RisHit) => number {
   const cited = comparableAbbreviation(parsed.abbreviation);
+  const dated = splitTrailingYear(cited);
+  const unranked = 6;
   return ({ metadata }) => {
-    if (metadata.controller !== 'Bundesrecht' && metadata.controller !== 'Landesrecht') return 4;
-    if (metadata.abbreviation === undefined) return 4;
+    if (metadata.controller !== 'Bundesrecht' && metadata.controller !== 'Landesrecht') {
+      return unranked;
+    }
+    if (metadata.abbreviation === undefined) return unranked;
     const abbreviation = comparableAbbreviation(metadata.abbreviation);
-    const tier = abbreviation === cited ? 0 : isCitedPlusYear(abbreviation, cited) ? 1 : undefined;
-    if (tier === undefined) return 4;
+    const tier =
+      abbreviation === cited
+        ? 0
+        : splitTrailingYear(abbreviation)?.base === cited
+          ? 1
+          : abbreviation === dated?.base && metadata.shortTitle?.split(/\s+/).includes(dated.year)
+            ? 2
+            : undefined;
+    if (tier === undefined) return unranked;
     return tier * 2 + (isExactSectionLabel(metadata.sectionLabel, parsed) ? 0 : 1);
   };
 }
@@ -1256,7 +1410,7 @@ function todayInAustria(): string {
 export const risLookupCitation = tool('ris_lookup_citation', {
   title: 'Resolve Austrian Legal Citation',
   description:
-    'Resolve a single Austrian legal citation to its canonical RIS document deterministically — no keyword search. Four routes are auto-detected from the citation shape (or forced with kind): a norm citation — section-first ("§ 6 DSG", "Art 10 B-VG"), abbreviation-first ("DSG §1", "EMRK Art8", the shape ris_search_case_law returns in norms_cited; a comma-joined entry like "DSG §1, §24" resolves its first provision and names the rest), or a bare abbreviation like "ABGB" — resolves through consolidated federal law, or a Bundesland with a state hint, as in force today or on in_force_as_of, while an EU act RIS does not consolidate (DSGVO, the Charter, EuGVVO) returns found: false pointing to EUR-Lex without a search; a gazette citation ("BGBl. I Nr. 165/1999", year-first "BGBl I 2018/24", pre-2004 "BGBl. Nr. 194/1961", imperial "RGBl. Nr. 189/1902", "StGBl. Nr. 1/1945", or "LGBl. Nr. 61/2026" with a state hint) routes to the right federal era tier by year — the 1945 Staatsgesetzblatt sits in the 1945–2003 tier beside the BGBl. — or to a state Landesgesetzblatt — falling back to that Bundesland’s pre-e-Recht series when the citation predates its switch; a case number ("Ro 2026/03/0016", "G 287/2022", "14Os49/26a", "2025-0.934.677", "W256 …") is matched to its court — a leading VfGH, VwGH, OGH, BVwG, or DSB names it ("VfGH G 13/2025"), court skips detection, and ambiguous formats probe up to two courts; an ECLI ("ECLI:AT:VFGH:2026:G13.2025") resolves to the decision that carries it; a collection number ("VfSlg 19.632/2012", "VwSlg 18.000 A/2010") resolves through the VfGH/VwGH collection — a VwSlg cite given without its part letter can name one decision in each of the two VwGH series, and comes back as ambiguous with both cites named rather than resolved to one of them. Matches are ranked before one is picked: a norm resolves to the hit whose abbreviation is the cited one, then the cited one plus a year ("EStG" → EStG 1988), the exact §/Artikel label ahead of a prefixed one ("§ 1" before "Art. 2 § 1"); a case number resolves to the decision text, then to a Rechtssatz that decision leads; a gazette cite resolves only to an entry of the gazette it names (StGBl. and BGBl. share numbers in 1945, as the older gazettes do in their changeover years); and a "BGBl. Nr." cite without its part that matches more than one of parts I/II/III (from 1997 they reuse numbers) comes back as ambiguous with each part named. Returns the single best-matching document in the same shape as the corresponding search tool, with alternatives_count when more than one matched. A citation that cannot be classified or resolved returns found: false with next-step guidance — it never throws for a miss; only an upstream RIS outage is an error. For keyword rather than citation lookup, use ris_search_legislation or ris_search_case_law.',
+    'Resolve a single Austrian legal citation to its canonical RIS document deterministically — no keyword search. Four routes are auto-detected from the citation shape (or forced with kind): a norm citation — section-first ("§ 6 DSG", "Art 10 B-VG"), abbreviation-first ("DSG §1", "EMRK Art8", the shape ris_search_case_law returns in norms_cited; a comma-joined entry like "DSG §1, §24", or one joining full norms with ". " like "ZPO §179. ZPO §275 Abs2", resolves its first provision and names the rest), or a bare abbreviation like "ABGB" or "1. COVID-19-JuBG", with sub-provisions (Abs, Z, lit, "(1)") and a terminal ";" dropped — resolves through consolidated federal law, or a Bundesland with a state hint, as in force today or on in_force_as_of, while an EU act RIS does not consolidate (DSGVO, the Charter, EuGVVO, the EC Treaty as EG) returns found: false pointing to EUR-Lex without a search; a gazette citation ("BGBl. I Nr. 165/1999", year-first "BGBl I 2018/24", pre-2004 "BGBl. Nr. 194/1961", imperial "RGBl. Nr. 189/1902", "StGBl. Nr. 1/1945", or "LGBl. Nr. 61/2026" with a state hint) routes to the right federal era tier by year — the 1945 Staatsgesetzblatt sits in the 1945–2003 tier beside the BGBl. — or to a state Landesgesetzblatt — falling back to that Bundesland’s pre-e-Recht series when the citation predates its switch; a case number ("Ro 2026/03/0016", "G 287/2022", "14Os49/26a", "2025-0.934.677", "W256 …") is matched to its court — a leading VfGH, VwGH, OGH, BVwG, or DSB names it ("VfGH G 13/2025"), court skips detection, and ambiguous formats probe up to two courts; an ECLI ("ECLI:AT:VFGH:2026:G13.2025") resolves to the decision that carries it; a collection number ("VfSlg 19.632/2012", "VwSlg 18.000 A/2010") resolves through the VfGH/VwGH collection — a VwSlg cite given without its part letter can name one decision in each of the two VwGH series, and comes back as ambiguous with both cites named rather than resolved to one of them. Matches are ranked before one is picked: a norm resolves to the hit whose abbreviation is the cited one, then the cited one plus a year ("EStG" → EStG 1988), then the cited one without a year RIS’s abbreviation omits, when the law’s short title carries it ("AlVG 1977" → AlVG), the exact §/Artikel label ahead of a prefixed one ("§ 1" before "Art. 2 § 1"); a case number resolves to the decision text, then to a Rechtssatz that decision leads; a gazette cite resolves only to an entry of the gazette it names (StGBl. and BGBl. share numbers in 1945, as the older gazettes do in their changeover years); and a "BGBl. Nr." cite without its part that matches more than one of parts I/II/III (from 1997 they reuse numbers) comes back as ambiguous with each part named. Returns the single best-matching document in the same shape as the corresponding search tool, with alternatives_count when more than one matched. A citation that cannot be classified or resolved returns found: false with next-step guidance — it never throws for a miss; only an upstream RIS outage is an error. For keyword rather than citation lookup, use ris_search_legislation or ris_search_case_law.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     citation: z
@@ -1305,15 +1459,17 @@ export const risLookupCitation = tool('ris_lookup_citation', {
   ],
 
   async handler(input, ctx): Promise<LookupResult> {
-    const raw = input.citation.replace(LINE_BREAKS, ' ').trim();
     /*
-     * Under kind auto or norm, a leading CELEX is stripped before classification and kept; a
-     * forced case-number, gazette, or collection route takes the citation as given. An EU
-     * case-law CELEX names a court decision, not an act, and is answered here. A TFEU/TEU CELEX
-     * leaves the rest to resolve as usual, since RIS consolidates both treaties; any other names
-     * an EU act RIS does not hold, so the cite is an EU miss carrying that CELEX.
+     * Under kind auto or norm, a terminal ";" is dropped and a leading CELEX is stripped before
+     * classification and kept; a forced case-number, gazette, or collection route takes the
+     * citation as given. An EU case-law CELEX names a court decision, not an act, and is
+     * answered here. A post-Lisbon TFEU/TEU CELEX leaves the rest to resolve as usual, since RIS
+     * consolidates both treaties; any other names an EU act RIS does not hold, so the cite is an
+     * EU miss carrying that CELEX.
      */
     const readsNorm = input.kind === 'auto' || input.kind === 'norm';
+    const given = input.citation.replace(LINE_BREAKS, ' ').trim();
+    const raw = readsNorm ? dropTerminalSemicolon(given) : given;
     const lead = readsNorm ? splitLeadingCelex(raw) : null;
     if (lead?.celex.startsWith(CASE_LAW_SECTOR)) {
       return {
