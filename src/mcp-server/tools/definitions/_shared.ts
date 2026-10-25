@@ -7,9 +7,25 @@
 import type { TypedFail } from '@cyanheads/mcp-ts-core';
 import { z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError, validationError } from '@cyanheads/mcp-ts-core/errors';
+import { markdownLink } from '@cyanheads/mcp-ts-core/utils';
 
 import { foldStateName } from '@/services/ris/reference/index.js';
 import { type RisPageSize, UNRESOLVED_MINISTRY_REASON } from '@/services/ris/request-builder.js';
+import type { RisContentFormat } from '@/services/ris/ris-service.js';
+
+/**
+ * Markdown links to the renditions a `content_urls` object carries, in html/pdf/rtf/xml order.
+ * The order is spelled out here (not read from `RIS_CONTENT_FORMATS`) so this module needs no
+ * runtime import of the service, which tool tests replace with a partial mock.
+ */
+export function renditionLinks(
+  urls: Partial<Record<RisContentFormat, string | undefined>>,
+): string[] {
+  return (['html', 'pdf', 'rtf', 'xml'] as const).flatMap((format) => {
+    const url = urls[format];
+    return url === undefined ? [] : [markdownLink(format.toUpperCase(), url)];
+  });
+}
 
 /** Months with 30 days — the only non-February lengths a day of 31 can overshoot. */
 const THIRTY_DAY_MONTHS = new Set([4, 6, 9, 11]);

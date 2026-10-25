@@ -25,7 +25,19 @@ import { risSearchGazette } from '@/mcp-server/tools/definitions/ris-search-gaze
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import { buildGazetteRequest, type GazetteSearchParams } from '@/services/ris/request-builder.js';
 
-import { contentText, contractError, expectArgumentRejection, type WireError } from './_wire.js';
+import {
+  contentText,
+  contractError,
+  expectArgumentRejection,
+  expectReadBack,
+  HOSTILE_TEXT,
+  hostileHit,
+  linkDestinations,
+  readCommonMark,
+  stringLeaves,
+  WEB_URL,
+  type WireError,
+} from './_wire.js';
 
 const { searchGazette } = vi.hoisted(() => ({ searchGazette: vi.fn() }));
 
@@ -865,8 +877,14 @@ describe('risSearchGazette — record mapping, binding labels, and format() pari
     expect(first.alex_url).toContain('alex.onb.ac.at');
     expect(first.document_url).toContain('ris.bka.gv.at');
     const text = (risSearchGazette.format!(result)[0] as { type: 'text'; text: string }).text;
-    expect(text).toContain(`**ÖNB scan:** ${first.alex_url}`);
-    expect(text).toContain(`**RIS view:** ${first.document_url}`);
+    const read = readCommonMark(text);
+    expect(read).toContain(`⟨strong⟩ÖNB scan:⟨/strong⟩ ⟨a⟩${first.alex_url}⟨/a⟩`);
+    expect(read).toContain(`⟨strong⟩RIS view:⟨/strong⟩ ⟨a⟩${first.document_url}⟨/a⟩`);
+    expect(linkDestinations(text).toSorted()).toEqual(
+      stringLeaves(result.results)
+        .filter((s) => WEB_URL.test(s))
+        .toSorted(),
+    );
     expect(getEnrichment(ctx).servedApplication).toBe('BgblAlt');
   });
 
@@ -1046,5 +1064,49 @@ describe('risSearchGazette — each entry names the gazette that carried it (#65
     });
     expect(byId.get('BGBLA_2026_I_8')).not.toHaveProperty('promulgation');
     expect(blockFor('BGBLA_2026_I_8')).not.toContain('**Promulgation:**');
+  });
+});
+
+describe('risSearchGazette — content[] reads back RIS text verbatim (#79)', () => {
+  it('reads back every hostile-shaped field of federal, historical, state, district, and municipal entries', async () => {
+    const pick = (name: string) => parseSearchResponse(fixture(name)).hits[0]!;
+    const federal = pick('search-bgblauth-celex.json');
+    const hits = [
+      {
+        ...hostileHit(federal, 0, { title: HOSTILE_TEXT.multiLineTitle }),
+        documentNumber: `~~${federal.documentNumber}~~`,
+        submitter: HOSTILE_TEXT.pipeAndBackslash,
+      },
+      hostileHit(pick('search-bgblalt.json'), 1, { title: HOSTILE_TEXT.listOpener }),
+      hostileHit(pick('search-lgblno.json'), 2, {}),
+      hostileHit(pick('search-bvb.json'), 3, {}),
+      hostileHit(pick('search-gra.json'), 4, { municipality: HOSTILE_TEXT.blockMarkers }),
+    ];
+    searchGazette.mockResolvedValue({ hits, page: 1, pageSize: 20, total: hits.length });
+    const result = await runToolContract(risSearchGazette, { scope: 'federal' });
+    expect(result.isError).not.toBe(true);
+    const { results } = risSearchGazette.output.parse(result.structuredContent);
+    // structuredContent relays the RIS strings as written.
+    expect(results[0]).toMatchObject({
+      document_number: `~~${federal.documentNumber}~~`,
+      issuer: HOSTILE_TEXT.pipeAndBackslash,
+      title: HOSTILE_TEXT.multiLineTitle,
+    });
+    expect(results[1]!.alex_url).toMatch(WEB_URL);
+    expect(results[4]!.municipality).toBe(HOSTILE_TEXT.blockMarkers);
+
+    const blocks = expectReadBack(result, results);
+    results.forEach((record, i) => {
+      const read = readCommonMark(blocks[i]!);
+      expect(
+        read.startsWith(`⟨heading_open⟩\n\n${record.document_number}\n\n⟨heading_close⟩`),
+      ).toBe(true);
+      if (record.title !== undefined) {
+        expect(read).toContain(`⟨strong⟩Title:⟨/strong⟩ ${record.title}\n`);
+      }
+    });
+    expect(readCommonMark(blocks[1]!)).toContain(
+      `⟨strong⟩ÖNB scan:⟨/strong⟩ ⟨a⟩${results[1]!.alex_url}⟨/a⟩`,
+    );
   });
 });

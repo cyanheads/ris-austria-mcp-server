@@ -11,6 +11,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
 
 import { RIS_CHANGED_SINCE_INTERVALS, RIS_STATES } from '@/services/ris/reference/index.js';
 import type {
@@ -29,6 +30,7 @@ import {
   isoDateString,
   joinNotices,
   pageSizeParam,
+  renditionLinks,
   servePageSize,
 } from './_shared.js';
 
@@ -575,49 +577,54 @@ export const risSearchLegislation = tool('ris_search_legislation', {
   },
 
   // format() populates content[] — the markdown twin of structuredContent. Every output
-  // field renders here; totals, paging, and notices ride the enrichment trailer.
+  // field renders here; totals, paging, and notices ride the enrichment trailer. RIS strings go
+  // through escapeMarkdownInline and URLs through markdownLink, so a CommonMark parse reads back
+  // the structuredContent value; the heading holds the line-free document number, since a
+  // consolidated title spans lines (its `StF:` line) and a heading ends at its first.
   format: (result) => {
     if (result.results.length === 0) {
       return [{ type: 'text', text: '_No documents on this page._' }];
     }
+    const esc = escapeMarkdownInline;
     const blocks = result.results.map((r) => {
-      const lines = [`## ${r.title ?? r.short_title ?? r.document_number}`];
-      lines.push(`**Document:** ${r.document_number} (${r.application})`);
+      const lines = [`## ${esc(r.document_number)}`];
+      if (r.title !== undefined) lines.push(`**Title:** ${esc(r.title)}`);
+      lines.push(`**Document:** ${esc(r.document_number)} (${esc(r.application)})`);
       const identity: string[] = [];
-      if (r.short_title !== undefined) identity.push(`**Short title:** ${r.short_title}`);
-      if (r.abbreviation !== undefined) identity.push(`**Abbreviation:** ${r.abbreviation}`);
-      if (r.section_label !== undefined) identity.push(`**Section:** ${r.section_label}`);
-      if (r.type !== undefined) identity.push(`**Type:** ${r.type}`);
+      if (r.short_title !== undefined) identity.push(`**Short title:** ${esc(r.short_title)}`);
+      if (r.abbreviation !== undefined) identity.push(`**Abbreviation:** ${esc(r.abbreviation)}`);
+      if (r.section_label !== undefined) identity.push(`**Section:** ${esc(r.section_label)}`);
+      if (r.type !== undefined) identity.push(`**Type:** ${esc(r.type)}`);
       if (identity.length > 0) lines.push(identity.join(' | '));
       if (r.law_id !== undefined || r.law_url !== undefined) {
-        lines.push(
-          `**Law:** ${[r.law_id !== undefined ? `id ${r.law_id}` : undefined, r.law_url].filter((part) => part !== undefined).join(' — ')}`,
-        );
+        const law = [
+          ...(r.law_id !== undefined ? [`id ${esc(r.law_id)}`] : []),
+          ...(r.law_url !== undefined ? [markdownLink(r.law_url, r.law_url)] : []),
+        ];
+        lines.push(`**Law:** ${law.join(' — ')}`);
       }
       if (r.in_force_from !== undefined || r.in_force_until !== undefined) {
-        lines.push(
-          `**In force:** ${r.in_force_from ?? 'unknown'} → ${r.in_force_until ?? 'no end date'}`,
-        );
+        const from = r.in_force_from !== undefined ? esc(r.in_force_from) : 'unknown';
+        const until = r.in_force_until !== undefined ? esc(r.in_force_until) : 'no end date';
+        lines.push(`**In force:** ${from} → ${until}`);
       }
-      if (r.promulgation !== undefined) lines.push(`**Promulgated:** ${r.promulgation}`);
-      if (r.municipality !== undefined) lines.push(`**Municipality:** ${r.municipality}`);
+      if (r.promulgation !== undefined) lines.push(`**Promulgated:** ${esc(r.promulgation)}`);
+      if (r.municipality !== undefined) lines.push(`**Municipality:** ${esc(r.municipality)}`);
       if (r.translation !== undefined) {
         if (r.translation.source !== undefined) {
-          lines.push(`**Translation of:** ${r.translation.source}`);
+          lines.push(`**Translation of:** ${esc(r.translation.source)}`);
         }
         if (r.translation.author !== undefined) {
-          lines.push(`**Translated by:** ${r.translation.author}`);
+          lines.push(`**Translated by:** ${esc(r.translation.author)}`);
         }
       }
-      if (r.indexes.length > 0) lines.push(`**Index:** ${r.indexes.join('; ')}`);
-      if (r.keywords !== undefined) lines.push(`**Keywords:** ${r.keywords}`);
-      if (r.eli !== undefined) lines.push(`**ELI:** ${r.eli}`);
+      if (r.indexes.length > 0) lines.push(`**Index:** ${r.indexes.map(esc).join('; ')}`);
+      if (r.keywords !== undefined) lines.push(`**Keywords:** ${esc(r.keywords)}`);
+      if (r.eli !== undefined) lines.push(`**ELI:** ${markdownLink(r.eli, r.eli)}`);
       if (r.celex_references.length > 0) {
-        lines.push(`**CELEX:** ${r.celex_references.join(', ')}`);
+        lines.push(`**CELEX:** ${r.celex_references.map(esc).join(', ')}`);
       }
-      const urls = (['html', 'pdf', 'rtf', 'xml'] as const)
-        .filter((key) => r.content_urls[key] !== undefined)
-        .map((key) => `[${key.toUpperCase()}](${r.content_urls[key]})`);
+      const urls = renditionLinks(r.content_urls);
       if (urls.length > 0) lines.push(`**Text:** ${urls.join(' · ')}`);
       return lines.join('\n');
     });

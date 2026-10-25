@@ -9,6 +9,8 @@ import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import MarkdownIt, { type Token } from 'markdown-it';
 import { expect } from 'vitest';
 
+import type { RisHit } from '@/services/ris/types.js';
+
 /** GFM-flavored CommonMark parser — the reading a Markdown-rendering client applies to `content[]`. */
 const COMMONMARK = new MarkdownIt('default', { html: true });
 
@@ -65,6 +67,139 @@ export function readCommonMark(markdown: string): string {
       return [`⟨${token.type}⟩`];
     })
     .join('\n\n');
+}
+
+/** Every link destination (`href`) a CommonMark parse of `markdown` finds, in document order. */
+export function linkDestinations(markdown: string): string[] {
+  return COMMONMARK.parse(markdown, {}).flatMap((token) =>
+    (token.children ?? []).flatMap((child) =>
+      child.type === 'link_open' ? [String(child.attrGet('href') ?? '')] : [],
+    ),
+  );
+}
+
+/**
+ * RIS-authored text shaped to render live if `format()` interpolates it raw: a multi-line
+ * title whose continuation opens an ordered list, inline emphasis/code/strike/link/HTML,
+ * line-leading block markers, a table pipe, and a backslash. A fixture field set to one of
+ * these must read back verbatim through {@link readCommonMark}.
+ */
+export const HOSTILE_TEXT = {
+  multiLineTitle: 'Verordnung über die Behandlung des\nZuschusses ab\n1. Jänner 2026',
+  listOpener: '1. Absatz eins',
+  inline: 'a *b* _c_ `d` ~~e~~ [f](g) <b>h</b>',
+  blockMarkers: '# Kopf\n- Punkt\n> Zitat',
+  pipeAndBackslash: 'a | b \\ c',
+} as const;
+
+/** A string that is one whole http(s) URL — the RIS values `format()` renders as a link. */
+export const WEB_URL = /^https?:\/\/\S+$/u;
+
+const HOSTILE_SHAPES: readonly string[] = Object.values(HOSTILE_TEXT);
+
+/**
+ * `hit` with every non-URL metadata string and array element replaced by a {@link HOSTILE_TEXT}
+ * shape (rotating from `offset`, so records differ), an empty array filled with two, and
+ * `overrides` laid on top. `controller` keeps its value — it routes the record's mapping.
+ */
+export function hostileHit(
+  hit: RisHit,
+  offset: number,
+  overrides: Record<string, unknown>,
+): RisHit {
+  let next = offset;
+  const swap = (value: unknown): unknown => {
+    if (typeof value === 'string') {
+      return WEB_URL.test(value) ? value : HOSTILE_SHAPES[next++ % HOSTILE_SHAPES.length];
+    }
+    if (Array.isArray(value)) return (value.length > 0 ? value : ['', '']).map(swap);
+    return value;
+  };
+  const metadata = Object.fromEntries(
+    Object.entries(hit.metadata).map(([key, value]) => [
+      key,
+      key === 'controller' ? value : swap(value),
+    ]),
+  );
+  return { ...hit, metadata: { ...metadata, ...overrides } as RisHit['metadata'] };
+}
+
+/** Every string leaf of `value`, depth-first. */
+export function stringLeaves(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(stringLeaves);
+  if (value !== null && typeof value === 'object') {
+    return Object.values(value).flatMap(stringLeaves);
+  }
+  return [];
+}
+
+/**
+ * The format() block of a contract run (`content[0]`; the enrichment trailer after it is the
+ * framework's): its Markdown, the CommonMark reading of it, that reading's blank-line-separated
+ * parts, each heading's text, and the link destinations.
+ */
+export function readFormatBlock(result: ToolResult) {
+  const [block] = result.content;
+  if (block?.type !== 'text') throw new Error('expected a text block from format()');
+  const text = readCommonMark(block.text);
+  const parts = text.split('\n\n');
+  const headings = parts.flatMap((part, i) => (part === '⟨heading_open⟩' ? [parts[i + 1]] : []));
+  return { headings, hrefs: linkDestinations(block.text), markdown: block.text, parts, text };
+}
+
+/** The nodes `format()` itself writes: record headings, `**Label:**` emphasis, and URL links. */
+const AUTHORED_NODES = [
+  '⟨heading_open⟩',
+  '⟨heading_close⟩',
+  '⟨strong⟩',
+  '⟨/strong⟩',
+  '⟨a⟩',
+  '⟨/a⟩',
+];
+/** The nodes of an authored bullet list (the drafts materials list). */
+const LIST_NODES = [
+  '⟨bullet_list_open⟩',
+  '⟨bullet_list_close⟩',
+  '⟨list_item_open⟩',
+  '⟨list_item_close⟩',
+];
+
+/**
+ * Assert the format() block renders `records` (non-empty, in output order) one Markdown block
+ * each, and that a CommonMark parse of each block reads back that record's every non-URL string
+ * verbatim, links exactly that record's URLs (each URL as its own destination, as many times as
+ * the record carries it), and holds one heading. Across the whole block, the only nodes are
+ * {@link AUTHORED_NODES} — plus `bulletLists` authored bullet lists, counted exactly — and
+ * every strong span is a `Label:`. Returns the per-record Markdown blocks.
+ */
+export function expectReadBack(
+  result: ToolResult,
+  records: readonly object[],
+  { bulletLists = 0 }: { bulletLists?: number } = {},
+): string[] {
+  expect(records.length).toBeGreaterThan(0);
+  const { markdown, text } = readFormatBlock(result);
+  const blocks = markdown.split('\n\n');
+  expect(blocks).toHaveLength(records.length);
+  records.forEach((record, i) => {
+    const leaves = stringLeaves(record);
+    expect(leaves.length).toBeGreaterThan(0);
+    const read = readCommonMark(blocks[i]!);
+    for (const leaf of leaves.filter((l) => !WEB_URL.test(l))) expect(read).toContain(leaf);
+    expect(linkDestinations(blocks[i]!).toSorted()).toEqual(
+      leaves.filter((l) => WEB_URL.test(l)).toSorted(),
+    );
+    expect(read.match(/⟨heading_open⟩/gu) ?? []).toHaveLength(1);
+  });
+  expect(text.match(/⟨heading_open⟩/gu) ?? []).toHaveLength(records.length);
+  expect(text.match(/⟨bullet_list_open⟩/gu) ?? []).toHaveLength(bulletLists);
+  const allowed = bulletLists > 0 ? [...AUTHORED_NODES, ...LIST_NODES] : AUTHORED_NODES;
+  for (const node of new Set(text.match(/⟨[^⟩]*⟩/gu))) expect(allowed).toContain(node);
+  for (const [, label] of text.matchAll(/⟨strong⟩(.*?)⟨\/strong⟩/gu)) {
+    expect(label).toMatch(/^\p{Lu}[\p{L} ]*:$/u);
+  }
+  return blocks;
 }
 
 /**

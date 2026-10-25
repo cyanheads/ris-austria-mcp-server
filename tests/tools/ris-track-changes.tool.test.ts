@@ -22,8 +22,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toRecord as toCaseLawRecord } from '@/mcp-server/tools/definitions/ris-search-case-law.tool.js';
 import { risTrackChanges } from '@/mcp-server/tools/definitions/ris-track-changes.tool.js';
 import { parseHistoryResponse } from '@/services/ris/normalizer.js';
+import type { RisChange } from '@/services/ris/types.js';
 
-import { contentText, contractError } from './_wire.js';
+import {
+  contentText,
+  contractError,
+  expectReadBack,
+  HOSTILE_TEXT,
+  readCommonMark,
+  readFormatBlock,
+} from './_wire.js';
 
 const { trackChanges } = vi.hoisted(() => ({ trackChanges: vi.fn() }));
 
@@ -353,7 +361,7 @@ describe('risTrackChanges — row identity: section label, law id, case numbers 
     ]);
   });
 
-  it('gives a BrKons row its section label and law id, and appends the label to the heading', async () => {
+  it('gives a BrKons row its section label and law id, each on its own line', async () => {
     const { blockFor, byId } = await callWire('history-brkons.json', {
       application: 'BrKons',
       changed_from: '2026-10-16',
@@ -364,22 +372,31 @@ describe('risTrackChanges — row identity: section label, law id, case numbers 
       section_label: '§ 16',
       short_title: 'DORA-Vollzugsgesetz',
     });
-    expect(blockFor('NOR40264172')).toContain('## DORA-Vollzugsgesetz § 16\n');
-    expect(blockFor('NOR40264172')).toContain('**Law ID:** 20012655');
-    // RIS's heading-document label is relayed verbatim; that row's multi-line long title moves
-    // out of the heading onto its own line.
+    expect(blockFor('NOR40264172')).toContain(
+      '## NOR40264172\n**Document:** NOR40264172\n**Short title:** DORA-Vollzugsgesetz\n**Section:** § 16\n**Law ID:** 20012655\n',
+    );
+    // RIS's heading-document label is relayed verbatim; that row's multi-line long title reads
+    // back whole on its own line.
     const headingDocument = byId.get('NOR40264174')!;
     expect(headingDocument.section_label).toBe('§ 0');
-    expect(blockFor('NOR40264174')).toContain('## DORA-Vollzugsgesetz § 0\n');
-    expect(blockFor('NOR40264174')).toContain(`**Title:** ${headingDocument.title}`);
+    expect(headingDocument.title).toContain('\n');
+    const block = readCommonMark(blockFor('NOR40264174'));
+    expect(block.split('\n\n').slice(0, 3)).toEqual([
+      '⟨heading_open⟩',
+      'NOR40264174',
+      '⟨heading_close⟩',
+    ]);
+    expect(block).toContain(`⟨strong⟩Title:⟨/strong⟩ ${headingDocument.title}\n`);
+    expect(block).toContain('⟨strong⟩Section:⟨/strong⟩ § 0\n');
     expect(byId.get('NOR40264172')).not.toHaveProperty('case_numbers');
   });
 
   it('gives an LrKons row its section label and law id, Anlage labels included', async () => {
     const { blockFor, byId } = await callWire('history-lrkons.json', { application: 'LrKons' });
     expect(byId.get('LST40036626')).toMatchObject({ law_id: '20001950', section_label: 'Anl. 1' });
+    expect(blockFor('LST40036626')).toContain('## LST40036626\n');
     expect(blockFor('LST40036626')).toContain(
-      '## Geschäftsordnung der Steiermärkischen Landesregierung – GeOLR Anl. 1\n',
+      '**Short title:** Geschäftsordnung der Steiermärkischen Landesregierung – GeOLR\n**Section:** Anl. 1\n',
     );
     expect(byId.get('LOO40027136')).toMatchObject({ law_id: '20001395', section_label: '§ 1' });
   });
@@ -487,7 +504,10 @@ describe('risTrackChanges — row identity: section label, law id, case numbers 
         ],
       })[0] as { type: 'text'; text: string }
     ).text;
-    expect(text).toContain('## Normenliste DSG\n**Document:** A\n**Case numbers:** 1 Ob 2/26x');
+    // One case number names the heading alone; a title never does.
+    expect(text).toContain(
+      '## 1 Ob 2/26x\n**Title:** Normenliste DSG\n**Document:** A\n**Binding:**',
+    );
     expect(text).toContain('## B\n**Document:** B\n**Section:** § 3\n**Law ID:** 20000001');
   });
 });
@@ -540,18 +560,20 @@ describe('risTrackChanges — in-force window on consolidated-law rows (#69)', (
       section_label: '§ 16',
       short_title: 'DORA-Vollzugsgesetz',
     });
+    const view = byId.get('NOR40264172')!.document_url;
     expect(blockFor('NOR40264172').split('\n')).toEqual([
-      '## DORA-Vollzugsgesetz § 16',
+      '## NOR40264172',
       '**Document:** NOR40264172',
       '**Short title:** DORA-Vollzugsgesetz',
+      '**Section:** § 16',
       '**Law ID:** 20012655',
       '**In force:** 2025-01-17 → 2026-10-16',
       '**Organ:** BKA (Bundeskanzleramt)',
       '**Binding:** consolidated_informational',
       '**Changed:** 2026-10-16 | **Published:** 2024-07-23',
       '**Deleted:** no',
-      `**RIS view:** ${byId.get('NOR40264172')!.document_url}`,
-      expect.stringMatching(/^\*\*Text:\*\* \[HTML\]\(/u),
+      `**RIS view:** [${view}](<${view}>)`,
+      expect.stringMatching(/^\*\*Text:\*\* \[HTML\]\(<https:/u),
     ]);
   });
 
@@ -634,5 +656,107 @@ describe('risTrackChanges — in-force window on consolidated-law rows (#69)', (
       );
     }
     expect(shape.in_force_until.description).not.toMatch(/still in force|absent while in force/iu);
+  });
+});
+
+describe('risTrackChanges — content[] reads back the RIS strings (#79)', () => {
+  const BASE = 'https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR_1';
+  const changes: RisChange[] = [
+    {
+      hit: {
+        changed: HOSTILE_TEXT.listOpener,
+        contentReferences: [],
+        contentUrls: {
+          authentic: `${BASE}/NOR_1.pdfsig`,
+          html: `${BASE}/NOR_(1).html`,
+          pdf: `${BASE}/NOR_*1*.pdf`,
+          rtf: `${BASE}/NOR_1.rtf`,
+          xml: `${BASE}/NOR_1.xml`,
+        },
+        documentNumber: 'NOR_~~1~~',
+        documentUrl:
+          'https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Bundesnormen&Dokumentnummer=NOR_1',
+        metadata: {
+          celexReferences: [],
+          controller: 'Bundesrecht',
+          inForceFrom: '_2026_',
+          inForceUntil: '`9000`',
+          indexes: [],
+          lawId: '*20000001*',
+          sectionLabel: HOSTILE_TEXT.pipeAndBackslash,
+          shortTitle: HOSTILE_TEXT.inline,
+          title: HOSTILE_TEXT.multiLineTitle,
+        },
+        organ: HOSTILE_TEXT.blockMarkers,
+        published: '~~2024~~',
+      },
+      kind: 'document',
+    },
+    {
+      hit: {
+        contentReferences: [],
+        contentUrls: {},
+        documentNumber: 'JWR_X',
+        metadata: {
+          caseNumbers: [HOSTILE_TEXT.inline, HOSTILE_TEXT.listOpener],
+          controller: 'Judikatur',
+          decisionDate: '<b>1985</b>',
+          indexes: [],
+          legalAreas: [],
+          normsCited: [],
+        },
+      },
+      kind: 'document',
+    },
+    {
+      kind: 'deleted',
+      record: { deletedAt: '*2026*', documentNumber: '`DEL`', organ: '# Organ' },
+    },
+  ];
+
+  async function run() {
+    trackChanges.mockResolvedValue({ changes, page: 1, pageSize: 20, total: 3 });
+    const result = await runToolContract(risTrackChanges, {
+      application: 'BrKons',
+      include_deleted: true,
+    });
+    expect(result.isError).not.toBe(true);
+    return { result, ...risTrackChanges.output.parse(result.structuredContent) };
+  }
+
+  it('reads back every string verbatim and every URL as a link destination', async () => {
+    const { result, results } = await run();
+    expectReadBack(result, results);
+  });
+
+  it('heads a row by its lead case number, else its document number — never by a title', async () => {
+    const { result } = await run();
+    expect(readFormatBlock(result).headings).toEqual([
+      'NOR_~~1~~',
+      `${HOSTILE_TEXT.inline} (+1 more)`,
+      '`DEL` — deleted',
+    ]);
+  });
+
+  it('puts the title, short title, and section on their own lines, case numbers past one', async () => {
+    const { result } = await run();
+    const { parts } = readFormatBlock(result);
+    // Each record's paragraph follows its heading.
+    const [law, decision] = parts.flatMap((part, i) =>
+      parts[i - 1] === '⟨heading_close⟩' ? [part] : [],
+    );
+    expect(law!.split('\n').slice(0, 7)).toEqual([
+      `⟨strong⟩Title:⟨/strong⟩ ${HOSTILE_TEXT.multiLineTitle.split('\n')[0]}`,
+      HOSTILE_TEXT.multiLineTitle.split('\n')[1],
+      HOSTILE_TEXT.multiLineTitle.split('\n')[2],
+      '⟨strong⟩Document:⟨/strong⟩ NOR_~~1~~',
+      `⟨strong⟩Short title:⟨/strong⟩ ${HOSTILE_TEXT.inline}`,
+      `⟨strong⟩Section:⟨/strong⟩ ${HOSTILE_TEXT.pipeAndBackslash}`,
+      '⟨strong⟩Law ID:⟨/strong⟩ *20000001*',
+    ]);
+    expect(decision!.split('\n').slice(0, 2)).toEqual([
+      '⟨strong⟩Document:⟨/strong⟩ JWR_X',
+      `⟨strong⟩Case numbers:⟨/strong⟩ ${HOSTILE_TEXT.inline}, ${HOSTILE_TEXT.listOpener}`,
+    ]);
   });
 });

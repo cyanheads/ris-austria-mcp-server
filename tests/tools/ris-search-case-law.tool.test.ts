@@ -25,8 +25,18 @@ import {
 } from '@/mcp-server/tools/definitions/ris-search-case-law.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import { buildCaseLawRequest, type CaseLawSearchParams } from '@/services/ris/request-builder.js';
+import type { RisHit } from '@/services/ris/types.js';
 
-import { contentText, contractError, expectArgumentRejection, type WireError } from './_wire.js';
+import {
+  contentText,
+  contractError,
+  expectArgumentRejection,
+  expectReadBack,
+  HOSTILE_TEXT,
+  readCommonMark,
+  readFormatBlock,
+  type WireError,
+} from './_wire.js';
 
 const { searchCaseLaw } = vi.hoisted(() => ({ searchCaseLaw: vi.fn() }));
 
@@ -567,7 +577,10 @@ describe('risSearchCaseLaw — record mapping and format() parity', () => {
     const input = risSearchCaseLaw.input.parse({ court: 'vfgh' });
     const result = await risSearchCaseLaw.handler(input, ctx);
     expect(result.results).toHaveLength(2);
-    const text = (risSearchCaseLaw.format!(result)[0] as { type: 'text'; text: string }).text;
+    // Read as CommonMark: a live cited norm ends in a space, which the escaper writes as `&#32;`.
+    const text = readCommonMark(
+      (risSearchCaseLaw.format!(result)[0] as { type: 'text'; text: string }).text,
+    );
     for (const record of result.results) {
       expect(text).toContain(record.document_number);
       expect(text).toContain(record.court);
@@ -670,5 +683,86 @@ describe('risSearchCaseLaw — state names in state (#58)', () => {
     const second = await runToolContract(risSearchCaseLaw, { court: 'lvwg', state: carried });
     expect(second.isError).not.toBe(true);
     expect(searchCaseLaw.mock.calls[0]?.[0]).toMatchObject({ state: 'tirol' });
+  });
+});
+
+describe('risSearchCaseLaw — content[] reads back the RIS strings (#79)', () => {
+  const BASE = 'https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_X';
+  const decision: RisHit = {
+    application: 'Vfgh',
+    contentReferences: [],
+    contentUrls: {
+      html: `${BASE}/JFT_X.html`,
+      pdf: `${BASE}/JFT_(X).pdf`,
+      rtf: `${BASE}/JFT_*X*.rtf`,
+      xml: `${BASE}/JFT_X.xml`,
+    },
+    documentNumber: 'JFT_~~X~~',
+    metadata: {
+      abbreviation: '*DSG*',
+      caseNumbers: [HOSTILE_TEXT.inline, HOSTILE_TEXT.pipeAndBackslash],
+      collectionNumber: '_1_',
+      controller: 'Judikatur',
+      decisionDate: '2026-01-01',
+      decisionDocumentType: '`Text`',
+      decisionKind: '~~Erkenntnis~~',
+      decisionUrl: 'https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_X',
+      ecli: 'ECLI:AT:VFGH:2026:<b>X</b>',
+      guidingPrinciple: HOSTILE_TEXT.multiLineTitle,
+      headnotesUrl: 'https://ogd.ris.bka.gv.at/Ergebnis.wxe?Abfrage=Vfgh&Rechtssatz=JFR_X',
+      indexes: [HOSTILE_TEXT.blockMarkers, '10/10 *Datenschutz*'],
+      keywords: HOSTILE_TEXT.inline,
+      legalAreas: [],
+      legalForceNote: HOSTILE_TEXT.listOpener,
+      normType: '_BG_',
+      normsCited: [HOSTILE_TEXT.listOpener, 'DSG §1 [a](b)'],
+      note: HOSTILE_TEXT.blockMarkers,
+      reference: '<i>BGBl I 165/1999</i>',
+      state: '# Tirol',
+      summary: HOSTILE_TEXT.listOpener,
+      title: HOSTILE_TEXT.multiLineTitle,
+    },
+    organ: HOSTILE_TEXT.inline,
+  };
+  const transparency: RisHit = {
+    application: 'Upts',
+    contentReferences: [],
+    contentUrls: {},
+    documentNumber: 'UPTS_~~1~~',
+    metadata: {
+      caseNumbers: [],
+      controller: 'Sonstige',
+      decisionDate: '2026-02-02',
+      issuers: [],
+      keywords: '`k`',
+      normsCited: ['1. PartG §6'],
+      party: '> Partei',
+      summary: HOSTILE_TEXT.blockMarkers,
+    },
+  };
+
+  async function run() {
+    searchCaseLaw.mockResolvedValue({
+      hits: [decision, transparency],
+      page: 1,
+      pageSize: 20,
+      total: 2,
+    });
+    const result = await runToolContract(risSearchCaseLaw, { court: 'vfgh' });
+    expect(result.isError).not.toBe(true);
+    return { result, ...risSearchCaseLaw.output.parse(result.structuredContent) };
+  }
+
+  it('reads back every string verbatim and every URL as a link destination', async () => {
+    const { result, results } = await run();
+    expectReadBack(result, results);
+  });
+
+  it('heads a decision by its escaped case numbers, an uncased record by its document number', async () => {
+    const { result } = await run();
+    expect(readFormatBlock(result).headings).toEqual([
+      `${HOSTILE_TEXT.inline}, ${HOSTILE_TEXT.pipeAndBackslash}`,
+      'UPTS_~~1~~',
+    ]);
   });
 });

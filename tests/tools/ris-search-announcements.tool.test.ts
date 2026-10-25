@@ -27,7 +27,19 @@ import {
   buildAnnouncementsRequest,
 } from '@/services/ris/request-builder.js';
 
-import { contentText, contractError, expectArgumentRejection, type WireError } from './_wire.js';
+import {
+  contentText,
+  contractError,
+  expectArgumentRejection,
+  expectReadBack,
+  HOSTILE_TEXT,
+  hostileHit,
+  linkDestinations,
+  readCommonMark,
+  stringLeaves,
+  WEB_URL,
+  type WireError,
+} from './_wire.js';
 
 const { searchAnnouncements } = vi.hoisted(() => ({ searchAnnouncements: vi.fn() }));
 
@@ -472,7 +484,7 @@ describe('risSearchAnnouncements — text filters: blank rejected, non-blank pas
 });
 
 describe('risSearchAnnouncements — record mapping and format() parity', () => {
-  it('renders every populated field for a multi-hit council_minutes result, title falls back to document_number', async () => {
+  it('renders every populated field for a multi-hit council_minutes result under a document-number heading', async () => {
     searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-mrp.json')));
     const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
     const input = risSearchAnnouncements.input.parse({ collection: 'council_minutes' });
@@ -481,8 +493,7 @@ describe('risSearchAnnouncements — record mapping and format() parity', () => 
 
     const first = result.results[0]!;
     const second = result.results[1]!;
-    // Neither hit carries a title or summary — the header must fall all the way back to
-    // the document number rather than rendering an empty heading.
+    // Neither hit carries a title or summary; the heading is the document number either way.
     expect(first.title).toBeUndefined();
     expect(first.summary).toBeUndefined();
     expect(first.issuers).toHaveLength(5);
@@ -496,15 +507,25 @@ describe('risSearchAnnouncements — record mapping and format() parity', () => 
     );
 
     const text = (risSearchAnnouncements.format!(result)[0] as { type: 'text'; text: string }).text;
-    expect(text).toContain('## MRP_20260701_59');
+    const read = readCommonMark(text);
+    const parts = read.split('\n\n');
+    expect(parts.flatMap((part, i) => (part === '⟨heading_open⟩' ? [parts[i + 1]] : []))).toEqual([
+      'MRP_20260701_59',
+      second.document_number,
+    ]);
     for (const record of result.results) {
       expect(record.binding).toBe('preparatory');
       expect(text).toContain(record.document_number);
       expect(text).toContain(record.collection);
       if (record.session_date !== undefined) expect(text).toContain(record.session_date);
       for (const issuer of record.issuers) expect(text).toContain(issuer);
-      expect(text).toContain(`**RIS view:** ${record.document_url}`);
+      expect(read).toContain(`⟨strong⟩RIS view:⟨/strong⟩ ⟨a⟩${record.document_url}⟨/a⟩`);
     }
+    expect(linkDestinations(text).toSorted()).toEqual(
+      stringLeaves(result.results)
+        .filter((s) => WEB_URL.test(s))
+        .toSorted(),
+    );
   });
 
   it('maps an Avsv (social_insurance) hit — number, summary, and the authentic PDF surface', async () => {
@@ -534,7 +555,14 @@ describe('risSearchAnnouncements — record mapping and format() parity', () => 
     expect(text).toContain(record.summary!);
     expect(text).toContain('ÖGK');
     expect(text).toContain(record.authentic_pdf_url!);
-    expect(text).toContain(`**RIS view:** ${record.document_url}`);
+    expect(readCommonMark(text)).toContain(
+      `⟨strong⟩RIS view:⟨/strong⟩ ⟨a⟩${record.document_url}⟨/a⟩`,
+    );
+    expect(linkDestinations(text).toSorted()).toEqual(
+      stringLeaves(result.results)
+        .filter((s) => WEB_URL.test(s))
+        .toSorted(),
+    );
   });
 });
 
@@ -566,8 +594,13 @@ describe('risSearchAnnouncements — collection metadata on records (#54)', () =
     expect(result.isError).not.toBe(true);
     const { results } = risSearchAnnouncements.output.parse(result.structuredContent);
     const text = contentText(result);
+    // Matched on the parse: a document number ending in `_` is written escaped (`\_`).
     const blockFor = (documentNumber: string) =>
-      text.split('\n\n').find((block) => block.includes(`**Document:** ${documentNumber} `)) ?? '';
+      text
+        .split('\n\n')
+        .find((block) =>
+          readCommonMark(block).includes(`⟨strong⟩Document:⟨/strong⟩ ${documentNumber} (`),
+        ) ?? '';
     return { blockFor, byId: new Map(results.map((r) => [r.document_number, r])), results };
   }
 
@@ -732,8 +765,8 @@ describe('risSearchAnnouncements — collection metadata on records (#54)', () =
   });
 });
 
-describe('risSearchAnnouncements — multi-line notes keep their label line (#54)', () => {
-  it('renders a note RIS breaks with <br/> on its one **Note:** line, the record keeping the break', async () => {
+describe('risSearchAnnouncements — multi-line notes keep their breaks under their label (#54, #79)', () => {
+  it('renders a note RIS breaks with <br/> in its **Note:** paragraph, line breaks and numbering read back', async () => {
     const page = parseSearchResponse(fixture('search-erlaesse.json'));
     const id = 'ERL_BMJ_20250930_2025_0_575_430';
     const hits = page.hits.map((hit) =>
@@ -756,8 +789,81 @@ describe('risSearchAnnouncements — multi-line notes keep their label line (#54
     expect(results.find((r) => r.document_number === id)!.note).toBe(
       '1. Außerkrafttreten des Erlasses vom 20. April 2018\n2. Ersetzt durch den Erlass vom 30. September 2025',
     );
-    expect(contentText(result)).toContain(
-      '**Note:** 1. Außerkrafttreten des Erlasses vom 20. April 2018 / 2. Ersetzt durch den Erlass vom 30. September 2025\n',
+    // The second line opens with "2. " — read back as text, never as an ordered list.
+    const read = readCommonMark(contentText(result));
+    expect(read).toContain(
+      '⟨strong⟩Note:⟨/strong⟩ 1. Außerkrafttreten des Erlasses vom 20. April 2018\n2. Ersetzt durch den Erlass vom 30. September 2025\n',
     );
+    expect(read).not.toContain('⟨ordered_list_open⟩');
+  });
+});
+
+describe('risSearchAnnouncements — content[] reads back RIS text verbatim (#79)', () => {
+  it('reads back every hostile-shaped field under a document-number heading', async () => {
+    const page = parseSearchResponse(fixture('search-erlaesse.json'));
+    const [first, second, third] = page.hits;
+    const hits = [
+      {
+        ...hostileHit(first!, 0, {
+          note: HOSTILE_TEXT.blockMarkers,
+          summary: HOSTILE_TEXT.listOpener,
+          title: HOSTILE_TEXT.multiLineTitle,
+        }),
+        documentNumber: `~~${first!.documentNumber}~~`,
+      },
+      hostileHit(second!, 1, { summary: HOSTILE_TEXT.multiLineTitle, title: undefined }),
+      hostileHit(third!, 2, {}),
+    ];
+    searchAnnouncements.mockResolvedValue({ ...page, hits });
+    const result = await runToolContract(risSearchAnnouncements, {
+      collection: 'ministerial_decrees',
+    });
+    expect(result.isError).not.toBe(true);
+    const { results } = risSearchAnnouncements.output.parse(result.structuredContent);
+    // structuredContent relays the RIS strings as written.
+    expect(results[0]).toMatchObject({
+      document_number: `~~${first!.documentNumber}~~`,
+      note: HOSTILE_TEXT.blockMarkers,
+      summary: HOSTILE_TEXT.listOpener,
+      title: HOSTILE_TEXT.multiLineTitle,
+    });
+    expect(results[1]).not.toHaveProperty('title');
+
+    const blocks = expectReadBack(result, results);
+    results.forEach((record, i) => {
+      const read = readCommonMark(blocks[i]!);
+      expect(
+        read.startsWith(`⟨heading_open⟩\n\n${record.document_number}\n\n⟨heading_close⟩`),
+      ).toBe(true);
+      if (record.title !== undefined) {
+        expect(read).toContain(`⟨strong⟩Title:⟨/strong⟩ ${record.title}\n`);
+      }
+      expect(read).toContain(`\n${record.summary}\n`);
+    });
+    expect(readCommonMark(blocks[0]!)).toContain(
+      `⟨strong⟩Note:⟨/strong⟩ ${HOSTILE_TEXT.blockMarkers}\n`,
+    );
+    expect(readCommonMark(blocks[1]!)).not.toContain('Title:');
+  });
+
+  it('reads back all six titles of a decree search, three of them multi-line, under six headings', async () => {
+    searchAnnouncements.mockResolvedValue(
+      parseSearchResponse(fixture('search-erlaesse-befoerderungszuschuss.json')),
+    );
+    const result = await runToolContract(risSearchAnnouncements, {
+      collection: 'ministerial_decrees',
+      query: 'Beförderungszuschusses',
+    });
+    expect(result.isError).not.toBe(true);
+    const { results } = risSearchAnnouncements.output.parse(result.structuredContent);
+    expect(results).toHaveLength(6);
+    expect(results[1]!.title).toBe(
+      'Informationsschreiben zur steuerlichen Behandlung des\nBeförderungszuschusses für sämtliche Mitarbeiterinnen und Mitarbeiter ab\n1. Jänner 2026',
+    );
+    expect(results.filter((record) => record.title?.includes('\n'))).toHaveLength(3);
+    const blocks = expectReadBack(result, results);
+    results.forEach((record, i) => {
+      expect(readCommonMark(blocks[i]!)).toContain(`⟨strong⟩Title:⟨/strong⟩ ${record.title}\n`);
+    });
   });
 });

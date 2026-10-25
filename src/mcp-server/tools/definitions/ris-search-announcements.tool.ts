@@ -10,6 +10,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
 
 import {
   RIS_CHANGED_SINCE_INTERVALS,
@@ -32,6 +33,7 @@ import {
   isoDateString,
   joinNotices,
   pageSizeParam,
+  renditionLinks,
   rewriteUnsupportedParam,
   servePageSize,
   type UnsupportedParam,
@@ -592,49 +594,59 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
   },
 
   // format() populates content[] — the markdown twin of structuredContent. Every output
-  // field renders here; totals and paging ride the enrichment trailer.
+  // field renders here; totals and paging ride the enrichment trailer. RIS strings go through
+  // escapeMarkdownInline and URLs through markdownLink, so a CommonMark parse reads back the
+  // structuredContent value; the heading holds the line-free document number, since a title
+  // can span lines and a heading ends at its first.
   format: (result) => {
     if (result.results.length === 0) {
       return [{ type: 'text', text: '_No documents on this page._' }];
     }
+    const esc = escapeMarkdownInline;
     const blocks = result.results.map((r) => {
-      const lines = [`## ${r.title ?? r.summary ?? r.document_number}`];
-      lines.push(`**Document:** ${r.document_number} (${r.collection})`);
+      const lines = [`## ${esc(r.document_number)}`];
+      if (r.title !== undefined) lines.push(`**Title:** ${esc(r.title)}`);
+      lines.push(`**Document:** ${esc(r.document_number)} (${r.collection})`);
       const facts: string[] = [];
-      if (r.number !== undefined) facts.push(`**Number:** ${r.number}`);
-      if (r.published !== undefined) facts.push(`**Published:** ${r.published}`);
-      if (r.approved !== undefined) facts.push(`**Approved:** ${r.approved}`);
-      if (r.session_date !== undefined) facts.push(`**Session:** ${r.session_date}`);
-      if (r.session_number !== undefined) facts.push(`**Session number:** ${r.session_number}`);
-      if (r.legislature !== undefined) facts.push(`**Legislature:** ${r.legislature}`);
+      if (r.number !== undefined) facts.push(`**Number:** ${esc(r.number)}`);
+      if (r.published !== undefined) facts.push(`**Published:** ${esc(r.published)}`);
+      if (r.approved !== undefined) facts.push(`**Approved:** ${esc(r.approved)}`);
+      if (r.session_date !== undefined) facts.push(`**Session:** ${esc(r.session_date)}`);
+      if (r.session_number !== undefined) {
+        facts.push(`**Session number:** ${esc(r.session_number)}`);
+      }
+      if (r.legislature !== undefined) facts.push(`**Legislature:** ${esc(r.legislature)}`);
       if (facts.length > 0) lines.push(facts.join(' | '));
       if (r.case_numbers !== undefined && r.case_numbers.length > 0) {
-        lines.push(`**Case numbers:** ${r.case_numbers.join(', ')}`);
+        lines.push(`**Case numbers:** ${r.case_numbers.map(esc).join(', ')}`);
       }
       const kind: string[] = [];
-      if (r.type !== undefined) kind.push(`**Type:** ${r.type}`);
-      if (r.department !== undefined) kind.push(`**Department:** ${r.department}`);
-      if (r.court_name !== undefined) kind.push(`**Court:** ${r.court_name}`);
-      if (r.plan_state !== undefined) kind.push(`**Plan state:** ${r.plan_state}`);
+      if (r.type !== undefined) kind.push(`**Type:** ${esc(r.type)}`);
+      if (r.department !== undefined) kind.push(`**Department:** ${esc(r.department)}`);
+      if (r.court_name !== undefined) kind.push(`**Court:** ${esc(r.court_name)}`);
+      if (r.plan_state !== undefined) kind.push(`**Plan state:** ${esc(r.plan_state)}`);
       if (kind.length > 0) lines.push(kind.join(' | '));
       const force: string[] = [];
-      if (r.in_force_from !== undefined) force.push(`**In force from:** ${r.in_force_from}`);
-      if (r.in_force_until !== undefined) force.push(`**In force until:** ${r.in_force_until}`);
+      if (r.in_force_from !== undefined) force.push(`**In force from:** ${esc(r.in_force_from)}`);
+      if (r.in_force_until !== undefined) {
+        force.push(`**In force until:** ${esc(r.in_force_until)}`);
+      }
       if (force.length > 0) lines.push(force.join(' | '));
-      if (r.promulgation !== undefined) lines.push(`**Promulgation:** ${r.promulgation}`);
+      if (r.promulgation !== undefined) lines.push(`**Promulgation:** ${esc(r.promulgation)}`);
       lines.push(`**Binding:** ${r.binding}`);
-      if (r.issuers.length > 0) lines.push(`**Issuer:** ${r.issuers.join(', ')}`);
-      if (r.summary !== undefined) lines.push(r.summary);
-      if (r.norms_cited.length > 0) lines.push(`**Norms:** ${r.norms_cited.join('; ')}`);
-      if (r.keywords !== undefined) lines.push(`**Keywords:** ${r.keywords}`);
-      // A note's own line breaks (RIS <br/>) render as " / ", keeping the note on its line.
-      if (r.note !== undefined) lines.push(`**Note:** ${r.note.replaceAll('\n', ' / ')}`);
-      if (r.authentic_pdf_url !== undefined)
-        lines.push(`**Authentic PDF:** ${r.authentic_pdf_url}`);
-      if (r.document_url !== undefined) lines.push(`**RIS view:** ${r.document_url}`);
-      const urls = (['html', 'pdf', 'rtf', 'xml'] as const)
-        .filter((key) => r.content_urls[key] !== undefined)
-        .map((key) => `[${key.toUpperCase()}](${r.content_urls[key]})`);
+      if (r.issuers.length > 0) lines.push(`**Issuer:** ${r.issuers.map(esc).join(', ')}`);
+      if (r.summary !== undefined) lines.push(esc(r.summary));
+      if (r.norms_cited.length > 0) lines.push(`**Norms:** ${r.norms_cited.map(esc).join('; ')}`);
+      if (r.keywords !== undefined) lines.push(`**Keywords:** ${esc(r.keywords)}`);
+      // The escaper keeps a note's own line breaks (RIS <br/>) as hard breaks in this paragraph.
+      if (r.note !== undefined) lines.push(`**Note:** ${esc(r.note)}`);
+      if (r.authentic_pdf_url !== undefined) {
+        lines.push(`**Authentic PDF:** ${markdownLink(r.authentic_pdf_url, r.authentic_pdf_url)}`);
+      }
+      if (r.document_url !== undefined) {
+        lines.push(`**RIS view:** ${markdownLink(r.document_url, r.document_url)}`);
+      }
+      const urls = renditionLinks(r.content_urls);
       if (urls.length > 0) lines.push(`**Text:** ${urls.join(' · ')}`);
       return lines.join('\n');
     });

@@ -13,6 +13,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
 
 import { RIS_CHANGED_SINCE_INTERVALS, RIS_STAGES } from '@/services/ris/reference/index.js';
 import type {
@@ -29,6 +30,7 @@ import {
   isoDateString,
   joinNotices,
   pageSizeParam,
+  renditionLinks,
   servePageSize,
 } from './_shared.js';
 
@@ -170,14 +172,6 @@ function pickMaterials(hit: RisHit): DraftRecord['materials'] {
     if (url === undefined) return [];
     return [{ type, ...(name !== undefined && { name }), url }];
   });
-}
-
-/** Render a rendition-URL set as markdown links; `''` when the set carries none. */
-function renditionLinks(urls: DraftRecord['content_urls']): string {
-  return (['html', 'pdf', 'rtf', 'xml'] as const)
-    .filter((key) => urls[key] !== undefined)
-    .map((key) => `[${key.toUpperCase()}](${urls[key]})`)
-    .join(' · ');
 }
 
 /** Map a normalized RIS hit (Begut/RegV ride the Bundesrecht controller) to the record shape. */
@@ -410,30 +404,47 @@ export const risSearchDrafts = tool('ris_search_drafts', {
   },
 
   // format() populates content[] — the markdown twin of structuredContent. Every output
-  // field renders here; totals and paging ride the enrichment trailer.
+  // field renders here; totals and paging ride the enrichment trailer. Every RIS string goes
+  // through escapeMarkdownInline and every URL through markdownLink, so a CommonMark parse reads
+  // back the structuredContent value. The heading holds only the line-free document number: a
+  // title carries line breaks, which would end an ATX heading at its first line.
   format: (result) => {
     if (result.results.length === 0) {
       return [{ type: 'text', text: '_No pipeline documents on this page._' }];
     }
     const blocks = result.results.map((r) => {
-      const lines = [`## ${r.title ?? r.short_title ?? r.document_number}`];
-      lines.push(`**Document:** ${r.document_number} (${r.stage})`);
-      if (r.short_title !== undefined) lines.push(`**Short title:** ${r.short_title}`);
-      if (r.abbreviation !== undefined) lines.push(`**Abbreviation:** ${r.abbreviation}`);
-      if (r.ministry !== undefined) lines.push(`**Ministry:** ${r.ministry}`);
+      const document = escapeMarkdownInline(r.document_number);
+      const lines = [`## ${document}`];
+      const field = (label: string, value: string | undefined) => {
+        if (value !== undefined) lines.push(`**${label}:** ${escapeMarkdownInline(value)}`);
+      };
+      field('Title', r.title);
+      lines.push(`**Document:** ${document} (${r.stage})`);
+      field('Short title', r.short_title);
+      field('Abbreviation', r.abbreviation);
+      field('Ministry', r.ministry);
       const dates: string[] = [];
-      if (r.review_start !== undefined) dates.push(`**Review start:** ${r.review_start}`);
-      if (r.review_deadline !== undefined) dates.push(`**Review deadline:** ${r.review_deadline}`);
-      if (r.decided !== undefined) dates.push(`**Decided:** ${r.decided}`);
+      for (const [label, value] of [
+        ['Review start', r.review_start],
+        ['Review deadline', r.review_deadline],
+        ['Decided', r.decided],
+      ] as const) {
+        if (value !== undefined) dates.push(`**${label}:** ${escapeMarkdownInline(value)}`);
+      }
       if (dates.length > 0) lines.push(dates.join(' | '));
-      if (r.keywords !== undefined) lines.push(`**Keywords:** ${r.keywords}`);
-      if (r.document_url !== undefined) lines.push(`**RIS view:** ${r.document_url}`);
+      field('Keywords', r.keywords);
+      if (r.document_url !== undefined) {
+        lines.push(`**RIS view:** ${markdownLink(r.document_url, r.document_url)}`);
+      }
       const urls = renditionLinks(r.content_urls);
-      if (urls !== '') lines.push(`**Text:** ${urls}`);
+      if (urls.length > 0) lines.push(`**Text:** ${urls.join(' · ')}`);
       if (r.materials.length > 0) {
+        // The list is format()'s own structure; each item's text is escaped.
         lines.push('**Materials:**');
-        for (const material of r.materials) {
-          lines.push(`- ${material.name ?? material.type} (${material.type}) — ${material.url}`);
+        for (const { name, type, url } of r.materials) {
+          lines.push(
+            `- ${escapeMarkdownInline(name ?? type)} (${escapeMarkdownInline(type)}) — ${markdownLink(url, url)}`,
+          );
         }
       }
       return lines.join('\n');

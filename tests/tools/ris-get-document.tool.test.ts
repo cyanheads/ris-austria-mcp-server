@@ -11,7 +11,6 @@
  * @module tests/tools/ris-get-document.tool.test
  */
 
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import {
@@ -41,7 +40,13 @@ import {
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import type { RisContentFormat } from '@/services/ris/ris-service.js';
 
-import { contentText, contractError, readCommonMark, type WireError } from './_wire.js';
+import {
+  contentText,
+  contractError,
+  linkDestinations,
+  readCommonMark,
+  type WireError,
+} from './_wire.js';
 
 const { buildDocumentContentUrl, fetchDocumentContent } = vi.hoisted(() => ({
   buildDocumentContentUrl: vi.fn(),
@@ -1642,48 +1647,446 @@ describe('risGetDocument — raw html/xml output budget (#36)', () => {
 });
 
 // Every markdown arm — whole, selected, selector miss, selector ignored, section outline,
-// window outline — digested on both surfaces. Any byte that moves on the markdown path fails
-// here. The sr-only and synthetic rows are the output this code produced before the
-// raw-format budget existed; the four RegV rows carry the statutory list labels (#52) and
-// mid-line ordinals without a backslash (#60) of that fixture's Absatz and Ziffer lists, and
-// the two that include Artikel 1 carry the hard breaks between its Absatz (72) list lines.
-// Every row's content_urls sit on the default content host, https://ogd.ris.bka.gv.at (#75).
+// window outline — pinned on both surfaces: structuredContent by strict equality, content[] by
+// inline snapshot. Any byte that moves on the markdown path fails here. The sr-only and
+// synthetic rows are the output this code produced before the raw-format budget existed; the
+// four RegV rows carry the statutory list labels (#52) and mid-line ordinals without a
+// backslash (#60) of that fixture's Absatz and Ziffer lists, and the two that include
+// Artikel 1 carry the hard breaks between its Absatz (72) list lines (`\x20\x20` in a snapshot
+// is that trailing hard-break space). Every row's content_urls sit on the default content host,
+// https://ogd.ris.bka.gv.at (#75), and render as `[HTML](<url>)` destinations (#79).
 describe('risGetDocument — markdown output unchanged by the raw-format budget (#36)', () => {
-  const digest = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 16);
-  const BASELINE: Record<string, [structured: string, content: string]> = {
-    'whole, sr-only twins': ['3618bb356cb6d1d1', '42dc3255e35eec5f'],
-    'whole, Artikel sections under budget': ['a4358f7346a268cd', '8af8e3a6bd0e0b78'],
-    'selected section': ['b0dccc140973b627', '8e33eb4dd297f7ba'],
-    'partial selector miss': ['435c2a4f0233c771', '450c921055b870e5'],
-    'total selector miss': ['b46dc06024b4776a', '9946c17767cdf80e'],
-    'section outline': ['bd5fe148be19cf31', '893c9be4a5f9789b'],
-    'window outline': ['7303b0c1463eaad0', '8be13cea4cca90a3'],
-    'selector ignored': ['3917182db880452a', '2f9fb0e8a236af87'],
+  /** The structuredContent fields every row shares: one BrKons document, rendered as markdown. */
+  const MARKDOWN_RECORD = {
+    application: 'BrKons',
+    binding_status: 'consolidated_informational',
+    content_urls: {
+      html: 'https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html',
+      pdf: 'https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf',
+      rtf: 'https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf',
+      xml: 'https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml',
+    },
+    document_number: 'NOR40262691',
+    format: 'markdown',
   };
+  /** The RegV fixture's three Artikel sections as markdown; the whole text is all three. */
+  const ARTIKEL_1 =
+    '## Artikel 1  \nÄnderung des Familienlastenausgleichsgesetzes 1967\n\nDas Bundesgesetz betreffend den Familienlastenausgleich durch Beihilfen (Familienlastenausgleichsgesetz 1967), BGBl. Nr. 376/1967, zuletzt geändert durch das Bundesgesetz BGBl. I Nr. 115/2025, wird wie folgt geändert:\n\n1. § 39 Abs. 2 lit. b lautet:\n\n„b) vom Aufkommen an Einkommensteuer sind jährlich 1 300 000 000 € vor Abzug aller im jeweiligen Finanzausgleichsgesetz vorgesehenen Ertragsanteile in monatlich gleich hohen Teilbeträgen dem Ausgleichsfonds für Familienbeihilfen zuzuweisen;“\n\n2. § 41 Abs. 4 lit. f entfällt.\n\n3. Dem § 41 Abs. 5 wird folgender Satz angefügt:\n\n„Ab dem Kalenderjahr 2028 beträgt der Beitrag 2,7 v.H. der Beitragsgrundlage.“\n\n4. § 42a entfällt.\n\n5. In § 55 Abs. 68 wird die Wortfolge „2026 und 2027“ durch die Wortfolge „2026 bis 2028“ und der Ausdruck „BGBl. I Nr. 25/2025“ durch den Ausdruck „BGBl. I Nr. 97/2024“ ersetzt.\n\n6. Dem § 55 wird folgender Abs. 72 angefügt:\n\n„(72) Für das Inkrafttreten der vom Budgetbegleitgesetz 2027-2028, BGBl. I Nr. xxx/2026, erfassten Bestimmungen gilt Folgendes:  \n  1. § 41 Abs. 5 in der Fassung des genannten Bundesgesetzes tritt mit dem der Kundmachung des genannten Bundesgesetzes folgenden Tag in Kraft und ist erstmals in Bezug auf das Kalenderjahr 2028 anzuwenden. Gleichzeitig tritt § 42a außer Kraft.  \n  2. § 39 Abs. 2 lit. b in der Fassung des genannten Bundesgesetzes tritt mit 1. Jänner 2028 in Kraft. Gleichzeitig tritt § 41 Abs. 4 lit. f außer Kraft.  \n  3. § 55 Abs. 68 in der Fassung des genannten Bundesgesetzes tritt mit Ablauf des Tages der Kundmachung in Kraft.“\n\n';
+  const ARTIKEL_2 =
+    '## Artikel 2  \nÄnderung des Kinderbetreuungsgeldgesetzes\n\nDas Kinderbetreuungsgeldgesetz (KBGG), BGBl. I Nr. 103/2001, zuletzt geändert durch das Bundesgesetz BGBl. I Nr. 115/2025, wird wie folgt geändert:\n\n1. In § 50 wird dem mit der Novelle BGBl. I Nr. 115/2025 neu erlassenen Absatz nach Abs. 37 die Absatzbezeichnung „(38)“ vorangestellt.\n\n2. Dem § 50 wird folgender Abs. 50 angefügt:\n\n„(50) Die Absatzbezeichnung des Abs. 38 in der Fassung des Budgetbegleitgesetzes 2027-2028, BGBl. I Nr. xxx/2026, tritt rückwirkend mit 1. Jänner 2026 in Kraft.“\n\n3. Nach § 50 wird folgender § 51 angefügt:\n\n„§ 51 (1) § 3 Abs. 1a, § 24a Abs. 2a und § 33 Abs. 6 in der Fassung des Bundesgesetzes BGBl. I Nr. 174/2022 sowie § 24d Abs. 1 zweiter bis vierter Satz in der Fassung des Budgetbegleitgesetzes 2025, BGBl. I Nr. 25/2025, kommen für die Kalenderjahre 2026 bis 2028 nicht zur Anwendung.\n\n(2) § 51 Abs. 1 in der Fassung des Budgetbegleitgesetzes 2027-2028, BGBl. I Nr. xxx/2026, tritt mit dem auf die Kundmachung folgenden Tag in Kraft.“\n\n';
+  const ARTIKEL_3 =
+    '## Artikel 3  \nÄnderung des Familienzeitbonusgesetzes\n\nDas Bundesgesetz über die Gewährung eines Bonus für Väter während der Familienzeit (Familienzeitbonusgesetz – FamZeitbG), BGBl. I Nr. 53/2016, zuletzt geändert durch das Budgetbegleitgesetz 2025, BGBl. I Nr. 25/2025, wird wie folgt geändert:\n\n1. In § 12 Abs. 10 wird die Wortfolge „2026 und 2027“ durch die Wortfolge „2026 bis 2028“ und der Ausdruck „BGBl. I Nr. 115/2023“ durch den Ausdruck „BGBl. I Nr. 174/2022“ ersetzt.\n\n2. Dem § 12 wird folgender Abs. 11 angefügt:\n\n„(11) § 12 Abs. 10 in der Fassung des Budgetbegleitgesetzes 2027-2028, BGBl. I Nr. xxx/2026, tritt mit dem auf die Kundmachung folgenden Tag in Kraft.“';
+  /** The three-section outline a selector miss returns for the RegV fixture. */
+  const ARTIKEL_OUTLINE = [
+    { bytes: 1675, name: 'Artikel 1' },
+    { bytes: 1062, name: 'Artikel 2' },
+    { bytes: 711, name: 'Artikel 3' },
+  ];
 
-  it.each<[label: string, buildHtml: () => string, input: { sections?: string[] }]>([
-    ['whole, sr-only twins', () => SR_ONLY_HTML, {}],
-    ['whole, Artikel sections under budget', () => ARTIKEL_SECTIONS_HTML, {}],
-    ['selected section', () => ARTIKEL_SECTIONS_HTML, { sections: ['Artikel 2'] }],
-    [
-      'partial selector miss',
-      () => ARTIKEL_SECTIONS_HTML,
-      { sections: ['Artikel 2', 'Artikel 9'] },
-    ],
-    ['total selector miss', () => ARTIKEL_SECTIONS_HTML, { sections: ['Artikel 9999'] }],
-    ['section outline', midSizedArticlesHtml, {}],
-    ['window outline', () => headingFreeDecisionHtml(400), {}],
-    ['selector ignored', () => headingFreeDecisionHtml(20), { sections: ['Artikel 2'] }],
-  ])('%s', async (label, buildHtml, input) => {
-    fetchDocumentContent.mockResolvedValue({ text: buildHtml(), byteSize: 1, url: 'https://x' });
-    const result = await runToolContract(risGetDocument, {
+  /** One markdown call over the wire for NOR40262691 against `html`. */
+  async function run(html: string, input: { sections?: string[] } = {}) {
+    fetchDocumentContent.mockResolvedValue({ text: html, byteSize: 1, url: 'https://x' });
+    return await runToolContract(risGetDocument, {
       document_number: 'NOR40262691',
       application: 'BrKons',
       ...input,
     });
-    expect([digest(JSON.stringify(result.structuredContent)), digest(contentText(result))]).toEqual(
-      BASELINE[label],
-    );
+  }
+
+  it('whole, sr-only twins', async () => {
+    const result = await run(SR_ONLY_HTML);
+    expect(result.structuredContent).toStrictEqual({
+      ...MARKDOWN_RECORD,
+      byte_size: 515,
+      kind: 'full',
+      text: '# Kurztitel\n\nDatenschutzgesetz\n\n# Kundmachungsorgan\n\nBGBl. I Nr. 165/1999 zuletzt geändert durch BGBl. I Nr. 70/2024\n\n# Typ\n\nBG\n\n# §/Artikel/Anlage\n\n§ 0\n\n| InhaltsverzeichnisArtikel 1(Verfassungsbestimmung)      |                            |\n| ------------------------------------------------------- | -------------------------- |\n| § 1                                                     | Grundrecht auf Datenschutz |\n| (Anm.: §§ 2 und 3 aufgehoben durch BGBl. I Nr. 14/2019) |                            |',
+    });
+    expect(result.content).toMatchInlineSnapshot(`
+      [
+        {
+          "text": "## NOR40262691 (BrKons)
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** full
+      **Size:** 515 bytes
+      **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
+
+      # Kurztitel
+
+      Datenschutzgesetz
+
+      # Kundmachungsorgan
+
+      BGBl. I Nr. 165/1999 zuletzt geändert durch BGBl. I Nr. 70/2024
+
+      # Typ
+
+      BG
+
+      # §/Artikel/Anlage
+
+      § 0
+
+      | InhaltsverzeichnisArtikel 1(Verfassungsbestimmung)      |                            |
+      | ------------------------------------------------------- | -------------------------- |
+      | § 1                                                     | Grundrecht auf Datenschutz |
+      | (Anm.: §§ 2 und 3 aufgehoben durch BGBl. I Nr. 14/2019) |                            |",
+          "type": "text",
+        },
+      ]
+    `);
+  });
+
+  it('whole, Artikel sections under budget', async () => {
+    const result = await run(ARTIKEL_SECTIONS_HTML);
+    expect(result.structuredContent).toStrictEqual({
+      ...MARKDOWN_RECORD,
+      byte_size: 3448,
+      kind: 'full',
+      text: ARTIKEL_1 + ARTIKEL_2 + ARTIKEL_3,
+    });
+    expect(result.content).toMatchInlineSnapshot(`
+      [
+        {
+          "text": "## NOR40262691 (BrKons)
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** full
+      **Size:** 3448 bytes
+      **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
+
+      ## Artikel 1\x20\x20
+      Änderung des Familienlastenausgleichsgesetzes 1967
+
+      Das Bundesgesetz betreffend den Familienlastenausgleich durch Beihilfen (Familienlastenausgleichsgesetz 1967), BGBl. Nr. 376/1967, zuletzt geändert durch das Bundesgesetz BGBl. I Nr. 115/2025, wird wie folgt geändert:
+
+      1. § 39 Abs. 2 lit. b lautet:
+
+      „b) vom Aufkommen an Einkommensteuer sind jährlich 1 300 000 000 € vor Abzug aller im jeweiligen Finanzausgleichsgesetz vorgesehenen Ertragsanteile in monatlich gleich hohen Teilbeträgen dem Ausgleichsfonds für Familienbeihilfen zuzuweisen;“
+
+      2. § 41 Abs. 4 lit. f entfällt.
+
+      3. Dem § 41 Abs. 5 wird folgender Satz angefügt:
+
+      „Ab dem Kalenderjahr 2028 beträgt der Beitrag 2,7 v.H. der Beitragsgrundlage.“
+
+      4. § 42a entfällt.
+
+      5. In § 55 Abs. 68 wird die Wortfolge „2026 und 2027“ durch die Wortfolge „2026 bis 2028“ und der Ausdruck „BGBl. I Nr. 25/2025“ durch den Ausdruck „BGBl. I Nr. 97/2024“ ersetzt.
+
+      6. Dem § 55 wird folgender Abs. 72 angefügt:
+
+      „(72) Für das Inkrafttreten der vom Budgetbegleitgesetz 2027-2028, BGBl. I Nr. xxx/2026, erfassten Bestimmungen gilt Folgendes:\x20\x20
+        1. § 41 Abs. 5 in der Fassung des genannten Bundesgesetzes tritt mit dem der Kundmachung des genannten Bundesgesetzes folgenden Tag in Kraft und ist erstmals in Bezug auf das Kalenderjahr 2028 anzuwenden. Gleichzeitig tritt § 42a außer Kraft.\x20\x20
+        2. § 39 Abs. 2 lit. b in der Fassung des genannten Bundesgesetzes tritt mit 1. Jänner 2028 in Kraft. Gleichzeitig tritt § 41 Abs. 4 lit. f außer Kraft.\x20\x20
+        3. § 55 Abs. 68 in der Fassung des genannten Bundesgesetzes tritt mit Ablauf des Tages der Kundmachung in Kraft.“
+
+      ## Artikel 2\x20\x20
+      Änderung des Kinderbetreuungsgeldgesetzes
+
+      Das Kinderbetreuungsgeldgesetz (KBGG), BGBl. I Nr. 103/2001, zuletzt geändert durch das Bundesgesetz BGBl. I Nr. 115/2025, wird wie folgt geändert:
+
+      1. In § 50 wird dem mit der Novelle BGBl. I Nr. 115/2025 neu erlassenen Absatz nach Abs. 37 die Absatzbezeichnung „(38)“ vorangestellt.
+
+      2. Dem § 50 wird folgender Abs. 50 angefügt:
+
+      „(50) Die Absatzbezeichnung des Abs. 38 in der Fassung des Budgetbegleitgesetzes 2027-2028, BGBl. I Nr. xxx/2026, tritt rückwirkend mit 1. Jänner 2026 in Kraft.“
+
+      3. Nach § 50 wird folgender § 51 angefügt:
+
+      „§ 51 (1) § 3 Abs. 1a, § 24a Abs. 2a und § 33 Abs. 6 in der Fassung des Bundesgesetzes BGBl. I Nr. 174/2022 sowie § 24d Abs. 1 zweiter bis vierter Satz in der Fassung des Budgetbegleitgesetzes 2025, BGBl. I Nr. 25/2025, kommen für die Kalenderjahre 2026 bis 2028 nicht zur Anwendung.
+
+      (2) § 51 Abs. 1 in der Fassung des Budgetbegleitgesetzes 2027-2028, BGBl. I Nr. xxx/2026, tritt mit dem auf die Kundmachung folgenden Tag in Kraft.“
+
+      ## Artikel 3\x20\x20
+      Änderung des Familienzeitbonusgesetzes
+
+      Das Bundesgesetz über die Gewährung eines Bonus für Väter während der Familienzeit (Familienzeitbonusgesetz – FamZeitbG), BGBl. I Nr. 53/2016, zuletzt geändert durch das Budgetbegleitgesetz 2025, BGBl. I Nr. 25/2025, wird wie folgt geändert:
+
+      1. In § 12 Abs. 10 wird die Wortfolge „2026 und 2027“ durch die Wortfolge „2026 bis 2028“ und der Ausdruck „BGBl. I Nr. 115/2023“ durch den Ausdruck „BGBl. I Nr. 174/2022“ ersetzt.
+
+      2. Dem § 12 wird folgender Abs. 11 angefügt:
+
+      „(11) § 12 Abs. 10 in der Fassung des Budgetbegleitgesetzes 2027-2028, BGBl. I Nr. xxx/2026, tritt mit dem auf die Kundmachung folgenden Tag in Kraft.“",
+          "type": "text",
+        },
+      ]
+    `);
+  });
+
+  it('selected section', async () => {
+    const result = await run(ARTIKEL_SECTIONS_HTML, { sections: ['Artikel 2'] });
+    expect(result.structuredContent).toStrictEqual({
+      ...MARKDOWN_RECORD,
+      byte_size: 1062,
+      kind: 'full',
+      text: ARTIKEL_2,
+    });
+    expect(result.content).toMatchInlineSnapshot(`
+      [
+        {
+          "text": "## NOR40262691 (BrKons)
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** full
+      **Size:** 1062 bytes
+      **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
+
+      ## Artikel 2\x20\x20
+      Änderung des Kinderbetreuungsgeldgesetzes
+
+      Das Kinderbetreuungsgeldgesetz (KBGG), BGBl. I Nr. 103/2001, zuletzt geändert durch das Bundesgesetz BGBl. I Nr. 115/2025, wird wie folgt geändert:
+
+      1. In § 50 wird dem mit der Novelle BGBl. I Nr. 115/2025 neu erlassenen Absatz nach Abs. 37 die Absatzbezeichnung „(38)“ vorangestellt.
+
+      2. Dem § 50 wird folgender Abs. 50 angefügt:
+
+      „(50) Die Absatzbezeichnung des Abs. 38 in der Fassung des Budgetbegleitgesetzes 2027-2028, BGBl. I Nr. xxx/2026, tritt rückwirkend mit 1. Jänner 2026 in Kraft.“
+
+      3. Nach § 50 wird folgender § 51 angefügt:
+
+      „§ 51 (1) § 3 Abs. 1a, § 24a Abs. 2a und § 33 Abs. 6 in der Fassung des Bundesgesetzes BGBl. I Nr. 174/2022 sowie § 24d Abs. 1 zweiter bis vierter Satz in der Fassung des Budgetbegleitgesetzes 2025, BGBl. I Nr. 25/2025, kommen für die Kalenderjahre 2026 bis 2028 nicht zur Anwendung.
+
+      (2) § 51 Abs. 1 in der Fassung des Budgetbegleitgesetzes 2027-2028, BGBl. I Nr. xxx/2026, tritt mit dem auf die Kundmachung folgenden Tag in Kraft.“
+
+      ",
+          "type": "text",
+        },
+      ]
+    `);
+  });
+
+  it('partial selector miss', async () => {
+    const result = await run(ARTIKEL_SECTIONS_HTML, { sections: ['Artikel 2', 'Artikel 9'] });
+    expect(result.structuredContent).toStrictEqual({
+      ...MARKDOWN_RECORD,
+      byte_size: 1062,
+      kind: 'full',
+      notice:
+        'Returned only the matched entries — "Artikel 9" named no entry of this document and was skipped. This document has 3 §/Artikel/Anlage sections; copy a name verbatim and re-call ris_get_document with the same addressing — e.g. "Artikel 1", "Artikel 2", "Artikel 3".',
+      text: ARTIKEL_2,
+    });
+    expect(result.content).toMatchInlineSnapshot(`
+      [
+        {
+          "text": "## NOR40262691 (BrKons)
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** full
+      **Size:** 1062 bytes
+      **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
+
+      ## Artikel 2\x20\x20
+      Änderung des Kinderbetreuungsgeldgesetzes
+
+      Das Kinderbetreuungsgeldgesetz (KBGG), BGBl. I Nr. 103/2001, zuletzt geändert durch das Bundesgesetz BGBl. I Nr. 115/2025, wird wie folgt geändert:
+
+      1. In § 50 wird dem mit der Novelle BGBl. I Nr. 115/2025 neu erlassenen Absatz nach Abs. 37 die Absatzbezeichnung „(38)“ vorangestellt.
+
+      2. Dem § 50 wird folgender Abs. 50 angefügt:
+
+      „(50) Die Absatzbezeichnung des Abs. 38 in der Fassung des Budgetbegleitgesetzes 2027-2028, BGBl. I Nr. xxx/2026, tritt rückwirkend mit 1. Jänner 2026 in Kraft.“
+
+      3. Nach § 50 wird folgender § 51 angefügt:
+
+      „§ 51 (1) § 3 Abs. 1a, § 24a Abs. 2a und § 33 Abs. 6 in der Fassung des Bundesgesetzes BGBl. I Nr. 174/2022 sowie § 24d Abs. 1 zweiter bis vierter Satz in der Fassung des Budgetbegleitgesetzes 2025, BGBl. I Nr. 25/2025, kommen für die Kalenderjahre 2026 bis 2028 nicht zur Anwendung.
+
+      (2) § 51 Abs. 1 in der Fassung des Budgetbegleitgesetzes 2027-2028, BGBl. I Nr. xxx/2026, tritt mit dem auf die Kundmachung folgenden Tag in Kraft.“
+
+      ",
+          "type": "text",
+        },
+        {
+          "text": "
+
+      > Returned only the matched entries — "Artikel 9" named no entry of this document and was skipped. This document has 3 §/Artikel/Anlage sections; copy a name verbatim and re-call ris_get_document with the same addressing — e.g. "Artikel 1", "Artikel 2", "Artikel 3".",
+          "type": "text",
+        },
+      ]
+    `);
+  });
+
+  it('total selector miss', async () => {
+    const result = await run(ARTIKEL_SECTIONS_HTML, { sections: ['Artikel 9999'] });
+    expect(result.structuredContent).toStrictEqual({
+      ...MARKDOWN_RECORD,
+      byte_size: 3448,
+      kind: 'outline',
+      notice:
+        'sections:[…] matched nothing — "Artikel 9999" named no section of this document, so the outline below is a selector mismatch, not a size overflow. Copy a name verbatim from sections and re-call ris_get_document with the same addressing — e.g. "Artikel 1", "Artikel 2", "Artikel 3".',
+      sections: ARTIKEL_OUTLINE,
+      truncated: true,
+    });
+    expect(result.content).toMatchInlineSnapshot(`
+      [
+        {
+          "text": "## NOR40262691 (BrKons)
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** outline
+      **Size:** 3448 bytes (truncated — retrieve sections from the outline below)
+      **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
+
+      **3 sections** (retrieve by name):
+      - \`Artikel 1\` — 1675 bytes
+      - \`Artikel 2\` — 1062 bytes
+      - \`Artikel 3\` — 711 bytes",
+          "type": "text",
+        },
+        {
+          "text": "
+
+      > sections:[…] matched nothing — "Artikel 9999" named no section of this document, so the outline below is a selector mismatch, not a size overflow. Copy a name verbatim from sections and re-call ris_get_document with the same addressing — e.g. "Artikel 1", "Artikel 2", "Artikel 3".",
+          "type": "text",
+        },
+      ]
+    `);
+  });
+
+  it('section outline', async () => {
+    const result = await run(midSizedArticlesHtml());
+    expect(result.structuredContent).toStrictEqual({
+      ...MARKDOWN_RECORD,
+      byte_size: 72_093,
+      kind: 'outline',
+      notice:
+        'Document too large to return in full (72093 bytes). Re-call ris_get_document with the same addressing plus sections:[…] naming entries from the outline — e.g. "Artikel 1", "Artikel 2", "Artikel 3".',
+      sections: [
+        { bytes: 12_016, name: 'Artikel 1' },
+        { bytes: 12_016, name: 'Artikel 2' },
+        { bytes: 12_016, name: 'Artikel 3' },
+        { bytes: 12_016, name: 'Artikel 4' },
+        { bytes: 12_016, name: 'Artikel 5' },
+        { bytes: 12_013, name: 'Artikel 6' },
+      ],
+      truncated: true,
+    });
+    expect(result.content).toMatchInlineSnapshot(`
+      [
+        {
+          "text": "## NOR40262691 (BrKons)
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** outline
+      **Size:** 72093 bytes (truncated — retrieve sections from the outline below)
+      **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
+
+      **6 sections** (retrieve by name):
+      - \`Artikel 1\` — 12016 bytes
+      - \`Artikel 2\` — 12016 bytes
+      - \`Artikel 3\` — 12016 bytes
+      - \`Artikel 4\` — 12016 bytes
+      - \`Artikel 5\` — 12016 bytes
+      - \`Artikel 6\` — 12013 bytes",
+          "type": "text",
+        },
+        {
+          "text": "
+
+      > Document too large to return in full (72093 bytes). Re-call ris_get_document with the same addressing plus sections:[…] naming entries from the outline — e.g. "Artikel 1", "Artikel 2", "Artikel 3".",
+          "type": "text",
+        },
+      ]
+    `);
+  });
+
+  it('window outline', async () => {
+    const result = await run(headingFreeDecisionHtml(400));
+    expect(result.structuredContent).toStrictEqual({
+      ...MARKDOWN_RECORD,
+      byte_size: 117_087,
+      kind: 'outline',
+      notice:
+        'Document too large to return in full (117087 bytes). It carries no §/Artikel/Anlage headings, so the outline lists 3 contiguous windows covering the whole text — read them in the order they are named, and expect a window to open mid-sentence, since the cuts are line breaks rather than sentence or § boundaries. Re-call ris_get_document with the same addressing plus sections:[…] naming entries from the outline — e.g. "Part 1 of 3", "Part 2 of 3", "Part 3 of 3".',
+      sections: [
+        { bytes: 39_151, name: 'Part 1 of 3' },
+        { bytes: 38_969, name: 'Part 2 of 3' },
+        { bytes: 38_967, name: 'Part 3 of 3' },
+      ],
+      truncated: true,
+    });
+    expect(result.content).toMatchInlineSnapshot(`
+      [
+        {
+          "text": "## NOR40262691 (BrKons)
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** outline
+      **Size:** 117087 bytes (truncated — retrieve sections from the outline below)
+      **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
+
+      **3 windows** (retrieve by name, in this order):
+      - \`Part 1 of 3\` — 39151 bytes
+      - \`Part 2 of 3\` — 38969 bytes
+      - \`Part 3 of 3\` — 38967 bytes",
+          "type": "text",
+        },
+        {
+          "text": "
+
+      > Document too large to return in full (117087 bytes). It carries no §/Artikel/Anlage headings, so the outline lists 3 contiguous windows covering the whole text — read them in the order they are named, and expect a window to open mid-sentence, since the cuts are line breaks rather than sentence or § boundaries. Re-call ris_get_document with the same addressing plus sections:[…] naming entries from the outline — e.g. "Part 1 of 3", "Part 2 of 3", "Part 3 of 3".",
+          "type": "text",
+        },
+      ]
+    `);
+  });
+
+  it('selector ignored', async () => {
+    const result = await run(headingFreeDecisionHtml(20), { sections: ['Artikel 2'] });
+    const paragraph = 'Der Beschwerdeführer brachte vor. '.repeat(8);
+    expect(result.structuredContent).toStrictEqual({
+      ...MARKDOWN_RECORD,
+      byte_size: 5827,
+      kind: 'full',
+      notice:
+        'sections:[…] was ignored — this rendition has no addressable entries, so "Artikel 2" could not be resolved. Raw html and xml are never sliced; markdown carries entries when it has §/Artikel/Anlage headings, or once it overflows the 40000-byte budget. The whole document follows.',
+      text: Array.from({ length: 20 }, (_, i) => `xPARAx${i}x ${paragraph}`)
+        .join('\n\n')
+        .trimEnd(),
+    });
+    expect(result.content).toMatchInlineSnapshot(`
+      [
+        {
+          "text": "## NOR40262691 (BrKons)
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** full
+      **Size:** 5827 bytes
+      **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
+
+      xPARAx0x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx1x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx2x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx3x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx4x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx5x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx6x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx7x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx8x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx9x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx10x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx11x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx12x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx13x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx14x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx15x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx16x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx17x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx18x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.\x20
+
+      xPARAx19x Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor. Der Beschwerdeführer brachte vor.",
+          "type": "text",
+        },
+        {
+          "text": "
+
+      > sections:[…] was ignored — this rendition has no addressable entries, so "Artikel 2" could not be resolved. Raw html and xml are never sliced; markdown carries entries when it has §/Artikel/Anlage headings, or once it overflows the 40000-byte budget. The whole document follows.",
+          "type": "text",
+        },
+      ]
+    `);
   });
 });
 
@@ -2154,6 +2557,38 @@ describe('risGetDocument — format() parity', () => {
     }
     expect(text).toContain('World');
   });
+
+  // DOCUMENT_NUMBER_PATTERN admits `~`, and the number is echoed into the heading: a raw
+  // `## ~~NOR1~~` renders as strikethrough.
+  it.each(['BrKons', 'BgblAuth'] as const)(
+    'reads back an echoed ~~NOR1~~ and every URL from content[] (%s, urls_only)',
+    async (application) => {
+      const result = await runToolContract(risGetDocument, {
+        application,
+        document_number: '~~NOR1~~',
+        format: 'urls_only',
+      });
+      expect(result.isError).not.toBe(true);
+      const record = result.structuredContent as {
+        authentic_pdf_url?: string;
+        content_urls: Record<string, string>;
+        document_number: string;
+      };
+      expect(record.document_number).toBe('~~NOR1~~');
+      const [block] = result.content;
+      if (block?.type !== 'text') throw new Error('expected a text block from format()');
+      const text = readCommonMark(block.text);
+      expect(text.split('\n\n').slice(0, 3)).toEqual([
+        '⟨heading_open⟩',
+        `~~NOR1~~ (${application})`,
+        '⟨heading_close⟩',
+      ]);
+      expect(text).not.toMatch(/⟨s⟩/u);
+      const urls = [...Object.values(record.content_urls), record.authentic_pdf_url ?? []].flat();
+      expect(urls.length).toBeGreaterThan(0);
+      expect(linkDestinations(block.text).toSorted()).toEqual(urls.toSorted());
+    },
+  );
 });
 
 describe('parseDocumentUrl (errors-as-values)', () => {

@@ -28,7 +28,9 @@ import type { Context } from '@cyanheads/mcp-ts-core';
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError, validationError } from '@cyanheads/mcp-ts-core/errors';
 import {
+  escapeMarkdownInline,
   markdown,
+  markdownLink,
   OUTLINE_VARIANT,
   type OutlineResult,
   outlineOnOverflow,
@@ -45,6 +47,8 @@ import {
   RIS_CONTENT_FORMATS,
   type RisContentFormat,
 } from '@/services/ris/ris-service.js';
+
+import { renditionLinks } from './_shared.js';
 
 /** The seven canonical binding labels (Design Decisions › Binding status). */
 const BINDING_STATUSES = [
@@ -1226,9 +1230,11 @@ export const risGetDocument = tool('ris_get_document', {
   // `kind` (format-parity walks one sample with every optional field populated at once). A
   // truncated result with no `sections` is the link arm, which has no outline to point at.
   // Raw html/xml is fenced with a fence longer than any backtick run in it, so the markup
-  // reaches the client as literal text — never rendered, never able to close the block.
+  // reaches the client as literal text — never rendered, never able to close the block. The
+  // echoed document number is escaped (the input is a free string, `~` and `_` included) and every URL goes
+  // through markdownLink; `text` is Markdown by contract and passes through as is.
   format: (result) => {
-    const lines = [`## ${result.document_number} (${result.application})`];
+    const lines = [`## ${escapeMarkdownInline(result.document_number)} (${result.application})`];
     lines.push(
       `**Binding:** ${result.binding_status} | **Format:** ${result.format} | **Kind:** ${result.kind}`,
     );
@@ -1242,11 +1248,11 @@ export const risGetDocument = tool('ris_get_document', {
       lines.push(`**Size:** ${result.byte_size} bytes${suffix}`);
     }
     if (result.authentic_pdf_url !== undefined) {
-      lines.push(`**Authentic PDF:** ${result.authentic_pdf_url}`);
+      lines.push(
+        `**Authentic PDF:** ${markdownLink(result.authentic_pdf_url, result.authentic_pdf_url)}`,
+      );
     }
-    const urls = (['html', 'pdf', 'rtf', 'xml'] as const)
-      .filter((key) => result.content_urls[key] !== undefined)
-      .map((key) => `[${key.toUpperCase()}](${result.content_urls[key]})`);
+    const urls = renditionLinks(result.content_urls);
     if (urls.length > 0) lines.push(`**Renditions:** ${urls.join(' · ')}`);
     if (result.sections !== undefined) lines.push('', renderOutlineSections(result.sections));
     if (result.text !== undefined) {

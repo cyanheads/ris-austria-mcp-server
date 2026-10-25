@@ -24,8 +24,18 @@ import {
   risSearchLegislation,
 } from '@/mcp-server/tools/definitions/ris-search-legislation.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
+import type { RisSearchResult } from '@/services/ris/types.js';
 
-import { contentText, contractError, expectArgumentRejection } from './_wire.js';
+import {
+  contentText,
+  contractError,
+  expectArgumentRejection,
+  expectReadBack,
+  HOSTILE_TEXT,
+  hostileHit,
+  readCommonMark,
+  WEB_URL,
+} from './_wire.js';
 
 const { searchLegislation } = vi.hoisted(() => ({ searchLegislation: vi.fn() }));
 
@@ -608,5 +618,67 @@ describe('risSearchLegislation — state names in scope (#58)', () => {
       application: 'LrKons',
       state: code,
     });
+  });
+});
+
+describe('risSearchLegislation — content[] reads back RIS text verbatim (#79)', () => {
+  it('reads back every hostile-shaped field of federal, state, municipal, and translation records', async () => {
+    const page = parseSearchResponse(fixture('search-brkons-multi.json'));
+    const pick = (name: string) => (parseSearchResponse(fixture(name)) as RisSearchResult).hits[0]!;
+    const [federal] = page.hits;
+    const hits = [
+      {
+        ...hostileHit(federal!, 0, { title: HOSTILE_TEXT.multiLineTitle }),
+        documentNumber: `~~${federal!.documentNumber}~~`,
+      },
+      hostileHit(pick('search-lrkons-abkuerzung.json'), 1, { title: HOSTILE_TEXT.listOpener }),
+      hostileHit(pick('search-gra.json'), 2, { municipality: HOSTILE_TEXT.inline }),
+      hostileHit(pick('search-erv-translations.json'), 3, {
+        source: HOSTILE_TEXT.blockMarkers,
+        title: undefined,
+      }),
+    ];
+    searchLegislation.mockResolvedValue({ ...page, hits });
+    const result = await runToolContract(risSearchLegislation, { query: 'Gesetz' });
+    expect(result.isError).not.toBe(true);
+    const { results } = risSearchLegislation.output.parse(result.structuredContent);
+    // structuredContent relays the RIS strings as written.
+    expect(results[0]).toMatchObject({
+      document_number: `~~${federal!.documentNumber}~~`,
+      title: HOSTILE_TEXT.multiLineTitle,
+    });
+    expect(results[2]!.municipality).toBe(HOSTILE_TEXT.inline);
+    expect(results[3]!.translation?.source).toBe(HOSTILE_TEXT.blockMarkers);
+    expect(results[0]!.law_url).toMatch(WEB_URL);
+    expect(results[0]!.eli).toMatch(WEB_URL);
+
+    const blocks = expectReadBack(result, results);
+    results.forEach((record, i) => {
+      const read = readCommonMark(blocks[i]!);
+      expect(
+        read.startsWith(`⟨heading_open⟩\n\n${record.document_number}\n\n⟨heading_close⟩`),
+      ).toBe(true);
+      if (record.title !== undefined) {
+        expect(read).toContain(`⟨strong⟩Title:⟨/strong⟩ ${record.title}\n`);
+      }
+    });
+    expect(readCommonMark(blocks[0]!)).toContain(`⟨strong⟩ELI:⟨/strong⟩ ⟨a⟩${results[0]!.eli}⟨/a⟩`);
+    expect(readCommonMark(blocks[3]!)).not.toContain('Title:');
+    expect(readCommonMark(blocks[3]!)).toContain(
+      `⟨strong⟩Translation of:⟨/strong⟩ ${HOSTILE_TEXT.blockMarkers}\n`,
+    );
+  });
+
+  it('keeps a consolidated title’s StF line out of the heading and reads it back', async () => {
+    searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-celex.json')));
+    const result = await runToolContract(risSearchLegislation, { title: 'Datenschutzgesetz' });
+    expect(result.isError).not.toBe(true);
+    const { results } = risSearchLegislation.output.parse(result.structuredContent);
+    expect(results[0]!.title).toMatch(/\nStF: BGBl\. I Nr\. 165\/1999/u);
+    const [block] = expectReadBack(result, results);
+    expect(readCommonMark(block!)).toMatch(
+      /^⟨heading_open⟩\n\nNOR40262691\n\n⟨heading_close⟩\n\n⟨strong⟩Title:⟨\/strong⟩ /u,
+    );
+    expect(readCommonMark(block!)).toContain(`⟨strong⟩Title:⟨/strong⟩ ${results[0]!.title}\n`);
   });
 });

@@ -1,0 +1,409 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "20",
+        "#text": "6"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "ERL_BKA_20260710_2026_0_565_061_",
+                "Applikation": "Erlaesse",
+                "Organ": "Bundeskanzleramt",
+                "Einbringer": "Bundeskanzleramt",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-07-20",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Erlaesse&Dokumentnummer=ERL_BKA_20260710_2026_0_565_061_"
+              },
+              "Sonstige": {
+                "Kurztitel": "Informationsschreiben zu den Änderungen des Beförderungszuschusses  gemäß § 7 RGV durch das Budgetmaßnahmengesetz 2026 – Inkrafttreten 1.  August 2026",
+                "Titel": "Informationsschreiben zu den Änderungen des Beförderungszuschusses \r\ngemäß § 7 RGV durch das Budgetmaßnahmengesetz 2026 – Inkrafttreten 1. \r\nAugust 2026",
+                "Erlaesse": {
+                  "Bundesministerium": "Bundeskanzleramt",
+                  "Genehmigungsdatum": "2026-07-10",
+                  "Typ": "Rundschreiben",
+                  "Geschaeftszahl": {
+                    "item": "2026-0.565.061 "
+                  },
+                  "Kurzinformation": "Informationsschreiben zu den Änderungen des Beförderungszuschusses  gemäß § 7 RGV durch das Budgetmaßnahmengesetz 2026 – Inkrafttreten 1.  August 2026"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20260710_2026_0_565_061_/ERL_BKA_20260710_2026_0_565_061_.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20260710_2026_0_565_061_/ERL_BKA_20260710_2026_0_565_061_.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20260710_2026_0_565_061_/ERL_BKA_20260710_2026_0_565_061_.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20260710_2026_0_565_061_/ERL_BKA_20260710_2026_0_565_061_.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "ERL_BKA_20260313_2026_0_219_140",
+                "Applikation": "Erlaesse",
+                "Organ": "Bundeskanzleramt",
+                "Einbringer": "Bundeskanzleramt",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-03-16",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Erlaesse&Dokumentnummer=ERL_BKA_20260313_2026_0_219_140"
+              },
+              "Sonstige": {
+                "Kurztitel": "Informationsschreiben zur steuerlichen Behandlung des  Beförderungszuschusses für sämtliche Mitarbeiterinnen und Mitarbeiter ab  1. Jänner 2026",
+                "Titel": "Informationsschreiben zur steuerlichen Behandlung des \r\nBeförderungszuschusses für sämtliche Mitarbeiterinnen und Mitarbeiter ab \r\n1. Jänner 2026",
+                "Erlaesse": {
+                  "Bundesministerium": "Bundeskanzleramt",
+                  "Genehmigungsdatum": "2026-03-13",
+                  "Typ": "Rundschreiben",
+                  "Geschaeftszahl": {
+                    "item": "2026-0.219.140"
+                  },
+                  "Kurzinformation": "Informationsschreiben zur steuerlichen Behandlung des  Beförderungszuschusses für sämtliche Mitarbeiterinnen und Mitarbeiter ab  1. Jänner 2026"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20260313_2026_0_219_140/ERL_BKA_20260313_2026_0_219_140.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20260313_2026_0_219_140/ERL_BKA_20260313_2026_0_219_140.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20260313_2026_0_219_140/ERL_BKA_20260313_2026_0_219_140.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20260313_2026_0_219_140/ERL_BKA_20260313_2026_0_219_140.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "ERL_BKA_20241223_2024_0_687_438",
+                "Applikation": "Erlaesse",
+                "Organ": "Bundesministerium für Kunst, Kultur, öffentlichen Dienst und Sport",
+                "Einbringer": "Bundesministerium für Kunst, Kultur, öffentlichen Dienst und Sport",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2024-12-30",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Erlaesse&Dokumentnummer=ERL_BKA_20241223_2024_0_687_438"
+              },
+              "Sonstige": {
+                "Kurztitel": "Rundschreiben zur Dienstrechts-Novelle 2024 und zum Progressionsabgeltungsgesetz 2025",
+                "Titel": "Rundschreiben zur Dienstrechts-Novelle 2024 und zum Progressionsabgeltungsgesetz 2025",
+                "Erlaesse": {
+                  "Bundesministerium": "Bundesministerium für Kunst, Kultur, öffentlichen Dienst und Sport",
+                  "Genehmigungsdatum": "2024-12-23",
+                  "Typ": "Rundschreiben",
+                  "Geschaeftszahl": {
+                    "item": "2024-0.687.438"
+                  },
+                  "Kurzinformation": "Rundschreiben zur Dienstrechts-Novelle 2024 und zum Progressionsabgeltungsgesetz 2025"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20241223_2024_0_687_438/ERL_BKA_20241223_2024_0_687_438.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20241223_2024_0_687_438/ERL_BKA_20241223_2024_0_687_438.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20241223_2024_0_687_438/ERL_BKA_20241223_2024_0_687_438.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20241223_2024_0_687_438/ERL_BKA_20241223_2024_0_687_438.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "ERL_BKA_20230209_2023_0_062_002",
+                "Applikation": "Erlaesse",
+                "Organ": "Bundesministerium für Kunst, Kultur, öffentlichen Dienst und Sport",
+                "Einbringer": "Bundesministerium für Kunst, Kultur, öffentlichen Dienst und Sport",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2023-03-17",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Erlaesse&Dokumentnummer=ERL_BKA_20230209_2023_0_062_002"
+              },
+              "Sonstige": {
+                "Kurztitel": "Rundschreiben zur Dienstrechts-Novelle 2022 und zur 2. Dienstrechts-Novelle 2022",
+                "Titel": "Rundschreiben zur Dienstrechts-Novelle 2022 und zur 2. Dienstrechts-Novelle 2022",
+                "Erlaesse": {
+                  "Bundesministerium": "Bundesministerium für Kunst, Kultur, öffentlichen Dienst und Sport",
+                  "Genehmigungsdatum": "2023-02-09",
+                  "Typ": "Rundschreiben",
+                  "Geschaeftszahl": {
+                    "item": "2023-0.062.002"
+                  },
+                  "Kurzinformation": "Rundschreiben zur Dienstrechts-Novelle 2022 und zur 2. Dienstrechts-Novelle 2022"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": [
+                {
+                  "ContentType": "MainDocument",
+                  "Name": "Hauptdokument",
+                  "Urls": {
+                    "ContentUrl": [
+                      {
+                        "DataType": "Xml",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20230209_2023_0_062_002/ERL_BKA_20230209_2023_0_062_002.xml"
+                      },
+                      {
+                        "DataType": "Html",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20230209_2023_0_062_002/ERL_BKA_20230209_2023_0_062_002.html"
+                      },
+                      {
+                        "DataType": "Rtf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20230209_2023_0_062_002/ERL_BKA_20230209_2023_0_062_002.rtf"
+                      },
+                      {
+                        "DataType": "Pdf",
+                        "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20230209_2023_0_062_002/ERL_BKA_20230209_2023_0_062_002.pdf"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "2023-0.062.002-1-A_09.02.2023_Beilage 1_ Formular 20 -  Informationen zum Dienstvertrag nach 5a BDG 1979",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20230209_2023_0_062_002/2023-0.062.002-1-A_09.02.2023_Beilage_1__Formular_20_-__Informationen_zum_Dienstvertrag_nach_5a_BDG_1979.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "2023-0.062.002-1-A_09.02.2023_Beilage 2_ Formular 20 - Dienstvertrag nach § 4 VBG",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20230209_2023_0_062_002/2023-0.062.002-1-A_09.02.2023_Beilage_2__Formular_20_-_Dienstvertrag_nach___4_VBG.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "2023-0.062.002-1-A_09.02.2023_Beilage 3_ Leitfaden MAG 2023",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20230209_2023_0_062_002/2023-0.062.002-1-A_09.02.2023_Beilage_3__Leitfaden_MAG_2023.pdf"
+                    }
+                  }
+                },
+                {
+                  "ContentType": "Attachment",
+                  "Name": "2023-0.062.002-1-A_09.02.2023_Beilage 4_ MAG Ergebnisprotokoll 2023",
+                  "Urls": {
+                    "ContentUrl": {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20230209_2023_0_062_002/2023-0.062.002-1-A_09.02.2023_Beilage_4__MAG_Ergebnisprotokoll_2023.pdf"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "ERL_BKA_20211129_2021_0_814_084",
+                "Applikation": "Erlaesse",
+                "Organ": "Bundesministerium für Kunst, Kultur, öffentlichen Dienst und Sport",
+                "Einbringer": "Bundesministerium für Kunst, Kultur, öffentlichen Dienst und Sport",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2021-11-30",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Erlaesse&Dokumentnummer=ERL_BKA_20211129_2021_0_814_084"
+              },
+              "Sonstige": {
+                "Kurztitel": "Rundschreiben zum Kauf eines privaten KlimaTickets im Zusammenhang mit Dienstreisen",
+                "Titel": "Rundschreiben zum Kauf eines privaten KlimaTickets im Zusammenhang\r\nmit Dienstreisen",
+                "Erlaesse": {
+                  "Bundesministerium": "Bundesministerium für Kunst, Kultur, öffentlichen Dienst und Sport",
+                  "Genehmigungsdatum": "2021-11-29",
+                  "Typ": "Rundschreiben",
+                  "Geschaeftszahl": {
+                    "item": "2021-0.814.084"
+                  },
+                  "Kurzinformation": "Rundschreiben zum Kauf eines privaten KlimaTickets im Zusammenhang mit Dienstreisen"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20211129_2021_0_814_084/ERL_BKA_20211129_2021_0_814_084.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20211129_2021_0_814_084/ERL_BKA_20211129_2021_0_814_084.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20211129_2021_0_814_084/ERL_BKA_20211129_2021_0_814_084.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20211129_2021_0_814_084/ERL_BKA_20211129_2021_0_814_084.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "ERL_BKA_20160420_BKA_924_400_0001_III_2_2016",
+                "Applikation": "Erlaesse",
+                "Organ": "Bundeskanzleramt",
+                "Einbringer": "Bundeskanzleramt",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2016-04-22",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Erlaesse&Dokumentnummer=ERL_BKA_20160420_BKA_924_400_0001_III_2_2016"
+              },
+              "Sonstige": {
+                "Kurztitel": "Ergänzendes Rundschreiben zur Reisegebührenvorschrift 1955",
+                "Titel": "Ergänzendes Rundschreiben zur Reisegebührenvorschrift 1955",
+                "Erlaesse": {
+                  "Bundesministerium": "Bundeskanzleramt",
+                  "Genehmigungsdatum": "2016-04-20",
+                  "Typ": "Rundschreiben",
+                  "Geschaeftszahl": {
+                    "item": "BKA-924.400/0001-III/2/2016"
+                  },
+                  "Kurzinformation": "Ergänzendes Rundschreiben zur Reisegebührenvorschrift 1955"
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20160420_BKA_924_400_0001_III_2_2016/ERL_BKA_20160420_BKA_924_400_0001_III_2_2016.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20160420_BKA_924_400_0001_III_2_2016/ERL_BKA_20160420_BKA_924_400_0001_III_2_2016.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20160420_BKA_924_400_0001_III_2_2016/ERL_BKA_20160420_BKA_924_400_0001_III_2_2016.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Erlaesse/ERL_BKA_20160420_BKA_924_400_0001_III_2_2016/ERL_BKA_20160420_BKA_924_400_0001_III_2_2016.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

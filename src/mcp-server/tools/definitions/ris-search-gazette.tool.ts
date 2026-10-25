@@ -16,6 +16,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
 
 import { RIS_STATES } from '@/services/ris/reference/index.js';
 import type {
@@ -33,6 +34,7 @@ import {
   isoDateString,
   joinNotices,
   pageSizeParam,
+  renditionLinks,
   rewriteUnsupportedParam,
   servePageSize,
   type UnsupportedParam,
@@ -861,46 +863,54 @@ export const risSearchGazette = tool('ris_search_gazette', {
 
   // format() populates content[] — the markdown twin of structuredContent. Every output
   // field renders here; totals, paging, and the served application ride the enrichment trailer.
+  // RIS strings go through escapeMarkdownInline and URLs through markdownLink, so a CommonMark
+  // parse reads back the structuredContent value; the heading holds the line-free document
+  // number, since a title can span lines and a heading ends at its first.
   format: (result) => {
     if (result.results.length === 0) {
       return [{ type: 'text', text: '_No gazette entries on this page._' }];
     }
+    const esc = escapeMarkdownInline;
     const blocks = result.results.map((r) => {
-      const lines = [`## ${r.title ?? r.short_title ?? r.gazette_number ?? r.document_number}`];
-      lines.push(`**Document:** ${r.document_number}`);
-      if (r.promulgation !== undefined) lines.push(`**Promulgation:** ${r.promulgation}`);
+      const lines = [`## ${esc(r.document_number)}`];
+      if (r.title !== undefined) lines.push(`**Title:** ${esc(r.title)}`);
+      lines.push(`**Document:** ${esc(r.document_number)}`);
+      if (r.promulgation !== undefined) lines.push(`**Promulgation:** ${esc(r.promulgation)}`);
       const facts: string[] = [];
-      if (r.gazette_number !== undefined) facts.push(`**Number:** ${r.gazette_number}`);
-      if (r.part !== undefined) facts.push(`**Part:** ${r.part}`);
-      if (r.type !== undefined) facts.push(`**Type:** ${r.type}`);
-      if (r.published !== undefined) facts.push(`**Published:** ${r.published}`);
+      if (r.gazette_number !== undefined) facts.push(`**Number:** ${esc(r.gazette_number)}`);
+      if (r.part !== undefined) facts.push(`**Part:** ${esc(r.part)}`);
+      if (r.type !== undefined) facts.push(`**Type:** ${esc(r.type)}`);
+      if (r.published !== undefined) facts.push(`**Published:** ${esc(r.published)}`);
       if (r.systematic_number !== undefined) {
-        facts.push(`**Gliederungszahl:** ${r.systematic_number}`);
+        facts.push(`**Gliederungszahl:** ${esc(r.systematic_number)}`);
       }
-      if (r.issue !== undefined) facts.push(`**Issue:** ${r.issue}`);
-      if (r.start_page !== undefined) facts.push(`**Start page:** ${r.start_page}`);
+      if (r.issue !== undefined) facts.push(`**Issue:** ${esc(r.issue)}`);
+      if (r.start_page !== undefined) facts.push(`**Start page:** ${esc(r.start_page)}`);
       if (facts.length > 0) lines.push(facts.join(' | '));
       const origin: string[] = [];
-      if (r.issuer !== undefined) origin.push(`**Issuer:** ${r.issuer}`);
+      if (r.issuer !== undefined) origin.push(`**Issuer:** ${esc(r.issuer)}`);
       if (r.district_authority !== undefined) {
-        origin.push(`**District authority:** ${r.district_authority}`);
+        origin.push(`**District authority:** ${esc(r.district_authority)}`);
       }
-      if (r.municipality !== undefined) origin.push(`**Municipality:** ${r.municipality}`);
+      if (r.municipality !== undefined) origin.push(`**Municipality:** ${esc(r.municipality)}`);
       if (origin.length > 0) lines.push(origin.join(' | '));
-      if (r.short_title !== undefined) lines.push(`**Short title:** ${r.short_title}`);
+      if (r.short_title !== undefined) lines.push(`**Short title:** ${esc(r.short_title)}`);
       lines.push(`**Binding:** ${r.binding}`);
-      if (r.eli !== undefined) lines.push(`**ELI:** ${r.eli}`);
+      if (r.eli !== undefined) lines.push(`**ELI:** ${markdownLink(r.eli, r.eli)}`);
       if (r.celex_references.length > 0) {
-        lines.push(`**CELEX:** ${r.celex_references.join(', ')}`);
+        lines.push(`**CELEX:** ${r.celex_references.map(esc).join(', ')}`);
       }
-      if (r.authentic_pdf_url !== undefined)
-        lines.push(`**Authentic PDF:** ${r.authentic_pdf_url}`);
-      if (r.alex_url !== undefined) lines.push(`**ÖNB scan:** ${r.alex_url}`);
-      const urls = (['html', 'pdf', 'rtf', 'xml'] as const)
-        .filter((key) => r.content_urls[key] !== undefined)
-        .map((key) => `[${key.toUpperCase()}](${r.content_urls[key]})`);
+      if (r.authentic_pdf_url !== undefined) {
+        lines.push(`**Authentic PDF:** ${markdownLink(r.authentic_pdf_url, r.authentic_pdf_url)}`);
+      }
+      if (r.alex_url !== undefined) {
+        lines.push(`**ÖNB scan:** ${markdownLink(r.alex_url, r.alex_url)}`);
+      }
+      const urls = renditionLinks(r.content_urls);
       if (urls.length > 0) lines.push(`**Text:** ${urls.join(' · ')}`);
-      if (r.document_url !== undefined) lines.push(`**RIS view:** ${r.document_url}`);
+      if (r.document_url !== undefined) {
+        lines.push(`**RIS view:** ${markdownLink(r.document_url, r.document_url)}`);
+      }
       return lines.join('\n');
     });
     return [{ type: 'text', text: blocks.join('\n\n') }];

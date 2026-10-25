@@ -11,6 +11,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
 
 import {
   COURTS_WITHOUT_DECISION_KIND,
@@ -38,6 +39,7 @@ import {
   joinNotices,
   localRejectionRecovery,
   pageSizeParam,
+  renditionLinks,
   rewriteUnsupportedParam,
   servePageSize,
   type UnsupportedParam,
@@ -675,60 +677,65 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
   },
 
   // format() populates content[] — the markdown twin of structuredContent. Every output
-  // field renders here; totals, paging, and notices ride the enrichment trailer.
+  // field renders here; totals, paging, and notices ride the enrichment trailer. Every RIS string
+  // goes through escapeMarkdownInline (array entries one by one, joined by authored separators)
+  // and every URL through markdownLink, so a CommonMark parse reads back the structuredContent
+  // value. Case numbers hold no line break, so they still name the heading.
   format: (result) => {
     if (result.results.length === 0) {
       return [{ type: 'text', text: '_No decisions on this page._' }];
     }
+    const joined = (values: readonly string[], separator: string) =>
+      values.map(escapeMarkdownInline).join(separator);
+    const labeled = (label: string, value: string) =>
+      `**${label}:** ${escapeMarkdownInline(value)}`;
     const blocks = result.results.map((r) => {
+      const document = escapeMarkdownInline(r.document_number);
       const lines = [
-        `## ${r.case_numbers.length > 0 ? r.case_numbers.join(', ') : r.document_number}`,
+        `## ${r.case_numbers.length > 0 ? joined(r.case_numbers, ', ') : document}`,
+        `**Document:** ${document} (${escapeMarkdownInline(r.court)})`,
       ];
-      lines.push(`**Document:** ${r.document_number} (${r.court})`);
       const facts: string[] = [];
-      if (r.organ !== undefined) facts.push(`**Organ:** ${r.organ}`);
-      if (r.state !== undefined) facts.push(`**State:** ${r.state}`);
-      if (r.decision_date !== undefined) facts.push(`**Decided:** ${r.decision_date}`);
-      if (r.decision_type !== undefined) facts.push(`**Type:** ${r.decision_type}`);
-      if (r.decision_kind !== undefined) facts.push(`**Kind:** ${r.decision_kind}`);
+      if (r.organ !== undefined) facts.push(labeled('Organ', r.organ));
+      if (r.state !== undefined) facts.push(labeled('State', r.state));
+      if (r.decision_date !== undefined) facts.push(labeled('Decided', r.decision_date));
+      if (r.decision_type !== undefined) facts.push(labeled('Type', r.decision_type));
+      if (r.decision_kind !== undefined) facts.push(labeled('Kind', r.decision_kind));
       if (facts.length > 0) lines.push(facts.join(' | '));
       if (r.norm_index !== undefined) {
         const norm: string[] = [];
         if (r.norm_index.abbreviation !== undefined) {
-          norm.push(`**Norm:** ${r.norm_index.abbreviation}`);
+          norm.push(labeled('Norm', r.norm_index.abbreviation));
         }
-        if (r.norm_index.type !== undefined) norm.push(`**Norm type:** ${r.norm_index.type}`);
+        if (r.norm_index.type !== undefined) norm.push(labeled('Norm type', r.norm_index.type));
         if (r.norm_index.reference !== undefined) {
-          norm.push(`**Promulgated:** ${r.norm_index.reference}`);
+          norm.push(labeled('Promulgated', r.norm_index.reference));
         }
         if (norm.length > 0) lines.push(norm.join(' | '));
-        if (r.norm_index.title !== undefined) lines.push(`**Law:** ${r.norm_index.title}`);
+        if (r.norm_index.title !== undefined) lines.push(labeled('Law', r.norm_index.title));
       }
       const identifiers: string[] = [];
       if (r.collection_number !== undefined) {
-        identifiers.push(`**Collection:** ${r.collection_number}`);
+        identifiers.push(labeled('Collection', r.collection_number));
       }
-      if (r.ecli !== undefined) identifiers.push(`**ECLI:** ${r.ecli}`);
-      if (r.party !== undefined) identifiers.push(`**Party:** ${r.party}`);
+      if (r.ecli !== undefined) identifiers.push(labeled('ECLI', r.ecli));
+      if (r.party !== undefined) identifiers.push(labeled('Party', r.party));
       if (identifiers.length > 0) lines.push(identifiers.join(' | '));
-      if (r.summary !== undefined) lines.push(r.summary);
+      if (r.summary !== undefined) lines.push(escapeMarkdownInline(r.summary));
       if (r.guiding_principle !== undefined) {
-        lines.push(`**Guiding principle:** ${r.guiding_principle}`);
+        lines.push(labeled('Guiding principle', r.guiding_principle));
       }
-      if (r.norms_cited.length > 0) lines.push(`**Norms:** ${r.norms_cited.join('; ')}`);
-      if (r.indexes.length > 0) lines.push(`**Index:** ${r.indexes.join('; ')}`);
-      if (r.keywords !== undefined) lines.push(`**Keywords:** ${r.keywords}`);
-      if (r.note !== undefined) lines.push(`**Note:** ${r.note}`);
+      if (r.norms_cited.length > 0) lines.push(`**Norms:** ${joined(r.norms_cited, '; ')}`);
+      if (r.indexes.length > 0) lines.push(`**Index:** ${joined(r.indexes, '; ')}`);
+      if (r.keywords !== undefined) lines.push(labeled('Keywords', r.keywords));
+      if (r.note !== undefined) lines.push(labeled('Note', r.note));
       if (r.legal_force_note !== undefined) {
-        lines.push(`**Legal force:** ${r.legal_force_note}`);
+        lines.push(labeled('Legal force', r.legal_force_note));
       }
       const links: string[] = [];
-      if (r.decision_url !== undefined) links.push(`[Full decision](${r.decision_url})`);
-      if (r.headnotes_url !== undefined) links.push(`[Headnotes](${r.headnotes_url})`);
-      for (const key of ['html', 'pdf', 'rtf', 'xml'] as const) {
-        const url = r.content_urls[key];
-        if (url !== undefined) links.push(`[${key.toUpperCase()}](${url})`);
-      }
+      if (r.decision_url !== undefined) links.push(markdownLink('Full decision', r.decision_url));
+      if (r.headnotes_url !== undefined) links.push(markdownLink('Headnotes', r.headnotes_url));
+      links.push(...renditionLinks(r.content_urls));
       if (links.length > 0) lines.push(`**Links:** ${links.join(' · ')}`);
       return lines.join('\n');
     });

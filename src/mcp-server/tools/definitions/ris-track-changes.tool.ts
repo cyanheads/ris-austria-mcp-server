@@ -13,6 +13,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
 
 import type { RisApplication, RisBindingStatus } from '@/services/ris/reference/index.js';
 import { RIS_APPLICATIONS } from '@/services/ris/reference/index.js';
@@ -25,6 +26,7 @@ import {
   isoDateString,
   joinNotices,
   pageSizeParam,
+  renditionLinks,
   servePageSize,
 } from './_shared.js';
 
@@ -325,60 +327,60 @@ export const risTrackChanges = tool('ris_track_changes', {
   },
 
   // format() populates content[] — the markdown twin of structuredContent. Every output
-  // field renders here; totals, paging, and the applied window ride the enrichment trailer.
+  // field renders here; totals, paging, and the applied window ride the enrichment trailer. Every
+  // RIS string goes through escapeMarkdownInline and every URL through markdownLink, so a
+  // CommonMark parse reads back the structuredContent value.
   format: (result) => {
     if (result.results.length === 0) {
       return [{ type: 'text', text: '_No changes on this page._' }];
     }
+    const esc = escapeMarkdownInline;
     const blocks = result.results.map((r) => {
-      // A consolidated-law row is named by its law's short title plus the section label
-      // ("DORA-Vollzugsgesetz § 16"); an untitled court-decision row by its leading case number,
-      // with a count of the rest — a headnote row can list 50 decisions.
-      const name =
-        r.section_label !== undefined ? (r.short_title ?? r.title) : (r.title ?? r.short_title);
+      // The heading holds only a line-free identifier — a title carries line breaks, which end an
+      // ATX heading at its first line. A court-decision row is named by its leading case number,
+      // with a count of the rest (a headnote row can list 50 decisions); every other row by its
+      // document number. Titles, labels, and the full case list follow on their own lines.
       const [leadCase, ...otherCases] = r.case_numbers ?? [];
       const heading =
-        name !== undefined
-          ? `${name}${r.section_label !== undefined ? ` ${r.section_label}` : ''}`
-          : leadCase !== undefined
-            ? `${leadCase}${otherCases.length > 0 ? ` (+${otherCases.length} more)` : ''}`
-            : r.document_number;
-      const lines = [
-        `## ${heading}${r.deleted ? ' — deleted' : ''}`,
-        `**Document:** ${r.document_number}`,
-      ];
-      if (r.title !== undefined && name !== r.title) lines.push(`**Title:** ${r.title}`);
-      if (r.short_title !== undefined) lines.push(`**Short title:** ${r.short_title}`);
-      if (r.section_label !== undefined && name === undefined) {
-        lines.push(`**Section:** ${r.section_label}`);
+        leadCase !== undefined
+          ? `${esc(leadCase)}${otherCases.length > 0 ? ` (+${otherCases.length} more)` : ''}`
+          : esc(r.document_number);
+      const lines = [`## ${heading}${r.deleted ? ' — deleted' : ''}`];
+      const field = (label: string, value: string | undefined) => {
+        if (value !== undefined) lines.push(`**${label}:** ${esc(value)}`);
+      };
+      field('Title', r.title);
+      lines.push(`**Document:** ${esc(r.document_number)}`);
+      field('Short title', r.short_title);
+      field('Section', r.section_label);
+      if (r.case_numbers !== undefined && otherCases.length > 0) {
+        lines.push(`**Case numbers:** ${r.case_numbers.map(esc).join(', ')}`);
       }
-      if (r.case_numbers !== undefined && (name !== undefined || otherCases.length > 0)) {
-        lines.push(`**Case numbers:** ${r.case_numbers.join(', ')}`);
-      }
-      if (r.law_id !== undefined) lines.push(`**Law ID:** ${r.law_id}`);
+      field('Law ID', r.law_id);
       // A missing end date is not "in force now": a version can start in the future.
       if (r.in_force_from !== undefined || r.in_force_until !== undefined) {
-        lines.push(
-          `**In force:** ${r.in_force_from ?? 'unknown'} → ${r.in_force_until ?? 'no end date'}`,
-        );
+        const from = r.in_force_from !== undefined ? esc(r.in_force_from) : 'unknown';
+        const until = r.in_force_until !== undefined ? esc(r.in_force_until) : 'no end date';
+        lines.push(`**In force:** ${from} → ${until}`);
       }
-      if (r.decision_date !== undefined) lines.push(`**Decided:** ${r.decision_date}`);
-      if (r.organ !== undefined) lines.push(`**Organ:** ${r.organ}`);
+      field('Decided', r.decision_date);
+      field('Organ', r.organ);
       lines.push(`**Binding:** ${r.binding_status}`);
       if (r.changed !== undefined || r.published !== undefined) {
         lines.push(
-          `**Changed:** ${r.changed ?? 'unknown'}${r.published !== undefined ? ` | **Published:** ${r.published}` : ''}`,
+          `**Changed:** ${r.changed !== undefined ? esc(r.changed) : 'unknown'}${r.published !== undefined ? ` | **Published:** ${esc(r.published)}` : ''}`,
         );
       }
       lines.push(
-        `**Deleted:** ${r.deleted ? `yes${r.deleted_at !== undefined ? ` (${r.deleted_at})` : ''}` : 'no'}`,
+        `**Deleted:** ${r.deleted ? `yes${r.deleted_at !== undefined ? ` (${esc(r.deleted_at)})` : ''}` : 'no'}`,
       );
-      if (r.document_url !== undefined) lines.push(`**RIS view:** ${r.document_url}`);
-      if (r.authentic_pdf_url !== undefined)
-        lines.push(`**Authentic PDF:** ${r.authentic_pdf_url}`);
-      const urls = (['html', 'pdf', 'rtf', 'xml'] as const)
-        .filter((key) => r.content_urls[key] !== undefined)
-        .map((key) => `[${key.toUpperCase()}](${r.content_urls[key]})`);
+      if (r.document_url !== undefined) {
+        lines.push(`**RIS view:** ${markdownLink(r.document_url, r.document_url)}`);
+      }
+      if (r.authentic_pdf_url !== undefined) {
+        lines.push(`**Authentic PDF:** ${markdownLink(r.authentic_pdf_url, r.authentic_pdf_url)}`);
+      }
+      const urls = renditionLinks(r.content_urls);
       if (urls.length > 0) lines.push(`**Text:** ${urls.join(' · ')}`);
       return lines.join('\n');
     });

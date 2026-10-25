@@ -23,8 +23,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { risSearchDrafts } from '@/mcp-server/tools/definitions/ris-search-drafts.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import { buildDraftsRequest, type DraftsSearchParams } from '@/services/ris/request-builder.js';
+import type { RisHit } from '@/services/ris/types.js';
 
-import { contentText, contractError, expectArgumentRejection } from './_wire.js';
+import {
+  contentText,
+  contractError,
+  expectArgumentRejection,
+  expectReadBack,
+  HOSTILE_TEXT,
+  readFormatBlock,
+} from './_wire.js';
 
 const { searchDrafts } = vi.hoisted(() => ({ searchDrafts: vi.fn() }));
 
@@ -281,7 +289,7 @@ describe('risSearchDrafts — record mapping and format() parity', () => {
       if (record.ministry !== undefined) expect(text).toContain(record.ministry);
       if (record.review_deadline !== undefined) expect(text).toContain(record.review_deadline);
       if (record.document_url !== undefined) {
-        expect(text).toContain(`**RIS view:** ${record.document_url}`);
+        expect(text).toContain(`**RIS view:** [${record.document_url}](<${record.document_url}>)`);
       }
     }
   });
@@ -314,8 +322,8 @@ describe('risSearchDrafts — record mapping and format() parity', () => {
     );
 
     const text = (risSearchDrafts.format!(result)[0] as { type: 'text'; text: string }).text;
-    for (const material of materials) {
-      expect(text).toContain(`${material.name} (${material.type}) — ${material.url}`);
+    for (const { name, type, url } of materials) {
+      expect(text).toContain(`- ${name} (${type}) — [${url}](<${url}>)`);
     }
   });
 
@@ -397,7 +405,7 @@ describe('risSearchDrafts — record mapping and format() parity', () => {
     expect(text).toContain(record.document_number);
     expect(text).toContain('**Decided:** 2026-06-24');
     expect(text).not.toContain('**Review deadline:**');
-    expect(text).toContain(`**RIS view:** ${record.document_url}`);
+    expect(text).toContain(`**RIS view:** [${record.document_url}](<${record.document_url}>)`);
     expect(text).toContain('WFA (Material)');
     expect(text).toContain('Übereinkommen in deutscher Sprache (Attachment)');
   });
@@ -445,9 +453,9 @@ describe('risSearchDrafts — review start, abbreviation, and keywords (#68)', (
   ) => {
     const u = record.content_urls;
     return [
-      `**Text:** [HTML](${u.html}) · [PDF](${u.pdf}) · [RTF](${u.rtf}) · [XML](${u.xml})`,
+      `**Text:** [HTML](<${u.html}>) · [PDF](<${u.pdf}>) · [RTF](<${u.rtf}>) · [XML](<${u.xml}>)`,
       '**Materials:**',
-      ...record.materials.map((m) => `- ${m.name ?? m.type} (${m.type}) — ${m.url}`),
+      ...record.materials.map((m) => `- ${m.name ?? m.type} (${m.type}) — [${m.url}](<${m.url}>)`),
     ];
   };
 
@@ -483,15 +491,17 @@ describe('risSearchDrafts — review start, abbreviation, and keywords (#68)', (
   it('renders a review draft block in field order, start before deadline on one line', async () => {
     const { blockFor, byId } = await reviewDrafts();
     const record = byId.get(BEGUT_SEMICOLONS)!;
+    const view = `https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Begut&Dokumentnummer=${BEGUT_SEMICOLONS}`;
     expect(blockFor(BEGUT_SEMICOLONS).split('\n')).toStrictEqual([
-      '## Bundesgesetz, mit dem das Bundesgesetz über das Verbot der geologischen Speicherung von Kohlenstoffdioxid aufgehoben und das Bundesgesetz über die geologische Speicherung von Kohlenstoffdioxid (KSp-G) erlassen wird',
+      `## ${BEGUT_SEMICOLONS}`,
+      '**Title:** Bundesgesetz, mit dem das Bundesgesetz über das Verbot der geologischen Speicherung von Kohlenstoffdioxid aufgehoben und das Bundesgesetz über die geologische Speicherung von Kohlenstoffdioxid (KSp-G) erlassen wird',
       `**Document:** ${BEGUT_SEMICOLONS} (review_drafts)`,
       '**Short title:** Kohlenstoffdioxid-Speicherungsgesetz',
       '**Abbreviation:** KSp-G',
       '**Ministry:** BMF (Bundesministerium für Finanzen)',
       '**Review start:** 2026-09-22 | **Review deadline:** 2026-10-30',
       '**Keywords:** Geologische Speicherung; Kohlenstoffdioxid; CO2',
-      `**RIS view:** https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Begut&Dokumentnummer=${BEGUT_SEMICOLONS}`,
+      `**RIS view:** [${view}](<${view}>)`,
       ...tailLines(record),
     ]);
     expect(record.materials).toHaveLength(3);
@@ -500,14 +510,16 @@ describe('risSearchDrafts — review start, abbreviation, and keywords (#68)', (
   it('renders a government bill block in field order, decided alone on the dates line', async () => {
     const { blockFor, byId } = await governmentBills();
     const record = byId.get(REGV_ABBREVIATION)!;
+    const view = `https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=RegV&Dokumentnummer=${REGV_ABBREVIATION}`;
     expect(blockFor(REGV_ABBREVIATION).split('\n')).toStrictEqual([
-      '## Bundesgesetz, mit dem das Altbatteriengesetz erlassen und das Abfallwirtschaftsgesetz 2002 geändert wird (EU-Batterienverordnung Begleitgesetz – BattBegG)',
+      `## ${REGV_ABBREVIATION}`,
+      '**Title:** Bundesgesetz, mit dem das Altbatteriengesetz erlassen und das Abfallwirtschaftsgesetz 2002 geändert wird (EU-Batterienverordnung Begleitgesetz – BattBegG)',
       `**Document:** ${REGV_ABBREVIATION} (government_bills)`,
       '**Short title:** EU-Batterienverordnung Begleitgesetz',
       '**Abbreviation:** BattBegG',
       '**Ministry:** BMLUK (Bundesministerium für Land- und Forstwirtschaft, Klima- und Umweltschutz, Regionen und Wasserwirtschaft)',
       '**Decided:** 2026-10-14',
-      `**RIS view:** https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=RegV&Dokumentnummer=${REGV_ABBREVIATION}`,
+      `**RIS view:** [${view}](<${view}>)`,
       ...tailLines(record),
     ]);
     expect(record.materials).toHaveLength(4);
@@ -524,7 +536,10 @@ describe('risSearchDrafts — review start, abbreviation, and keywords (#68)', (
     for (const { blockFor, results } of [await reviewDrafts(), await governmentBills()]) {
       for (const record of results) {
         const lines = blockFor(record.document_number).split('\n');
-        expect(lines[1]).toBe(`**Document:** ${record.document_number} (${record.stage})`);
+        expect(lines[0]).toBe(`## ${record.document_number}`);
+        expect(lines[record.title === undefined ? 1 : 2]).toBe(
+          `**Document:** ${record.document_number} (${record.stage})`,
+        );
         for (const key of NEW_KEYS) {
           const value = record[key];
           const hits = lines.filter((line) => line.includes(labels[key]));
@@ -546,5 +561,62 @@ describe('risSearchDrafts — review start, abbreviation, and keywords (#68)', (
     // 4 review starts, 2 abbreviations and 2 keyword strings on the drafts; 1 and 1 on the bills.
     expect(rendered).toBe(10);
     expect(omitted).toBe(11);
+  });
+});
+
+describe('risSearchDrafts — content[] reads back the RIS strings (#79)', () => {
+  const BASE = 'https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_X';
+  const hostile: RisHit = {
+    contentReferences: [
+      { name: HOSTILE_TEXT.multiLineTitle, type: 'Material', urls: { html: `${BASE}/M_(1).html` } },
+      { name: HOSTILE_TEXT.inline, type: 'Letter', urls: { pdf: `${BASE}/L_*a*_1.pdf` } },
+    ],
+    contentUrls: {
+      html: `${BASE}/BEGUT_X.html`,
+      pdf: `${BASE}/BEGUT_X.pdf`,
+      rtf: `${BASE}/BEGUT_X.rtf`,
+      xml: `${BASE}/BEGUT_X.xml`,
+    },
+    documentNumber: 'BEGUT_~~X~~_',
+    documentUrl: 'https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Begut&Dokumentnummer=BEGUT_X',
+    metadata: {
+      abbreviation: HOSTILE_TEXT.pipeAndBackslash,
+      celexReferences: [],
+      controller: 'Bundesrecht',
+      decided: '`2026`',
+      indexes: [],
+      keywords: HOSTILE_TEXT.blockMarkers,
+      ministry: HOSTILE_TEXT.listOpener,
+      reviewDeadline: '_2026_',
+      reviewStart: '*2026*',
+      shortTitle: HOSTILE_TEXT.inline,
+      title: HOSTILE_TEXT.multiLineTitle,
+    },
+  };
+  const sparse: RisHit = {
+    contentReferences: [],
+    contentUrls: {},
+    documentNumber: 'BEGUT_Y',
+    metadata: { celexReferences: [], controller: 'Bundesrecht', indexes: [], title: '# Y' },
+  };
+
+  async function run() {
+    searchDrafts.mockResolvedValue({ hits: [hostile, sparse], page: 1, pageSize: 20, total: 2 });
+    const result = await runToolContract(risSearchDrafts, { stage: 'review_drafts' });
+    expect(result.isError).not.toBe(true);
+    return { result, ...risSearchDrafts.output.parse(result.structuredContent) };
+  }
+
+  it('reads back every string verbatim and every URL as a link destination', async () => {
+    const { result, results } = await run();
+    expectReadBack(result, results, { bulletLists: 1 });
+  });
+
+  it('heads each record by its document number alone, the title on a labeled line', async () => {
+    const { result } = await run();
+    const { headings, text } = readFormatBlock(result);
+    expect(headings).toEqual(['BEGUT_~~X~~_', 'BEGUT_Y']);
+    expect(text).toContain(`⟨strong⟩Title:⟨/strong⟩ ${HOSTILE_TEXT.multiLineTitle}\n`);
+    expect(text).toContain('⟨strong⟩Title:⟨/strong⟩ # Y\n⟨strong⟩Document:⟨/strong⟩ BEGUT_Y ');
   });
 });
