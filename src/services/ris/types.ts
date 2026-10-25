@@ -140,6 +140,7 @@ export interface RawKonsNode {
   readonly Inkrafttretensdatum?: string;
   readonly Kundmachungsorgan?: string;
   readonly Schlagworte?: string;
+  readonly StammnormBgblnummer?: string;
   readonly Typ?: string;
 }
 
@@ -432,6 +433,11 @@ export interface RisConsolidatedFields {
   readonly lawUrl?: string;
   /** Norm type code (Typ — BG, V, K, …). */
   readonly normType?: string;
+  /**
+   * Number and year of the gazette entry that first promulgated the law (StammnormBgblnummer,
+   * "33/2013" — a BGBl. number on BrKons, an LGBl. number on LrKons).
+   */
+  readonly originalGazetteNumber?: string;
   /**
    * Promulgation reference (Kundmachungsorgan). Federal gazette entries carry it too: the
    * citation on BgblPdf (Fundstelle, "StGBl. Nr. 1/1945"), the gazette title on BgblAlt.

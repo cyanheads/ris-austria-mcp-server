@@ -8,8 +8,9 @@
  *
  * Resilience: `withRetry` (base delay 1.5s — rate-limited-API calibration) wraps the full
  * fetch + parse pipeline, under a wall-clock budget shared by every attempt so a slow
- * upstream cannot multiply the deadline by the attempt count; a search deadline itself is
- * not retried. `fetchWithTimeout` maps HTTP statuses; HTML error pages and
+ * upstream cannot multiply the deadline by the attempt count — and, when a tool call passes
+ * one {@link SharedSearchBudget}, by every search that call chains; a search deadline itself
+ * is not retried. `fetchWithTimeout` maps HTTP statuses; HTML error pages and
  * non-JSON bodies classify as transient `ServiceUnavailable`, never `SerializationError`.
  * RIS Client errors surface as `ValidationError` (non-transient — not retried) whether they
  * arrive in-band on a 200 or as the same envelope on a 500 error response, which
@@ -87,9 +88,25 @@ import type { RisChangeSet, RisDocumentContent, RisSearchResult } from './types.
  * would consume the remainder fails fast instead of sleeping into a certain timeout, and the
  * expiry aborts the in-flight request rather than waiting it out — so the whole call settles
  * within the budget, inside the client's 60s.
+ *
+ * A tool call that chains searches — `ris_lookup_citation` probing a second court, falling back
+ * to a state's legacy gazette series, or retrying a cite without its year — passes all of them
+ * one {@link SharedSearchBudget}, so the budget bounds the call rather than each search: a
+ * later search runs on what the earlier ones left, never on a fresh 48s, and once nothing is
+ * left it fails as the same expiry without sending a request.
  */
 const SEARCH_TIMEOUT_MS = 40_000;
 const SEARCH_BUDGET_MS = 48_000;
+
+/**
+ * One {@link SEARCH_BUDGET_MS} shared by every search a single tool call chains. The caller
+ * creates one empty budget per call and passes the same object to each search; the service
+ * stamps `startedAt` on the first request it bounds, so time before that request costs nothing.
+ */
+export interface SharedSearchBudget {
+  /** `Date.now()` when the first search under this budget started; set by the service. */
+  startedAt?: number;
+}
 const RETRY_BASE_DELAY_MS = 1_500;
 
 /**
@@ -229,19 +246,40 @@ export class RisService {
     });
   }
 
-  /** Search consolidated federal/state/municipal law and English translations. */
-  async searchLegislation(params: LegislationSearchParams, ctx: Context): Promise<RisSearchResult> {
-    return await this.search(buildLegislationRequest(params), ctx);
+  /**
+   * Search consolidated federal/state/municipal law and English translations. A `budget`
+   * shared with the other searches of the same call bounds this one by what they left.
+   */
+  async searchLegislation(
+    params: LegislationSearchParams,
+    ctx: Context,
+    budget?: SharedSearchBudget,
+  ): Promise<RisSearchResult> {
+    return await this.search(buildLegislationRequest(params), ctx, budget);
   }
 
-  /** Search one court/tribunal application of the Judikatur surface (incl. Upts). */
-  async searchCaseLaw(params: CaseLawSearchParams, ctx: Context): Promise<RisSearchResult> {
-    return await this.search(buildCaseLawRequest(params), ctx);
+  /**
+   * Search one court/tribunal application of the Judikatur surface (incl. Upts); `budget` as
+   * for legislation.
+   */
+  async searchCaseLaw(
+    params: CaseLawSearchParams,
+    ctx: Context,
+    budget?: SharedSearchBudget,
+  ): Promise<RisSearchResult> {
+    return await this.search(buildCaseLawRequest(params), ctx, budget);
   }
 
-  /** Browse the promulgation record — federal era tiers, state series, district, municipal. */
-  async searchGazette(params: GazetteSearchParams, ctx: Context): Promise<RisSearchResult> {
-    return await this.search(buildGazetteRequest(params), ctx);
+  /**
+   * Browse the promulgation record — federal era tiers, state series, district, municipal;
+   * `budget` as for legislation.
+   */
+  async searchGazette(
+    params: GazetteSearchParams,
+    ctx: Context,
+    budget?: SharedSearchBudget,
+  ): Promise<RisSearchResult> {
+    return await this.search(buildGazetteRequest(params), ctx, budget);
   }
 
   /** Search the federal lawmaking pipeline (review drafts, government bills). */
@@ -356,30 +394,50 @@ export class RisService {
   }
 
   /** Run one search request with retry wrapping the full fetch + parse pipeline. */
-  private async search(request: RisRequest, ctx: Context): Promise<RisSearchResult> {
+  private async search(
+    request: RisRequest,
+    ctx: Context,
+    budget?: SharedSearchBudget,
+  ): Promise<RisSearchResult> {
     return await this.request(
       request,
       `RisService.search:${request.controller}`,
       parseSearchResponse,
       ctx,
+      budget,
     );
   }
 
   /**
    * Run one API request with retry wrapping the full fetch + parse pipeline, bounded by
-   * {@link SEARCH_BUDGET_MS} as `withRetry`'s total deadline: each attempt caps its own
-   * fetch at whatever is left of that budget, never more than {@link SEARCH_TIMEOUT_MS}.
+   * {@link SEARCH_BUDGET_MS} as `withRetry`'s total deadline — or, under a shared `budget`,
+   * by what the call's earlier searches left of it: each attempt caps its own fetch at
+   * whatever is left, never more than {@link SEARCH_TIMEOUT_MS}.
    *
    * The attempt's `signal` composes the deadline clock over the caller's, so an expiry that
    * lands mid-attempt aborts the in-flight request instead of overshooting by one. A caller
-   * cancellation keeps precedence and is never relabelled as a budget expiry.
+   * cancellation keeps precedence and is never relabelled as a budget expiry: a spent budget
+   * fails here only on a live signal, and an aborted one goes on to the fetch, which rejects it
+   * as a cancellation before anything is sent.
    */
   private async request<T>(
     request: RisRequest,
     operation: string,
     parse: (payload: unknown) => T,
     ctx: Context,
+    budget?: SharedSearchBudget,
   ): Promise<T> {
+    let deadlineMs = SEARCH_BUDGET_MS;
+    if (budget !== undefined) {
+      budget.startedAt ??= Date.now();
+      deadlineMs = Math.max(0, SEARCH_BUDGET_MS - (Date.now() - budget.startedAt));
+    }
+    if (deadlineMs === 0 && !ctx.signal.aborted) {
+      throw timeout(
+        `${operation} was not sent: the searches before it in this call spent its ${SEARCH_BUDGET_MS}ms retry deadline.`,
+        { deadlineMs: SEARCH_BUDGET_MS, reason: 'retry_deadline_exceeded' },
+      );
+    }
     const requestContext = this.requestContext(operation, ctx);
     return await withRetry(
       async ({ remainingMs, signal }) =>
@@ -394,7 +452,7 @@ export class RisService {
       {
         baseDelayMs: RETRY_BASE_DELAY_MS,
         context: requestContext,
-        deadlineMs: SEARCH_BUDGET_MS,
+        deadlineMs,
         operation,
         signal: ctx.signal,
       },

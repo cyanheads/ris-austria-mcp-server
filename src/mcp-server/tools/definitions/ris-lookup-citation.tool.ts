@@ -19,6 +19,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
 
 import { RIS_COURTS, RIS_STATES } from '@/services/ris/reference/index.js';
 import type {
@@ -29,7 +30,7 @@ import type {
   RisCourtCode,
   RisStateCode,
 } from '@/services/ris/request-builder.js';
-import { getRisService } from '@/services/ris/ris-service.js';
+import { getRisService, type SharedSearchBudget } from '@/services/ris/ris-service.js';
 import type { RisHit, RisSearchResult } from '@/services/ris/types.js';
 
 import { foldStateNames, isoDateString } from './_shared.js';
@@ -150,9 +151,11 @@ const PROVISION_COMMA = /,\s*(?=§+\s*\d|art(?:ikel)?\.?\s*\d)/i;
  * Satz is written "Satz 2" or "2. Satz", so a ". " ends one ("EO §85 Abs2 2. Satz. EO §86") but
  * never opens one, ordinal or not: the Satz is still part of the norm before it. A number after
  * "idF" (or "idF der" / "idF des") is the ordinal of the amending act it names ("MRG §16 Abs1
- * idF 3. WÄG Art 2"), never the end of a norm. The idF check sits after the "." so it runs only
- * at a ".", scanning back over that one digit run. A date after a ". " still splits off ("ZPO §1.
- * 12. Mai §2"), so the norm before it resolves and the date part is named as written.
+ * idF 3. WÄG Art 2"), never the end of a norm; before the section, the clause is the version
+ * cited, which `lawOf` drops from the law ("MRG idF 3. WÄG §16" is MRG § 16). The idF check sits
+ * after the "." so it runs only at a ".", scanning back over that one digit run. A date after a
+ * ". " still splits off ("ZPO §1. 12. Mai §2"), so the norm before it resolves and the date part
+ * is named as written.
  */
 const NORM_SEPARATOR = new RegExp(
   String.raw`(?<!\b(?:[Aa][Bb][Ss]|Z|lit|[Aa][Rr][Tt](?:[Ii][Kk][Ee][Ll])?))\.(?<!\bidF\s+(?:de[rs]\s+)?\d+\.)\s+(?=${ORDINAL_LED_WORD})(?!(?:\d+\.\s?)?[Ss][Aa][Tt][Zz](?![A-Za-zÄÖÜäöüß]))`,
@@ -185,9 +188,9 @@ const EU_COURT_BY_LETTER = new Map([
 
 /** An EU act RIS does not consolidate. */
 interface EuAct {
-  /** The act as named in guidance. */
-  readonly act: string;
-  /** Absent when the abbreviation names more than one act. */
+  /** The act as named in guidance; absent for one cited by its number, which the label shows. */
+  readonly act?: string;
+  /** Absent when the abbreviation names more than one act, or only its number. */
   readonly celex?: string;
 }
 
@@ -204,14 +207,16 @@ const EC_TREATY: EuAct = { act: 'the Treaty establishing the European Community 
  * so an Austrian abbreviation that only starts with "EU" ("EU-JZG") is never caught. Derived
  * 2026-10-24 from `norms_cited` across dsk, bvwg, vwgh, vfgh, and justiz (OGH headnotes): each
  * abbreviation returned found: false when looked up live with an Artikel, and each CELEX resolves
- * on EUR-Lex. AEUV, EUV, and EMRK are absent on purpose — RIS consolidates all three. EG and
- * EGV (the EC Treaty) hold no RIS law of that abbreviation: a title search for "EG" matched EC
- * agreements with third countries instead (2026-10-24).
+ * on EUR-Lex. AEUV, EUV, and EMRK are absent on purpose — RIS consolidates all three. EG, EGV,
+ * and EG-Vertrag (the EC Treaty) hold no RIS law of that abbreviation: a title search for "EG"
+ * matched EC agreements with third countries instead, and one for "EG-Vertrag" matched nothing
+ * (2026-10-24).
  */
 const EU_ACTS: ReadonlyMap<string, EuAct> = new Map([
   ['dsgvo', { act: 'Regulation (EU) 2016/679', celex: '32016R0679' }],
   ['eg', EC_TREATY],
   ['egv', EC_TREATY],
+  ['eg-vertrag', EC_TREATY],
   ['grc', CHARTER],
   ['eu-grc', CHARTER],
   ['eu-grundrechte-charta', CHARTER],
@@ -226,9 +231,33 @@ const EU_ACTS: ReadonlyMap<string, EuAct> = new Map([
   ['euuvo', { act: 'Regulation (EC) No 4/2009', celex: '32009R0004' }],
 ]);
 
+/** The EU legal orders an act number names ("2002/16/EG", "(EU) 2016/679"), as compared. */
+const EU_ORDER = '(?:eg|eu|ewg|egks|euratom)';
+/**
+ * An EU act cited by its number, matched against the abbreviation as `comparableAbbreviation`
+ * writes it: optionally one designator — VO, RL, E, Entscheidung, Beschluss, or one word ending
+ * in "richtlinie" or "verordnung" ("Geldwäscherichtlinie"), optionally after an ordinal ("6. ")
+ * and before "Kommission" or "Rat" — then the number, new-style ("2002/16/EG") or with the order
+ * first ("(EG) 178/2002", "(EU) Nr. 1215/2012"). The whole abbreviation must be the act, so
+ * Austrian law naming one among other words ("Sammelgesetz - Anpassung Richtlinie (EU)
+ * 2024/1233", "Richtlinie 2016/801/EU, erforderliche Anpassung") is none, and neither is a
+ * compound ending in "-RL" or "-VO" ("UmsetzungsG-RL 2014/54/EU"), which no designator matches.
+ * Anchored at both ends, with no quantifier nested in another and no two adjacent ones over the
+ * same characters, so it reads an abbreviation in one linear pass.
+ */
+const EU_ACT_NUMBER = new RegExp(
+  String.raw`^(?:(?:\d+\. ?)?(?:vo|rl|e|entscheidung|beschluss|[a-zäöüß]*(?:richtlinie|verordnung))(?: (?:kommission|rat))? ?)?(?:\d+\/\d+\/${EU_ORDER}|\(${EU_ORDER}\) ?(?:nr\.? ?)?\d+\/\d+)$`,
+);
+/**
+ * An act cited by its number is named by that number alone: no CELEX is derived from it, since
+ * the cite does not always give the act type and older numbers carry a two-digit year.
+ */
+const NUMBERED_EU_ACT: EuAct = {};
+
 /** The EU act an abbreviation names, if it is one RIS does not consolidate. */
 function euActOf(abbreviation: string): EuAct | undefined {
-  return EU_ACTS.get(comparableAbbreviation(abbreviation));
+  const compared = comparableAbbreviation(abbreviation);
+  return EU_ACTS.get(compared) ?? (EU_ACT_NUMBER.test(compared) ? NUMBERED_EU_ACT : undefined);
 }
 
 /** A citation split from the CELEX number it leads with, when it leads with one. */
@@ -267,6 +296,15 @@ interface NormParse {
   readonly recital?: string;
   readonly section?: string;
   readonly sectionType?: 'Artikel' | 'Paragraph';
+  /**
+   * Set when the text of the provision parsed names the version its law is read in ("ABGB aF
+   * §140", "ABGB §167 idF BGBl I 2013/15"): the lookup searches the version in force on the
+   * requested date instead, and says so. A version anywhere in a comma-joined entry sets it, since
+   * the clause there often covers every provision listed ("ASVG §609 Abs19, §615 Abs1 Z4, jeweils
+   * idF …"); a later norm of a ". "-joined entry carries its own version into the cite `others`
+   * names, so it never does.
+   */
+  readonly versionCited?: true;
 }
 
 /** The marker RIS cites a section with — "Art" for an Artikel, "§" otherwise. */
@@ -299,6 +337,102 @@ const ABBREV_ARTIKEL = new RegExp(
 );
 
 /**
+ * The "idF" (in der Fassung) clause that names the amending act a law is read in ("ABGB idF 2.
+ * ErwSchG", "ABGB idF BGBl I 2010/28") — the version cited, never part of the law's name. It runs
+ * from the first "idF" word to the end of the text it is read from.
+ */
+const VERSION_CLAUSE = /\sidF\b/;
+/** A trailing "aF" or "nF" (alte / neue Fassung) — the old or new version of the law named. */
+const OLD_OR_NEW_VERSION = /\s[an]F$/;
+/** A version named anywhere in a cite: an "idF" clause, or "aF" / "nF" as its own word. */
+const CITED_VERSION = /\s(?:idF|[an]F)\b/;
+
+/** `parse`, marked `versionCited` when `text`, the text it was read from, names a version. */
+function withCitedVersion(parse: NormParse | null, text: string): NormParse | null {
+  return parse !== null && CITED_VERSION.test(text) ? { ...parse, versionCited: true } : parse;
+}
+
+/**
+ * A law's name without the version it is cited in: everything before an "idF" clause, then
+ * without a trailing "aF" / "nF" ("ABGB idF 2. ErwSchG" and "ABGB aF" are the ABGB). RIS files a
+ * law under its name alone, so a title carrying the version matches nothing; the version searched
+ * stays the one in force on the requested date.
+ */
+function lawOf(name: string): string {
+  const clause = VERSION_CLAUSE.exec(name);
+  const law = clause === null ? name : name.slice(0, clause.index).trimEnd();
+  return law.replace(OLD_OR_NEW_VERSION, '');
+}
+
+/** An Artikel numbered in Roman numerals ("ArtII", "Art. IX") — how an amending act is divided. */
+const ROMAN_ARTIKEL = new RegExp(String.raw`\b${ARTIKEL}\s*[IVX]+\b`);
+
+/**
+ * True when the "idF" clause names the amending act by gazette number and then cites one of its
+ * Roman-numbered Artikel, with no §/Artikel number of the law ("AngG idF des BG 3.7.1975 BGBl
+ * 1975/418 ArtII Abs1"): the provision cited is the amending act's, so the cite keeps its
+ * gazette reading and its version clause is not dropped.
+ */
+function citesAmendingActArtikel(s: string): boolean {
+  const version = VERSION_CLAUSE.exec(s);
+  if (version === null || NORM_EXPLICIT.test(s)) return false;
+  const clause = s.slice(version.index);
+  const prefix = GAZETTE_PREFIX.exec(clause);
+  if (prefix === null) return false;
+  const named = clause.slice(prefix.index);
+  return readGazetteNumber(named) !== null && ROMAN_ARTIKEL.test(named);
+}
+
+/** A bare abbreviation or short title, read the way the bare-abbreviation fallback reads one. */
+function isBareLaw(s: string): boolean {
+  return BARE_ABBREVIATION.test(s) && !s.includes('/');
+}
+
+/** The dash a long title puts before its short form: a hyphen or an en dash, between spaces. */
+const SHORT_FORM_DASH = / [-–](?= )/g;
+/** The short form after the dash: one whitespace-free word. */
+const SHORT_FORM_WORD = /\S+/y;
+/** What follows the short form's word: an optional four-digit year, then a §/Artikel number. */
+const SHORT_FORM_PROVISION = new RegExp(String.raw`\s+(?:\d{4}\s+)?(?:§+|${ARTIKEL})\s*\d`, 'y');
+/** A citation opening with its §/Artikel number — section-first, so its law comes after. */
+const SECTION_LEAD = new RegExp(String.raw`^(?:§|${ARTIKEL}\s*\d)`);
+/** A §/Artikel number anywhere in a text. */
+const PROVISION_MARKER = new RegExp(String.raw`§|\b${ARTIKEL}\s*\d`, 'g');
+/** A §/Artikel number with nothing after it but sub-provisions and a terminal "." or ",". */
+const PROVISION_TO_END = new RegExp(
+  String.raw`^(?:§+|${ARTIKEL})\s*${SECTION_NUMBER}(?:\s*${SUB_PROVISION_TOKEN})*[.,]?$`,
+);
+
+/** True when the text ends in a §/Artikel number and its sub-provisions ("ASVG §5 Abs1"). */
+function endsInProvision(text: string): boolean {
+  let last = -1;
+  for (const marker of text.matchAll(PROVISION_MARKER)) last = marker.index;
+  return last >= 0 && PROVISION_TO_END.test(text.slice(last));
+}
+
+/**
+ * Where a long title's short form starts — "StaatsanwaltschaftsG - StAG §35 Abs1" is cited by
+ * "StAG §35 Abs1", and "… nach §351g ASVG - VO-HMV §29" by "VO-HMV §29", so the § 351g the long
+ * title names is part of the title. A short form is the one word after the first " - " that is
+ * followed by its §/Artikel number, optionally after a four-digit year ("Jagdgesetz 2004 - TJG
+ * 2004"). Not when the text before the dash is itself a whole cite — one opening with its
+ * §/Artikel number, or ending in one ("ASVG §5 - ABGB §1") — since the dash then joins two cites.
+ * Each dash is examined once and the word after it scanned once, so the scan is linear.
+ */
+function shortFormStart(s: string): number | undefined {
+  for (const dash of s.matchAll(SHORT_FORM_DASH)) {
+    const word = dash.index + 3;
+    SHORT_FORM_WORD.lastIndex = word;
+    if (!SHORT_FORM_WORD.test(s)) continue;
+    SHORT_FORM_PROVISION.lastIndex = SHORT_FORM_WORD.lastIndex;
+    if (!SHORT_FORM_PROVISION.test(s)) continue;
+    const title = s.slice(0, dash.index);
+    return SECTION_LEAD.test(title) || endsInProvision(title) ? undefined : word;
+  }
+  return undefined;
+}
+
+/**
  * Parse the abbreviation-first shape — the abbreviation precedes the §/Artikel marker ("DSG §1",
  * "EMRK Art8"), optionally with a trailing sub-provision that is discarded ("DSG §22 Abs1",
  * "DSGVO Art6 Abs1 litc", "DSGVO Art4 Z2", "DSG §6(1)", "IPRG §4Abs.1"). Anchored on the marker,
@@ -309,17 +443,29 @@ const ABBREV_ARTIKEL = new RegExp(
  * mis-parse the abbreviation to "Abs1" — and BEFORE the BARE_ABBREVIATION fallback, which would
  * otherwise swallow "EMRK Art8" as a literal abbreviation and resolve nothing.
  *
+ * A long title cited with its short form reads from the short form (`shortFormStart`), and the
+ * law is read without the version it is cited in (`lawOf`: "ABGB idF 2. ErwSchG §254" is ABGB
+ * § 254), the parse marked `versionCited` when `s` names one. Both feed the comma-joined rest,
+ * which `parseJoined` names under this abbreviation.
+ *
  * The abbreviation ends on a non-space and the section-first `§` run is matched from its head,
  * so a whitespace run or a run of `§` is scanned once rather than from every position in it.
  * The captures are the ones the plain lazy forms take.
  */
 function parseAbbreviationFirst(s: string): NormParse | null {
+  const shortForm = shortFormStart(s);
+  const short = shortForm === undefined ? null : readAbbreviationFirst(s.slice(shortForm));
+  return withCitedVersion(short ?? readAbbreviationFirst(s), s);
+}
+
+/** The abbreviation-first reading of a cite as it stands, its law without the version note. */
+function readAbbreviationFirst(s: string): NormParse | null {
   const abbrevParagraph = ABBREV_PARAGRAPH.exec(s);
   if (abbrevParagraph) {
     const [, abbreviation, section] = abbrevParagraph;
     if (abbreviation !== undefined && section !== undefined) {
       return {
-        abbreviation: abbreviation.trim(),
+        abbreviation: lawOf(abbreviation.trim()),
         section: section.replace(/\s+/g, ''),
         sectionType: 'Paragraph',
       };
@@ -330,7 +476,7 @@ function parseAbbreviationFirst(s: string): NormParse | null {
     const [, abbreviation, section] = abbrevArtikel;
     if (abbreviation !== undefined && section !== undefined) {
       return {
-        abbreviation: abbreviation.trim(),
+        abbreviation: lawOf(abbreviation.trim()),
         section: section.replace(/\s+/g, ''),
         sectionType: 'Artikel',
       };
@@ -384,11 +530,14 @@ function parseSectionOnly(s: string): SectionOnly | null {
   return null;
 }
 
-/** The first provision of an abbreviation-first comma-joined entry, the rest as `others`. */
+/**
+ * The first provision of an abbreviation-first comma-joined entry, the rest as `others`; marked
+ * `versionCited` when any part of the entry names a version.
+ */
 function parseJoined(s: string): NormParse | null {
   const comma = PROVISION_COMMA.exec(s);
   if (comma === null) return null;
-  const head = parseAbbreviationFirst(s.slice(0, comma.index));
+  const head = withCitedVersion(parseAbbreviationFirst(s.slice(0, comma.index)), s);
   if (head === null) return null;
   const others = s
     .slice(comma.index)
@@ -462,9 +611,12 @@ const SECTION_FIRST_ARTIKEL = new RegExp(
   String.raw`\b${ARTIKEL}\s*(${SECTION_FIRST_NUMBER})${SECTION_FIRST_GAP}(\S.*)$`,
 );
 
-/** One norm citation, in either order, or a bare abbreviation. */
+/**
+ * One norm citation, in either order, or a bare abbreviation — its law read without the version
+ * it is cited in ("§ 254 ABGB idF 2. ErwSchG", "ABGB idF BGBl 1970/342": the ABGB).
+ */
 function parseSingle(s: string): NormParse | null {
-  const stripSubRefs = (rest: string): string => rest.replace(LEADING_SUB_REFS, '').trim();
+  const stripSubRefs = (rest: string): string => lawOf(rest.replace(LEADING_SUB_REFS, '').trim());
 
   const abbreviationFirst = parseAbbreviationFirst(s);
   if (abbreviationFirst !== null) return abbreviationFirst;
@@ -473,22 +625,28 @@ function parseSingle(s: string): NormParse | null {
   if (paragraph) {
     const [, section, rest] = paragraph;
     if (section !== undefined && rest !== undefined) {
-      return {
-        abbreviation: stripSubRefs(rest),
-        section: section.replace(/\s+/g, ''),
-        sectionType: 'Paragraph',
-      };
+      return withCitedVersion(
+        {
+          abbreviation: stripSubRefs(rest),
+          section: section.replace(/\s+/g, ''),
+          sectionType: 'Paragraph',
+        },
+        s,
+      );
     }
   }
   const artikel = SECTION_FIRST_ARTIKEL.exec(s);
   if (artikel) {
     const [, section, rest] = artikel;
     if (section !== undefined && rest !== undefined) {
-      return {
-        abbreviation: stripSubRefs(rest),
-        section: section.replace(/\s+/g, ''),
-        sectionType: 'Artikel',
-      };
+      return withCitedVersion(
+        {
+          abbreviation: stripSubRefs(rest),
+          section: section.replace(/\s+/g, ''),
+          sectionType: 'Artikel',
+        },
+        s,
+      );
     }
   }
   const recitalAfter = RECITAL_AFTER.exec(s);
@@ -499,8 +657,12 @@ function parseSingle(s: string): NormParse | null {
   if (recitalFirst?.[1] !== undefined && recitalFirst[2] !== undefined) {
     return { abbreviation: recitalFirst[2].trim(), recital: recitalFirst[1] };
   }
-  if (BARE_ABBREVIATION.test(s) && !s.includes('/')) return { abbreviation: s };
-  return null;
+  /*
+   * A §/Artikel number no shape above read ("… idF 2009 Art2.2.1"), or an Artikel of the amending
+   * act the clause names, is not dropped with the clause.
+   */
+  const law = NORM_EXPLICIT.test(s) || citesAmendingActArtikel(s) ? s : lawOf(s);
+  return isBareLaw(law) ? withCitedVersion({ abbreviation: law }, s) : null;
 }
 
 /** Parsed collection-number citation (VfSlg / VwSlg). */
@@ -926,6 +1088,47 @@ function normRank(parsed: NormParse): (hit: RisHit) => number {
 }
 
 /**
+ * The cite a year cite becomes once its own search matched nothing (#80): the abbreviation
+ * without its trailing year ("VwGVG" for "VwGVG 2014"), for a year no later than the in-force
+ * date's — a law cited by a later year cannot be the one in force then, and a different law may
+ * hold the bare abbreviation (the DSG 1978 for "DSG 2000" as of 1995). Undefined for a cite
+ * without a trailing four-digit year.
+ */
+function yearlessCite(parsed: NormParse, asOf: string): { base: string; year: number } | undefined {
+  const split = splitTrailingYear(parsed.abbreviation);
+  if (split === undefined) return;
+  const year = Number(split.year);
+  return year <= Number(asOf.slice(0, 4)) ? { base: split.base.trimEnd(), year } : undefined;
+}
+
+/** The year of an original gazette number ("2013" from "33/2013"); undefined for any other shape. */
+function originalGazetteYear(number: string | undefined): number | undefined {
+  if (number === undefined || number.charAt(number.length - 5) !== '/') return;
+  const year = number.slice(-4);
+  return /^\d{4}$/.test(year) ? Number(year) : undefined;
+}
+
+/**
+ * True when a hit of the yearless search is the cited law: its abbreviation is exactly the cite
+ * without the year, and the law's original gazette is no later than the cited year. The cited
+ * year may be the promulgation year (GSpG 1989), the year the law took effect (VwGVG 2014,
+ * promulgated 2013), or a renaming (ORF-G 2001, promulgated 1984), so no field equals it, but the
+ * original gazette never postdates it — while a re-promulgation (AVG 1991 for "AVG 1950") does.
+ * The abbreviation plus another year (TKG 2021 for "TKG 2003") and a hit without an original
+ * gazette number are never taken.
+ */
+function isYearlessMatch(hit: RisHit, cite: { base: string; year: number }): boolean {
+  const { metadata } = hit;
+  if (metadata.controller !== 'Bundesrecht' && metadata.controller !== 'Landesrecht') return false;
+  if (metadata.abbreviation === undefined) return false;
+  if (comparableAbbreviation(metadata.abbreviation) !== comparableAbbreviation(cite.base)) {
+    return false;
+  }
+  const original = originalGazetteYear(metadata.originalGazetteNumber);
+  return original !== undefined && original <= cite.year;
+}
+
+/**
  * A Geschäftszahl as compared: no whitespace, lowercase, and without the parenthesized suffix
  * or trailing "ua" (und andere) RIS attaches to a stored number — "G8/2026 (G8/2026-15)" and
  * "E3811/2025 ua" compare as "g8/2026" and "e3811/2025". The "ua" is stripped only after a
@@ -990,15 +1193,37 @@ function ecliRank(cited: string): (hit: RisHit) => number {
   };
 }
 
-/** Classify a citation by shape (auto mode). Returns `null` when it doesn't classify. */
+/**
+ * Classify a citation by shape (auto mode). Returns `null` when it doesn't classify. A gazette
+ * prefix inside an "idF" clause names the amending act the law is read in ("ABGB idF BGBl I
+ * 2010/28 §988", "ABGB idF BGBl 1970/342"), so it makes a gazette citation only when the law
+ * before the clause is named by its own gazette number ("2. COVID-19-MaßnahmenV BGBl II 278/2021
+ * idF BGBl II 394/2021 §11") — by its number alone too, since that prefix is sometimes misspelled
+ * ("BGBI II 58/2021"), or when the provision cited is a Roman-numbered Artikel of the amending act
+ * (`citesAmendingActArtikel`). A cite whose law before the clause is a bare name is that law, as
+ * the bare name is.
+ */
 function classify(input: string, courtHint: RisCourtCode | undefined): CitationKind | null {
   if (parseCollection(input)) return 'collection_number';
   if (parseEcli(input) !== null) return 'case_number';
   if (COURT_PREFIX.test(input) && CASE_NUMBER_SHAPE.test(input)) return 'case_number';
-  if (GAZETTE_PREFIX.test(input)) return 'gazette';
+  const version = VERSION_CLAUSE.exec(input);
+  const law = version === null ? input : input.slice(0, version.index);
+  if (
+    GAZETTE_PREFIX.test(input) &&
+    (version === null ||
+      GAZETTE_PREFIX.test(law) ||
+      readGazetteNumber(law) !== null ||
+      citesAmendingActArtikel(input))
+  ) {
+    return 'gazette';
+  }
+  if (version !== null && isBareLaw(lawOf(input))) return 'norm';
   if (NORM_EXPLICIT.test(input)) return 'norm';
+  // A bare EU act ("RL 2006/123/EG") is a norm, never the VfGH case number its shape resembles.
+  if (euActOf(input) !== undefined) return 'norm';
   if (courtHint !== undefined || matchCaseCourts(input).length > 0) return 'case_number';
-  if (BARE_ABBREVIATION.test(input.trim()) && !input.includes('/')) return 'norm';
+  if (isBareLaw(input.trim())) return 'norm';
   return null;
 }
 
@@ -1385,18 +1610,39 @@ const LookupResultSchema = z.object({
 /** The resolver's result — contextual-types each handler return so `kind` stays a literal. */
 type LookupResult = z.infer<typeof LookupResultSchema>;
 
-/** Render any resolved record generically — every field of every record shape appears. */
+/** A record value that is a web URL, rendered as a link rather than as text. */
+const WEB_URL = /^https?:\/\/\S+$/;
+
+/**
+ * Render any resolved record generically — every field of every record shape appears. Every RIS
+ * string goes through `escapeMarkdownInline` (array elements one by one, joined by an authored
+ * ", ") and every URL through `markdownLink` — a bare URL field as its own label, a nested one
+ * (`content_urls`) under its key — so a CommonMark parse reads back the `structuredContent`
+ * value. The keys are the record's own field names.
+ */
 function renderRecord(record: Readonly<Record<string, unknown>>): string {
   const lines: string[] = [];
   for (const [key, value] of Object.entries(record)) {
     if (value === undefined || value === null) continue;
     if (Array.isArray(value)) {
-      if (value.length > 0) lines.push(`**${key}**: ${value.join(', ')}`);
+      if (value.length > 0) {
+        lines.push(
+          `**${key}**: ${value.map((item) => escapeMarkdownInline(String(item))).join(', ')}`,
+        );
+      }
     } else if (typeof value === 'object') {
       const parts = Object.entries(value as Record<string, unknown>)
         .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-        .map(([subKey, subValue]) => `${subKey} ${subValue}`);
+        .map(([subKey, subValue]) =>
+          WEB_URL.test(subValue)
+            ? markdownLink(subKey, subValue)
+            : `${subKey} ${escapeMarkdownInline(subValue)}`,
+        );
       if (parts.length > 0) lines.push(`**${key}**: ${parts.join(' · ')}`);
+    } else if (typeof value === 'string') {
+      lines.push(
+        `**${key}**: ${WEB_URL.test(value) ? markdownLink(value, value) : escapeMarkdownInline(value)}`,
+      );
     } else {
       lines.push(`**${key}**: ${String(value)}`);
     }
@@ -1417,7 +1663,7 @@ function todayInAustria(): string {
 export const risLookupCitation = tool('ris_lookup_citation', {
   title: 'Resolve Austrian Legal Citation',
   description:
-    'Resolve a single Austrian legal citation to its canonical RIS document deterministically — no keyword search. Four routes are auto-detected from the citation shape (or forced with kind): a norm citation — section-first ("§ 6 DSG", "Art 10 B-VG"), abbreviation-first ("DSG §1", "EMRK Art8", the shape ris_search_case_law returns in norms_cited; a comma-joined entry like "DSG §1, §24", or one joining full norms with ". " like "ZPO §179. ZPO §275 Abs2", resolves its first provision and names the rest), or a bare abbreviation like "ABGB" or "1. COVID-19-JuBG", with sub-provisions (Abs, Z, lit, "(1)") and a terminal ";" dropped — resolves through consolidated federal law, or a Bundesland with a state hint, as in force today or on in_force_as_of, while an EU act RIS does not consolidate (DSGVO, the Charter, EuGVVO, the EC Treaty as EG) returns found: false pointing to EUR-Lex without a search; a gazette citation ("BGBl. I Nr. 165/1999", year-first "BGBl I 2018/24", pre-2004 "BGBl. Nr. 194/1961", imperial "RGBl. Nr. 189/1902", "StGBl. Nr. 1/1945", or "LGBl. Nr. 61/2026" with a state hint) routes to the right federal era tier by year — the 1945 Staatsgesetzblatt sits in the 1945–2003 tier beside the BGBl. — or to a state Landesgesetzblatt — falling back to that Bundesland’s pre-e-Recht series when the citation predates its switch; a case number ("Ro 2026/03/0016", "G 287/2022", "14Os49/26a", "2025-0.934.677", "W256 …") is matched to its court — a leading VfGH, VwGH, OGH, BVwG, or DSB names it ("VfGH G 13/2025"), court skips detection, and ambiguous formats probe up to two courts; an ECLI ("ECLI:AT:VFGH:2026:G13.2025") resolves to the decision that carries it; a collection number ("VfSlg 19.632/2012", "VwSlg 18.000 A/2010") resolves through the VfGH/VwGH collection — a VwSlg cite given without its part letter can name one decision in each of the two VwGH series, and comes back as ambiguous with both cites named rather than resolved to one of them. Matches are ranked before one is picked: a norm resolves to the hit whose abbreviation is the cited one, then the cited one plus a year ("EStG" → EStG 1988), then the cited one without a year RIS’s abbreviation omits, when the law’s short title carries it ("AlVG 1977" → AlVG), the exact §/Artikel label ahead of a prefixed one ("§ 1" before "Art. 2 § 1"); a case number resolves to the decision text, then to a Rechtssatz that decision leads; a gazette cite resolves only to an entry of the gazette it names (StGBl. and BGBl. share numbers in 1945, as the older gazettes do in their changeover years); and a "BGBl. Nr." cite without its part that matches more than one of parts I/II/III (from 1997 they reuse numbers) comes back as ambiguous with each part named. Returns the single best-matching document in the same shape as the corresponding search tool, with alternatives_count when more than one matched. A citation that cannot be classified or resolved returns found: false with next-step guidance — it never throws for a miss; only an upstream RIS outage is an error. For keyword rather than citation lookup, use ris_search_legislation or ris_search_case_law.',
+    'Resolve a single Austrian legal citation to its canonical RIS document deterministically — no keyword search. Four routes are auto-detected from the citation shape (or forced with kind): a norm citation — section-first ("§ 6 DSG", "Art 10 B-VG"), abbreviation-first ("DSG §1", "EMRK Art8", the shape ris_search_case_law returns in norms_cited; a comma-joined entry like "DSG §1, §24", or one joining full norms with ". " like "ZPO §179. ZPO §275 Abs2", resolves its first provision and names the rest), or a bare abbreviation like "ABGB" or "1. COVID-19-JuBG", with sub-provisions (Abs, Z, lit, "(1)"), the version a law is cited in ("ABGB idF 2. ErwSchG §254", "ABGB aF §140"), and a terminal ";" dropped, and a long title read by its short form after the dash ("StaatsanwaltschaftsG - StAG §35") — resolves through consolidated federal law, or a Bundesland with a state hint, as in force today or on in_force_as_of, while an EU act RIS does not consolidate (DSGVO, the Charter, EuGVVO, the EC Treaty as EG, EGV, or EG-Vertrag), or an EU act cited by its number ("RL 2006/123/EG", "VO (EG) 178/2002"), returns found: false pointing to EUR-Lex without a search; a gazette citation ("BGBl. I Nr. 165/1999", year-first "BGBl I 2018/24", pre-2004 "BGBl. Nr. 194/1961", imperial "RGBl. Nr. 189/1902", "StGBl. Nr. 1/1945", or "LGBl. Nr. 61/2026" with a state hint) routes to the right federal era tier by year — the 1945 Staatsgesetzblatt sits in the 1945–2003 tier beside the BGBl. — or to a state Landesgesetzblatt — falling back to that Bundesland’s pre-e-Recht series when the citation predates its switch; a case number ("Ro 2026/03/0016", "G 287/2022", "14Os49/26a", "2025-0.934.677", "W256 …") is matched to its court — a leading VfGH, VwGH, OGH, BVwG, or DSB names it ("VfGH G 13/2025"), court skips detection, and ambiguous formats probe up to two courts; an ECLI ("ECLI:AT:VFGH:2026:G13.2025") resolves to the decision that carries it; a collection number ("VfSlg 19.632/2012", "VwSlg 18.000 A/2010") resolves through the VfGH/VwGH collection — a VwSlg cite given without its part letter can name one decision in each of the two VwGH series, and comes back as ambiguous with both cites named rather than resolved to one of them. Matches are ranked before one is picked: a norm resolves to the hit whose abbreviation is the cited one, then the cited one plus a year ("EStG" → EStG 1988), then the cited one without a year RIS’s abbreviation omits, when the law’s short title carries it ("AlVG 1977" → AlVG), the exact §/Artikel label ahead of a prefixed one ("§ 1" before "Art. 2 § 1"), and a cite whose year matches nothing ("VwGVG 2014 §28") is searched once more without it, taking only the law filed under the cited abbreviation without that year and first promulgated no later than it ("VwGVG 2014" → VwGVG, not "AVG 1950" → the AVG of 1991), for a year no later than in_force_as_of’s; a case number resolves to the decision text, then to a Rechtssatz that decision leads; a gazette cite resolves only to an entry of the gazette it names (StGBl. and BGBl. share numbers in 1945, as the older gazettes do in their changeover years); and a "BGBl. Nr." cite without its part that matches more than one of parts I/II/III (from 1997 they reuse numbers) comes back as ambiguous with each part named. Returns the single best-matching document in the same shape as the corresponding search tool, with alternatives_count when more than one matched. A citation that cannot be classified or resolved returns found: false with next-step guidance — it never throws for a miss; only an upstream RIS outage is an error. For keyword rather than citation lookup, use ris_search_legislation or ris_search_case_law.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     citation: z
@@ -1517,6 +1763,12 @@ export const risLookupCitation = tool('ris_lookup_citation', {
         throw err;
       }
     };
+    /**
+     * Every search this lookup sends — a second court, the legacy gazette series, a cite retried
+     * without its year — runs on one search budget measured from the first request, so the
+     * lookup settles inside the client's request timeout however many it chains (#85).
+     */
+    const budget: SharedSearchBudget = {};
 
     const route =
       input.kind !== 'auto'
@@ -1542,6 +1794,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
         getRisService().searchCaseLaw(
           { collectionNumber: parsed.filter, court: parsed.court },
           ctx,
+          budget,
         ),
       );
       const hit = result ? pickRanked(result.hits, caseLawRank(undefined)) : undefined;
@@ -1592,9 +1845,15 @@ export const risLookupCitation = tool('ris_lookup_citation', {
        * An EU act RIS does not consolidate is decided here, before any request: every retry the
        * miss guidance would offer (other versions, a wildcard title, a state hint) searches a
        * corpus that cannot hold it, and a bare abbreviation would match a title that merely
-       * mentions the act. A state hint does not bypass it.
+       * mentions the act. A state hint does not bypass it. An act cited bare by its number
+       * ("RL 2006/123/EG") reads as no norm shape, so the whole cite is the act.
        */
-      const euAct = parsed !== null ? euActOf(parsed.abbreviation) : undefined;
+      const euAct =
+        parsed !== null
+          ? euActOf(parsed.abbreviation)
+          : sectionOnly === null
+            ? euActOf(citation)
+            : undefined;
       if (euAct !== undefined || euCelex !== undefined) {
         return {
           found: false,
@@ -1632,8 +1891,29 @@ export const risLookupCitation = tool('ris_lookup_citation', {
         }),
         ...(stateHint !== undefined && { state: stateHint }),
       };
-      const result = await runSearch(() => getRisService().searchLegislation(params, ctx));
-      const hit = result ? pickRanked(result.hits, normRank(parsed)) : undefined;
+      let result = await runSearch(() => getRisService().searchLegislation(params, ctx, budget));
+      let hit = result ? pickRanked(result.hits, normRank(parsed)) : undefined;
+      /*
+       * A cite ending in a year RIS's title omits ("VwGVG 2014") matches nothing, so it is
+       * searched once more without the year, taking only a hit that is the cited law (#80). A
+       * search the request builder rejected (`null`) is not retried.
+       */
+      let yearlessTitle: string | undefined;
+      const yearless = result?.hits.length === 0 ? yearlessCite(parsed, asOf) : undefined;
+      if (yearless !== undefined) {
+        const retried = await runSearch(() =>
+          getRisService().searchLegislation({ ...params, title: yearless.base }, ctx, budget),
+        );
+        const retriedHit = pickRanked(
+          retried?.hits.filter((candidate) => isYearlessMatch(candidate, yearless)) ?? [],
+          normRank({ ...parsed, abbreviation: yearless.base }),
+        );
+        if (retried !== null && retriedHit !== undefined) {
+          result = retried;
+          hit = retriedHit;
+          yearlessTitle = yearless.base;
+        }
+      }
       if (!result || hit === undefined) {
         return {
           found: false,
@@ -1642,12 +1922,21 @@ export const risLookupCitation = tool('ris_lookup_citation', {
         };
       }
       const alternatives = result.total > 1 ? result.total - 1 : undefined;
+      const title = yearlessTitle ?? parsed.abbreviation;
       const sectionPhrase =
         parsed.section !== undefined
           ? `, ${sectionMarker(parsed.sectionType)} ${parsed.section}`
           : '';
+      const yearPhrase =
+        yearlessTitle !== undefined
+          ? ` Title "${parsed.abbreviation}" matched nothing, so the year was dropped.`
+          : '';
+      // The version a cite names ("idF 2. ErwSchG", "aF") is never applied (#82, #86).
+      const versionPhrase = parsed.versionCited
+        ? ` The version the cite names was not applied: this is the text in force ${asOf}. To read that version, pass in_force_as_of a date it was in force.`
+        : '';
       const recipe = [
-        `title: ${JSON.stringify(parsed.abbreviation)}`,
+        `title: ${JSON.stringify(title)}`,
         ...(parsed.section !== undefined
           ? [
               `section_from: ${JSON.stringify(parsed.section)}`,
@@ -1663,7 +1952,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
         found: true,
         kind: 'norm',
         record: toLegislationRecord(hit, application),
-        resolution_note: `Resolved via ris_search_legislation (${application}) — title "${parsed.abbreviation}"${sectionPhrase}, in force ${asOf}.${othersPhrase(parsed.others)}${alternativesRecipe(alternatives, 'ris_search_legislation', recipe)}`,
+        resolution_note: `Resolved via ris_search_legislation (${application}) — title "${title}"${sectionPhrase}, in force ${asOf}.${yearPhrase}${versionPhrase}${othersPhrase(parsed.others)}${alternativesRecipe(alternatives, 'ris_search_legislation', recipe)}`,
         ...(alternatives !== undefined && { alternatives_count: alternatives }),
       };
     }
@@ -1695,7 +1984,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
           ...(stateHint !== undefined &&
             (application === 'LgblAuth' || application === 'Lgbl') && { state: stateHint }),
         };
-        const result = await runSearch(() => getRisService().searchGazette(params, ctx));
+        const result = await runSearch(() => getRisService().searchGazette(params, ctx, budget));
         if (result && result.hits.length > 0) {
           resolved = { application, hits: result.hits, total: result.total };
           break;
@@ -1792,7 +2081,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
       }
       const query = `"${citation}"`;
       const result = await runSearch(() =>
-        getRisService().searchCaseLaw({ court, pageSize: RANKED_PAGE_SIZE, query }, ctx),
+        getRisService().searchCaseLaw({ court, pageSize: RANKED_PAGE_SIZE, query }, ctx, budget),
       );
       const hit = result ? pickRanked(result.hits, ecliRank(citation)) : undefined;
       if (!result || hit === undefined) {
@@ -1834,6 +2123,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
         getRisService().searchCaseLaw(
           { caseNumber: stored, court, pageSize: RANKED_PAGE_SIZE },
           ctx,
+          budget,
         ),
       );
       const hit = result ? pickRanked(result.hits, caseLawRank(stored)) : undefined;
@@ -1863,11 +2153,12 @@ export const risLookupCitation = tool('ris_lookup_citation', {
 
   // format() populates content[] — the markdown twin of structuredContent. Renders every
   // output field: found/kind/resolution_note, the resolved record, alternatives_count, and
-  // the found: false guidance.
+  // the found: false guidance. The note and the guidance quote RIS and caller strings, so each
+  // is escaped whole; neither holds intended Markdown.
   format: (result) => {
     const lines: string[] = [`**found**: ${result.found}`, `**kind**: ${result.kind}`];
     if (result.resolution_note !== undefined) {
-      lines.push(`**resolution_note**: ${result.resolution_note}`);
+      lines.push(`**resolution_note**: ${escapeMarkdownInline(result.resolution_note)}`);
     }
     if (result.record !== undefined) {
       lines.push(
@@ -1879,7 +2170,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
     if (result.alternatives_count !== undefined) {
       lines.push('', `**alternatives_count**: ${result.alternatives_count}`);
     }
-    if (result.guidance !== undefined) lines.push('', result.guidance);
+    if (result.guidance !== undefined) lines.push('', escapeMarkdownInline(result.guidance));
     return [{ type: 'text', text: lines.join('\n') }];
   },
 });

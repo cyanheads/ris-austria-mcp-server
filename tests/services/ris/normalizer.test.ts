@@ -503,6 +503,32 @@ describe('parseSearchResponse', () => {
   });
 });
 
+describe('the original gazette number of a consolidated law (#80)', () => {
+  it('maps StammnormBgblnummer from BrKons and LrKons', () => {
+    const federal = metadataById<RisBundesrechtMetadata>(
+      fixture('search-brkons-vwgvg-section-28.json'),
+    );
+    expect(federal.get('NOR40196850')!.originalGazetteNumber).toBe('33/2013');
+    const state = metadataById<RisLandesrechtMetadata>(
+      fixture('search-lrkons-bo-wien-section-1.json'),
+    );
+    expect(state.get('LWI40016426')!.originalGazetteNumber).toBe('11/1930');
+  });
+
+  it('reads a nil StammnormBgblnummer as no original gazette number', () => {
+    const meta = metadataById<RisBundesrechtMetadata>(
+      withMetadata(
+        'search-brkons-vwgvg-section-28.json',
+        'NOR40196850',
+        ['Bundesrecht', 'BrKons'],
+        { StammnormBgblnummer: NIL },
+      ),
+    );
+    expect(meta.get('NOR40196850')).not.toHaveProperty('originalGazetteNumber');
+    expect(meta.get('NOR40196850')!.abbreviation).toBe('VwGVG');
+  });
+});
+
 describe('gazette identifiers — CELEX lists, Gliederungszahl, issue and page (#55)', () => {
   it('keeps the BgblAlt issue and start page and the LgblNO Gliederungszahl and issue', () => {
     const bgblAlt = metadataById<RisBundesrechtMetadata>(fixture('search-bgblalt.json'));

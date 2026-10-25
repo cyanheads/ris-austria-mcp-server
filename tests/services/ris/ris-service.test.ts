@@ -2,8 +2,9 @@
  * @fileoverview Offline RisService tests: the content-URL SSRF guard, per-application
  * content-URL construction from the path-segment map on the default content host, the
  * HTTP-500 error-envelope translation and the content host's bot-check page (fetch stubbed —
- * no network), a request-builder rejection failing before any request is sent, and the
- * init/accessor contract.
+ * no network), a request-builder rejection failing before any request is sent, the retry
+ * budget a search spends alone or shares with the searches chained after it (fake timers), and
+ * the init/accessor contract.
  * Network-bound methods are otherwise exercised at build time against the live API.
  * @module tests/services/ris/ris-service
  */
@@ -19,6 +20,7 @@ import {
   assertFetchableDocumentUrl,
   getRisService,
   RisService,
+  type SharedSearchBudget,
 } from '@/services/ris/ris-service.js';
 
 const CONTENT_BASE = 'https://www.ris.bka.gv.at';
@@ -412,6 +414,192 @@ describe('RisService — search retry budget', () => {
     // past it, and the error names which bound it hit rather than echoing the last attempt.
     expect(settledAt - t0).toBeLessThanOrEqual(48_000);
     expect(err).toMatchObject({ data: { deadlineMs: 48_000, reason: 'retry_deadline_exceeded' } });
+  });
+});
+
+describe('RisService — one search budget shared by the searches a call chains (#85)', () => {
+  const service = new RisService('ris-austria-mcp-server/test');
+  const ZERO_HITS = rawFixture('search-zero-hits.json');
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  /**
+   * A fetch stub that answers the n-th request with `answers[n]`: a zero-hit page after that
+   * many milliseconds, an immediate HTTP 503, or (`'hang'`) nothing until its signal aborts.
+   * Records when each request started.
+   */
+  function stubFetch(answers: ReadonlyArray<number | 503 | 'hang'>) {
+    const startedAt: number[] = [];
+    const fetchMock = vi.fn((_url: unknown, init: { signal?: AbortSignal }) => {
+      const answer = answers[startedAt.length] ?? 'hang';
+      startedAt.push(Date.now());
+      if (answer === 503) return Promise.resolve(new Response('{}', { status: 503 }));
+      return new Promise<Response>((resolve, reject) => {
+        if (init.signal?.aborted) {
+          reject(init.signal.reason as Error);
+          return;
+        }
+        const timer =
+          answer === 'hang'
+            ? undefined
+            : setTimeout(() => {
+                resolve(new Response(ZERO_HITS));
+              }, answer);
+        init.signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(init.signal?.reason as Error);
+        });
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return { fetchMock, startedAt };
+  }
+
+  /** Run a zero-hit legislation search, then a second one, both under `budget`. */
+  function chainedSearches(budget: SharedSearchBudget, ctx = createMockContext()) {
+    return (async () => {
+      const first = await service.searchLegislation(
+        { application: 'BrKons', title: 'VwGVG 2014' },
+        ctx,
+        budget,
+      );
+      expect(first.total).toBe(0);
+      return await service.searchLegislation(
+        { application: 'BrKons', title: 'VwGVG' },
+        ctx,
+        budget,
+      );
+    })();
+  }
+
+  it('runs a later search on what the earlier one left, so the pair settles inside one budget', async () => {
+    // The first search answers, empty, late in the budget; the second never answers. Each on
+    // its own budget, the second would wait out its whole fetch deadline past the client's 60s.
+    const { fetchMock, startedAt } = stubFetch([39_000, 'hang']);
+    vi.useFakeTimers();
+    const t0 = Date.now();
+    let settledAt = 0;
+    const pending = chainedSearches({}).catch((e: unknown) => {
+      settledAt = Date.now();
+      return e;
+    });
+    await vi.advanceTimersByTimeAsync(120_000);
+    const err = await pending;
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(startedAt[1]! - t0).toBe(39_000);
+    expect(settledAt - t0).toBe(48_000);
+    expect(err).toMatchObject({
+      code: JsonRpcErrorCode.Timeout,
+      data: { reason: 'retry_deadline_exceeded' },
+    });
+  });
+
+  it('bounds a later search’s retry ladder by the shared remainder too', async () => {
+    // The second search fails transiently on every attempt. Its backoff (1.5s, 3s, 6s with the
+    // jitter pinned to its midpoint) has only the 9s the first search left, so the third wait
+    // would outlast it: the ladder fails on the shared deadline after three attempts instead of
+    // running all four on a fresh budget and reporting the 503.
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    try {
+      const { fetchMock } = stubFetch([39_000, 503, 503, 503, 503]);
+      vi.useFakeTimers();
+      const t0 = Date.now();
+      let settledAt = 0;
+      const pending = chainedSearches({}).catch((e: unknown) => {
+        settledAt = Date.now();
+        return e;
+      });
+      await vi.advanceTimersByTimeAsync(120_000);
+      const err = await pending;
+
+      expect(err).toMatchObject({
+        code: JsonRpcErrorCode.Timeout,
+        data: { reason: 'retry_deadline_exceeded' },
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(settledAt - t0).toBe(43_500);
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it('starts the clock at the first request, so a single search keeps the whole budget', async () => {
+    // A budget made before any request (a handler creates it up front) costs that search
+    // nothing: its expiry names the same 48s a search without a shared budget gets.
+    stubFetch(['hang']);
+    vi.useFakeTimers();
+    const budget: SharedSearchBudget = {};
+    await vi.advanceTimersByTimeAsync(5_000);
+    const t0 = Date.now();
+    let settledAt = 0;
+    const pending = service
+      .searchCaseLaw({ court: 'bvwg', decisionType: 'all' }, createMockContext(), budget)
+      .catch((e: unknown) => {
+        settledAt = Date.now();
+        return e;
+      });
+    await vi.advanceTimersByTimeAsync(120_000);
+    const err = await pending;
+
+    expect(budget.startedAt).toBe(t0);
+    // The per-attempt fetch deadline (40s) is reached before the 48s budget.
+    expect(settledAt - t0).toBe(40_000);
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.Timeout);
+  });
+
+  it('sends no request once the shared budget is spent', async () => {
+    const { fetchMock } = stubFetch([0]);
+    const budget: SharedSearchBudget = { startedAt: Date.now() - 48_000 };
+    const err = await service
+      .searchGazette(
+        { application: 'Lgbl', number: '158/2013', state: 'tirol' },
+        createMockContext(),
+        budget,
+      )
+      .catch((e: unknown) => e);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(err).toMatchObject({
+      code: JsonRpcErrorCode.Timeout,
+      data: { deadlineMs: 48_000, reason: 'retry_deadline_exceeded' },
+    });
+  });
+
+  it('keeps caller cancellation ahead of a spent budget', async () => {
+    stubFetch([0]);
+    const controller = new AbortController();
+    controller.abort();
+    const err = await service
+      .searchCaseLaw(
+        { caseNumber: '2025-0.934.677', court: 'dok' },
+        createMockContext({ signal: controller.signal }),
+        { startedAt: Date.now() - 48_000 },
+      )
+      .catch((e: unknown) => e);
+
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.RequestCancelled);
+  });
+
+  it('keeps caller cancellation mid-way through a later search a cancellation, not an expiry', async () => {
+    stubFetch([10_000, 'hang']);
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const pending = chainedSearches({}, createMockContext({ signal: controller.signal })).catch(
+      (e: unknown) => e,
+    );
+    await vi.advanceTimersByTimeAsync(20_000);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(60_000);
+    const err = await pending;
+
+    expect(err).toMatchObject({
+      code: JsonRpcErrorCode.RequestCancelled,
+      data: { errorSource: 'FetchAborted' },
+    });
   });
 });
 

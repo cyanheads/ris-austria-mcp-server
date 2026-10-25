@@ -393,6 +393,7 @@ function mapConsolidated(kons: RawBundesrechtMeta['BrKons']): {
     lawId: rawText(kons?.Gesetzesnummer),
     lawUrl: rawText(kons?.GesamteRechtsvorschriftUrl),
     normType: rawText(kons?.Typ),
+    originalGazetteNumber: rawText(kons?.StammnormBgblnummer),
     promulgation: cleanText(kons?.Kundmachungsorgan),
     sectionLabel: rawText(kons?.ArtikelParagraphAnlage),
   };

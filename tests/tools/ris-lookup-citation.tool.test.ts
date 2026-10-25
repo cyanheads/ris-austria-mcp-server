@@ -45,7 +45,15 @@ import {
 } from '@/services/ris/request-builder.js';
 import type { RisHit } from '@/services/ris/types.js';
 
-import { contentText } from './_wire.js';
+import {
+  contentText,
+  HOSTILE_TEXT,
+  hostileHit as hostileMetadata,
+  linkDestinations,
+  readCommonMark,
+  type ToolResult,
+  WEB_URL,
+} from './_wire.js';
 
 const { searchCaseLaw, searchGazette, searchLegislation } = vi.hoisted(() => ({
   searchCaseLaw: vi.fn(),
@@ -80,6 +88,10 @@ function todayInAustria(): string {
 const UNREADABLE_NORM = (citation: string) =>
   `Could not read a norm citation from '${citation}'. A norm citation names a law by its abbreviation, with or without a §/Artikel number: '§ 6 DSG', 'Art 10 B-VG', 'DSG §1', or 'ABGB'. Formats: ris_list_reference topic citation_formats. For keyword search use ris_search_legislation with query.`;
 
+/** The guidance for a citation no route classifies — nothing was searched. */
+const UNCLASSIFIED = (citation: string) =>
+  `Could not classify '${citation}'. Expected forms — norm: '§ 6 DSG' / 'Art 10 B-VG'; gazette: 'BGBl. I Nr. 165/1999' or year-first 'BGBl I 2018/24' (also pre-2004 and RGBl/StGBl forms, and LGBl with a state hint); case number: 'Ro 2026/03/0016', court-prefixed 'VfGH G 13/2025', or an ECLI 'ECLI:AT:VFGH:2026:G13.2025'; collection: 'VfSlg 19.632/2012'. Formats: ris_list_reference topic citation_formats. Or set kind explicitly; for keyword search use ris_search_legislation / ris_search_case_law.`;
+
 /** Await a handler call expected to reject, and narrow the rejection to an McpError. */
 async function captureError(result: unknown | Promise<unknown>): Promise<McpError> {
   const err = await Promise.resolve(result).catch((e: unknown) => e);
@@ -88,23 +100,59 @@ async function captureError(result: unknown | Promise<unknown>): Promise<McpErro
 }
 
 /**
- * Assert every populated scalar/array/nested-object-string field of a resolved record is
- * rendered somewhere in the format() text — the same generic walk `renderRecord()` performs,
- * so this checks structuredContent/format() parity without hand-listing fields per route.
+ * The CommonMark read-back of a resolved record's block as format() lays it out, built from the
+ * `structuredContent` values: one `**field**: value` line per populated field in record order —
+ * array elements joined by ", ", a nested object's string fields as "key value" joined by " · "
+ * (a nested URL as a link labelled by its key), a bare URL as a link whose text is the URL — so
+ * every value reads back verbatim, in its own field's line, and nothing else renders live.
+ */
+function recordRead(record: object): string {
+  return Object.entries(record)
+    .flatMap(([key, value]): string[] => {
+      const line = (rendered: string) => [`⟨strong⟩${key}⟨/strong⟩: ${rendered}`];
+      if (value === undefined || value === null) return [];
+      if (Array.isArray(value)) return value.length === 0 ? [] : line(value.map(String).join(', '));
+      if (typeof value === 'object') {
+        const parts = Object.entries(value as Record<string, unknown>).flatMap(([sub, item]) =>
+          typeof item !== 'string' ? [] : [WEB_URL.test(item) ? `⟨a⟩${sub}⟨/a⟩` : `${sub} ${item}`],
+        );
+        return parts.length === 0 ? [] : line(parts.join(' · '));
+      }
+      return line(
+        typeof value === 'string' && WEB_URL.test(value) ? `⟨a⟩${value}⟨/a⟩` : String(value),
+      );
+    })
+    .join('\n');
+}
+
+/** Every URL a resolved record links, in render order: a bare URL field, then nested ones. */
+function recordUrls(record: object): string[] {
+  return Object.values(record).flatMap((value): string[] => {
+    if (typeof value === 'string') return WEB_URL.test(value) ? [value] : [];
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return [];
+    return Object.values(value as Record<string, unknown>).filter(
+      (item): item is string => typeof item === 'string' && WEB_URL.test(item),
+    );
+  });
+}
+
+/** The read-back of format()'s "Resolved document" heading, as it precedes the record block. */
+const RECORD_HEADING = '⟨heading_open⟩\n\nResolved document\n\n⟨heading_close⟩\n\n';
+
+/**
+ * Assert format()'s record block reads back, through a CommonMark parse, as exactly
+ * {@link recordRead} of `record` — every populated field in its own line, verbatim, in record
+ * order, with nothing added — and that the text links exactly the record's URLs, in order. The
+ * block is what follows the "Resolved document" heading, up to an `alternatives_count` trailer.
  */
 function expectRecordRendered(text: string, record: object): void {
-  for (const value of Object.values(record)) {
-    if (value === undefined || value === null) continue;
-    if (Array.isArray(value)) {
-      for (const item of value) expect(text).toContain(String(item));
-    } else if (typeof value === 'object') {
-      for (const subValue of Object.values(value as Record<string, unknown>)) {
-        if (typeof subValue === 'string') expect(text).toContain(subValue);
-      }
-    } else {
-      expect(text).toContain(String(value));
-    }
-  }
+  const read = readCommonMark(text);
+  expect(read).toContain(RECORD_HEADING);
+  const block = read
+    .slice(read.indexOf(RECORD_HEADING) + RECORD_HEADING.length)
+    .replace(/\n\n⟨strong⟩alternatives_count⟨\/strong⟩: \d+$/u, '');
+  expect(block).toBe(recordRead(record));
+  expect(linkDestinations(text)).toEqual(recordUrls(record));
 }
 
 beforeEach(() => {
@@ -1627,6 +1675,394 @@ describe('risLookupCitation — a norm citation picks the cited law, not the fir
   });
 });
 
+/*
+ * A cite ending in a year RIS's title omits matches nothing (#80), so the lookup searches once
+ * more without the year. It takes a hit only when that hit's abbreviation is the cited one without
+ * the year and the law's original gazette (StammnormBgblnummer) is no later than the cited year,
+ * and only for a year no later than the in-force date's. Each second page is a capture of the
+ * yearless search in force 2026-10-25; the first page is the zero-hit search the year cite gets.
+ */
+describe('risLookupCitation — a year RIS’s title omits is dropped after a zero-hit search (#80)', () => {
+  const AS_OF = '2026-10-25';
+
+  /** The norm miss guidance for a § cite, naming the cite as written. */
+  const normMiss = (abbreviation: string, section: string, date = AS_OF) =>
+    `No document for ${abbreviation} § ${section} in force on ${date}. If the provision existed at another time, retry ris_search_legislation with title: '${abbreviation}', section_from/to: '${section}', section_type: 'Paragraph', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: '${abbreviation}*'. State law resolves only with an explicit state hint.`;
+
+  /** The params of every legislation search sent, in order. */
+  const sentParams = () => searchLegislation.mock.calls.map(([params]) => params as object);
+
+  /** [cite, cited abbreviation, yearless title, second page, expected pick]. */
+  const RESOLVES: ReadonlyArray<[string, string, string, string, string]> = [
+    ['VwGVG 2014 §28', 'VwGVG 2014', 'VwGVG', 'search-brkons-vwgvg-section-28.json', 'NOR40196850'],
+    [
+      'BFA-VG 2014 §21',
+      'BFA-VG 2014',
+      'BFA-VG',
+      'search-brkons-bfa-vg-section-21.json',
+      'NOR40278192',
+    ],
+    ['GSpG 1989 §2', 'GSpG 1989', 'GSpG', 'search-brkons-gspg-section-2.json', 'NOR40217893'],
+    [
+      'AußStrG 2005 §43',
+      'AußStrG 2005',
+      'AußStrG',
+      'search-brkons-ausstrg-section-43.json',
+      'NOR40046671',
+    ],
+    ['BWG 1993 §70', 'BWG 1993', 'BWG', 'search-brkons-bwg-section-70.json', 'NOR40263581'],
+    ['DSG 2000 §1', 'DSG 2000', 'DSG', 'search-brkons-dsg-section-1.json', 'NOR40139563'],
+    ['ORF-G 2001', 'ORF-G 2001', 'ORF-G', 'search-brkons-orf-g.json', 'NOR30001521'],
+  ];
+
+  it.each(RESOLVES)(
+    '"%s" resolves through a second search without the year',
+    async (citation, cited, yearless, name, expected) => {
+      searchLegislation.mockResolvedValueOnce(zeroHits()).mockResolvedValueOnce(page(name));
+      const result = await lookup({ citation, in_force_as_of: AS_OF });
+
+      expect(searchLegislation).toHaveBeenCalledTimes(2);
+      const [first, second] = sentParams();
+      expect(first).toMatchObject({ inForceAsOf: AS_OF, title: cited });
+      expect(second).toEqual({ ...first, title: yearless });
+      expect(documentNumberOf(result)).toBe(expected);
+      expect(result.record).toMatchObject({ abbreviation: yearless });
+    },
+  );
+
+  it('puts the exact § label ahead of the lettered ones on the second page too', async () => {
+    const bwg = page('search-brkons-bwg-section-70.json');
+    searchLegislation
+      .mockResolvedValueOnce(zeroHits())
+      .mockResolvedValueOnce({ ...bwg, hits: [...bwg.hits].reverse() });
+    const result = await lookup({ citation: 'BWG 1993 §70', in_force_as_of: AS_OF });
+    expect(documentNumberOf(result)).toBe('NOR40263581');
+    expect(result.record).toMatchObject({ section_label: '§ 70' });
+  });
+
+  it('names the dropped year in resolution_note on both surfaces', async () => {
+    searchLegislation
+      .mockResolvedValueOnce(zeroHits())
+      .mockResolvedValueOnce(page('search-brkons-vwgvg-section-28.json'));
+    const result = await runToolContract(risLookupCitation, {
+      citation: 'VwGVG 2014 §28',
+      in_force_as_of: AS_OF,
+    });
+    const note =
+      'Resolved via ris_search_legislation (BrKons) — title "VwGVG", § 28, in force 2026-10-25. Title "VwGVG 2014" matched nothing, so the year was dropped.';
+    expect(result.structuredContent).toMatchObject({ found: true, resolution_note: note });
+    expect(result.structuredContent).not.toHaveProperty('alternatives_count');
+    expect(contentText(result)).toContain(`**resolution_note**: ${note}\n`);
+  });
+
+  it('lists the alternatives with the title that matched', async () => {
+    searchLegislation
+      .mockResolvedValueOnce(zeroHits())
+      .mockResolvedValueOnce(page('search-brkons-bwg-section-70.json'));
+    const result = await lookup({ citation: 'BWG 1993 §70', in_force_as_of: AS_OF });
+    expect(result.alternatives_count).toBe(4);
+    expect(result.resolution_note).toBe(
+      'Resolved via ris_search_legislation (BrKons) — title "BWG", § 70, in force 2026-10-25. Title "BWG 1993" matched nothing, so the year was dropped. 4 more matched — list them with ris_search_legislation title: "BWG", section_from: "70", section_to: "70", section_type: Paragraph, in_force_as_of: "2026-10-25".',
+    );
+  });
+
+  it('still names the other cites of a comma-joined entry', async () => {
+    searchLegislation
+      .mockResolvedValueOnce(zeroHits())
+      .mockResolvedValueOnce(page('search-brkons-vwgvg-section-28.json'));
+    const result = await lookup({ citation: 'VwGVG 2014 §28, §29', in_force_as_of: AS_OF });
+    expect(result.resolution_note).toBe(
+      'Resolved via ris_search_legislation (BrKons) — title "VwGVG", § 28, in force 2026-10-25. Title "VwGVG 2014" matched nothing, so the year was dropped. The entry also cites VwGVG 2014 §29 — look it up as its own citation.',
+    );
+  });
+
+  /*
+   * The second search runs and returns a different law: re-promulgated after the cited year
+   * (AVG and VStG 1991, Stammnorm 51/1991 and 52/1991), or filed under the abbreviation plus
+   * another year (TKG 2021 beside the TKG-DSVO; WEG 2002, AsylG 2005, UStG 1994, GewO 1994).
+   */
+  const OTHER_LAWS: ReadonlyArray<[string, string, string, string]> = [
+    ['AVG 1950 §1', 'AVG 1950', '1', 'search-brkons-avg-section-1.json'],
+    ['VStG 1950 §1', 'VStG 1950', '1', 'search-brkons-vstg-section-1.json'],
+    ['TKG 2003 §5', 'TKG 2003', '5', 'search-brkons-tkg-section-5.json'],
+    ['WEG 1975 §1', 'WEG 1975', '1', 'search-brkons-weg-section-1.json'],
+    ['AsylG 1997 §1', 'AsylG 1997', '1', 'search-brkons-asylg-section-1.json'],
+    ['UStG 1972 §1', 'UStG 1972', '1', 'search-brkons-ustg-section-1.json'],
+    ['GewO 1973 §1', 'GewO 1973', '1', 'search-brkons-gewo-section-1.json'],
+  ];
+
+  it.each(OTHER_LAWS)(
+    '"%s" takes nothing from the second search and misses under the cited form',
+    async (citation, cited, section, name) => {
+      searchLegislation.mockResolvedValueOnce(zeroHits()).mockResolvedValueOnce(page(name));
+      const result = await lookup({ citation, in_force_as_of: AS_OF });
+      expect(searchLegislation).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ found: false, kind: 'norm', guidance: normMiss(cited, section) });
+    },
+  );
+
+  it('takes no hit filed under the abbreviation plus another year, whatever its gazette', async () => {
+    // Derived from the "TKG 2003 §5" second page: both hits' original gazettes moved before
+    // 2003, so only the abbreviation check keeps the TKG 2021 and the TKG-DSVO out.
+    const tkg = page('search-brkons-tkg-section-5.json');
+    const predated = tkg.hits.map((hit) =>
+      hit.metadata.controller === 'Bundesrecht'
+        ? { ...hit, metadata: { ...hit.metadata, originalGazetteNumber: '1/2000' } }
+        : hit,
+    );
+    searchLegislation
+      .mockResolvedValueOnce(zeroHits())
+      .mockResolvedValueOnce({ ...tkg, hits: predated });
+    const result = await lookup({ citation: 'TKG 2003 §5', in_force_as_of: AS_OF });
+    expect(searchLegislation).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ found: false, kind: 'norm', guidance: normMiss('TKG 2003', '5') });
+  });
+
+  it('does not search again for a cited year later than the in-force date', async () => {
+    // A second search would return the DSG 1978 — abbreviation exactly "DSG", Stammnorm
+    // 565/1978, both no later than 2000 — a different law than the DSG 2000 cited.
+    searchLegislation
+      .mockResolvedValueOnce(zeroHits())
+      .mockResolvedValueOnce(page('search-brkons-dsg-section-1-as-of-1995.json'));
+    const result = await lookup({ citation: 'DSG 2000 §1', in_force_as_of: '1995-01-01' });
+    expect(searchLegislation).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      found: false,
+      kind: 'norm',
+      guidance: normMiss('DSG 2000', '1', '1995-01-01'),
+    });
+  });
+
+  it('never takes a hit that carries no original gazette number', async () => {
+    const vwgvg = page('search-brkons-vwgvg-section-28.json');
+    const hit = vwgvg.hits[0]!;
+    if (hit.metadata.controller !== 'Bundesrecht')
+      throw new Error('unreachable — a BrKons capture');
+    const unstamped = { ...hit, metadata: { ...hit.metadata, originalGazetteNumber: undefined } };
+    searchLegislation
+      .mockResolvedValueOnce(zeroHits())
+      .mockResolvedValueOnce({ ...vwgvg, hits: [unstamped] });
+    const result = await lookup({ citation: 'VwGVG 2014 §28', in_force_as_of: AS_OF });
+    expect(searchLegislation).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ found: false, kind: 'norm', guidance: normMiss('VwGVG 2014', '28') });
+  });
+
+  it('does not retry a search the request builder rejected', async () => {
+    searchLegislation.mockRejectedValueOnce(
+      validationError('sortBy has no confirmed RIS mapping.', {}),
+    );
+    const result = await lookup({ citation: 'VwGVG 2014 §28', in_force_as_of: AS_OF });
+    expect(searchLegislation).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ found: false, kind: 'norm', guidance: normMiss('VwGVG 2014', '28') });
+  });
+
+  it('does not retry a zero-hit cite that ends in no year', async () => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    const result = await lookup({ citation: 'VwGVG §28', in_force_as_of: AS_OF });
+    expect(searchLegislation).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ found: false, kind: 'norm', guidance: normMiss('VwGVG', '28') });
+  });
+
+  it.each([
+    ['AlVG 1977', 'search-brkons-alvg-1977.json', 'NOR40198908'],
+    ['§ 2 EStG 1988', 'search-brkons-estg-section-2.json', 'NOR40246516'],
+    ['TKG 2021 §5', 'search-brkons-tkg-section-5.json', 'NOR40238463'],
+    ['VwGVG §28', 'search-brkons-vwgvg-section-28.json', 'NOR40196850'],
+  ])(
+    '"%s", which matches today, sends the one request it sends today',
+    async (citation, name, expected) => {
+      searchLegislation.mockResolvedValue(page(name));
+      const result = await lookup({ citation, in_force_as_of: AS_OF });
+      expect(searchLegislation).toHaveBeenCalledTimes(1);
+      expect(documentNumberOf(result)).toBe(expected);
+      expect(result.resolution_note).not.toContain('the year was dropped');
+    },
+  );
+
+  it('advertises the yearless second search and its guard on the tool', () => {
+    expect(risLookupCitation.description).toContain(
+      'a cite whose year matches nothing ("VwGVG 2014 §28") is searched once more without it, taking only the law filed under the cited abbreviation without that year and first promulgated no later than it ("VwGVG 2014" → VwGVG, not "AVG 1950" → the AVG of 1991), for a year no later than in_force_as_of’s',
+    );
+  });
+
+  it('surfaces a deadline on the second search as upstream_timeout', async () => {
+    searchLegislation.mockResolvedValueOnce(zeroHits()).mockRejectedValueOnce(
+      timeout('RisService.search:Bundesrecht exceeded its retry deadline.', {
+        reason: 'retry_deadline_exceeded',
+      }),
+    );
+    const ctx = createMockContext({ errors: risLookupCitation.errors });
+    const err = await captureError(
+      risLookupCitation.handler(
+        risLookupCitation.input.parse({ citation: 'VwGVG 2014 §28', in_force_as_of: AS_OF }),
+        ctx,
+      ),
+    );
+    expect(searchLegislation).toHaveBeenCalledTimes(2);
+    expect(err.code).toBe(JsonRpcErrorCode.Timeout);
+    expect(err.data).toMatchObject({ reason: 'upstream_timeout', retryable: true });
+  });
+});
+
+/*
+ * Every search one lookup chains runs under a single search budget measured from its first
+ * request (#85): the case-number probe of two courts, the LGBl. → Lgbl fallback (#27), and the
+ * norm route's yearless retry (#80).
+ */
+describe('risLookupCitation — the searches one lookup chains share one budget (#85)', () => {
+  type SearchMethod = 'searchCaseLaw' | 'searchGazette' | 'searchLegislation';
+  const SEARCHES = { searchCaseLaw, searchGazette, searchLegislation };
+
+  /**
+   * Route `method` through the real service under a stubbed fetch. Request i (1-based) answers
+   * `answers[i - 1]` — a fixture name — after `delayMs`; a request past the list never answers
+   * until its signal aborts. Returns the fetch stub.
+   */
+  async function realSearch(method: SearchMethod, answers: readonly string[], delayMs: number) {
+    const actual = await vi.importActual<typeof import('@/services/ris/ris-service.js')>(
+      '@/services/ris/ris-service.js',
+    );
+    const realService = new actual.RisService('ris-austria-mcp-server/test');
+    let requests = 0;
+    const fetchMock = vi.fn(
+      (_url: unknown, init: { signal?: AbortSignal }) =>
+        new Promise<Response>((resolve, reject) => {
+          const answer = answers[requests];
+          requests += 1;
+          const timer =
+            answer === undefined
+              ? undefined
+              : setTimeout(() => {
+                  resolve(new Response(JSON.stringify(fixture(answer))));
+                }, delayMs);
+          init.signal?.addEventListener('abort', () => {
+            clearTimeout(timer);
+            reject(init.signal?.reason as Error);
+          });
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    SEARCHES[method].mockImplementation((params, ctx, budget) =>
+      realService[method](params, ctx, budget),
+    );
+    return fetchMock;
+  }
+
+  /** Run `input` through the contract on fake time; resolve with the result and its settle time. */
+  async function settle(input: { citation: string; state?: string }) {
+    const t0 = Date.now();
+    let settledAfterMs = Number.NaN;
+    const pending = runToolContract(risLookupCitation, input).then((result) => {
+      settledAfterMs = Date.now() - t0;
+      return result;
+    });
+    await vi.advanceTimersByTimeAsync(120_000);
+    return { result: await pending, settledAfterMs };
+  }
+
+  /*
+   * The first search answers, empty, 39 s in — inside its own 40 s attempt timeout and the 48 s
+   * budget — and the second never answers. On the shared budget the second gets the 9 s left, so
+   * the call settles at 48 s; a fresh budget would carry it to 87 s.
+   */
+  it.each([
+    [
+      'the two-court case-number probe',
+      'searchCaseLaw',
+      { citation: '2025-0.934.677' },
+      'Judikatur',
+    ],
+    [
+      'the LGBl. → Lgbl fallback',
+      'searchGazette',
+      { citation: 'LGBl. Nr. 158/2013', state: 'tirol' },
+      'Landesrecht',
+    ],
+    ['the yearless norm retry', 'searchLegislation', { citation: 'VwGVG 2014 §28' }, 'Bundesrecht'],
+  ] as const)(
+    '%s settles inside one budget, as upstream_timeout on both surfaces',
+    async (_route, method, input, controller) => {
+      try {
+        const fetchMock = await realSearch(method, ['search-zero-hits.json'], 39_000);
+        vi.useFakeTimers();
+        const { result, settledAfterMs } = await settle(input);
+
+        const message = `RisService.search:${controller} exceeded its 9000ms retry deadline after 1 attempt.`;
+        const hint =
+          'RIS did not answer in time — retry the same citation shortly, or pass kind plus a court or state hint so fewer routes are tried.';
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(settledAfterMs).toBe(48_000);
+        expect(result.isError).toBe(true);
+        expect(result.structuredContent).toStrictEqual({
+          error: {
+            code: JsonRpcErrorCode.Timeout,
+            data: { reason: 'upstream_timeout', recovery: { hint }, retryable: true },
+            message,
+          },
+        });
+        expect(contentText(result)).toBe(
+          `Error: ${message}\n\nRecovery: ${hint}\n\n(reason upstream_timeout · retryable)`,
+        );
+      } finally {
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it('gives each lookup a budget of its own: two 30 s lookups in a row both resolve', async () => {
+    // On one budget across calls, the second lookup would find it spent and fail unsent.
+    try {
+      const answer = 'search-brkons-dsg-section-6.json';
+      const fetchMock = await realSearch('searchLegislation', [answer, answer], 30_000);
+      vi.useFakeTimers();
+      const first = await settle({ citation: '§ 6 DSG' });
+      const second = await settle({ citation: '§ 6 DSG' });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      for (const { result, settledAfterMs } of [first, second]) {
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ found: true, kind: 'norm' });
+        expect(settledAfterMs).toBe(30_000);
+      }
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps a caller cancellation during the second court a cancellation', async () => {
+    try {
+      const fetchMock = await realSearch('searchCaseLaw', ['search-zero-hits.json'], 39_000);
+      vi.useFakeTimers();
+      const controller = new AbortController();
+      const ctx = createMockContext({
+        errors: risLookupCitation.errors,
+        signal: controller.signal,
+      });
+      const pending = captureError(
+        risLookupCitation.handler(
+          risLookupCitation.input.parse({ citation: '2025-0.934.677' }),
+          ctx,
+        ),
+      );
+      await vi.advanceTimersByTimeAsync(40_000);
+      // The first court has answered; the second court's request is the one in flight.
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(60_000);
+      const err = await pending;
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(err.code).toBe(JsonRpcErrorCode.RequestCancelled);
+      expect(err.message).toMatch(/^fetch GET https:\/\/data\.bka\.gv\.at\/\S* was aborted\.$/u);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe('risLookupCitation — a case number picks the decision text, then its own Rechtssatz (#48)', () => {
   it('"6Ob236/23h" resolves to the decision text, hit 2 behind a 1952 Rechtssatz that lists it', async () => {
     const result = await resolveAgainst(searchCaseLaw, 'search-justiz-6ob236-23h-both.json', {
@@ -2571,15 +3007,23 @@ describe('risLookupCitation — the norm and collection parsers stay linear in t
       'auto',
       (n: number) => `VwSlg${' '.repeat(n)}\nx\ny`,
     ],
-    [
-      'a court prefix before a run of spaced digits',
-      'auto',
-      (n: number) => `VfGH ${'1 '.repeat(Math.floor(n / 2))}`,
-    ],
   ] as const)('%s', async (_shape, kind, build) => {
     searchCaseLaw.mockResolvedValue(zeroHits());
     searchLegislation.mockResolvedValue(zeroHits());
     await expectLinearResolution(build, { kind });
+  });
+
+  // The spaced-digit shape stays below the input size where Bun's regex engine switches modes.
+  it('a court prefix before a run of spaced digits', async () => {
+    searchCaseLaw.mockResolvedValue(zeroHits());
+    searchLegislation.mockResolvedValue(zeroHits());
+    await expectLinearResolution((n) => `VfGH ${'1 '.repeat(Math.floor(n / 2))}`, {}, 1_250);
+  });
+
+  it('a court prefix before a digit run, across the full 5k–320k span', async () => {
+    searchCaseLaw.mockResolvedValue(zeroHits());
+    searchLegislation.mockResolvedValue(zeroHits());
+    await expectLinearResolution((n) => `VfGH ${'1'.repeat(n)}`, {});
   });
 
   it('reads a line break inside a citation as a space', async () => {
@@ -3095,8 +3539,8 @@ describe('risLookupCitation — an EU-act cite is decided offline as an EU miss 
     const guidance = `'Art6 Abs1' names a provision, Art 6, but no law, so nothing was searched. Add the law's abbreviation: '<abbr> Art 6'. Formats: ris_list_reference topic citation_formats.`;
     expect(searchLegislation).not.toHaveBeenCalled();
     expect(result.structuredContent).toEqual({ found: false, kind: 'norm', guidance });
-    expect((result.content[0] as { text: string }).text).toBe(
-      `**found**: false\n**kind**: norm\n\n${guidance}`,
+    expect(readCommonMark(contentText(result))).toBe(
+      `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: norm\n\n${guidance}`,
     );
   });
 
@@ -3139,6 +3583,194 @@ describe('risLookupCitation — an EU-act cite is decided offline as an EU miss 
     }
     expect(norm.resolvesVia).toContain('("11997E175 EG Art175") names the EC Treaty');
     expect(norm.examples).toContain('EMRK Art8');
+  });
+});
+
+/**
+ * The EU-miss guidance for an act cited by its number (`label`, the cite as parsed), which names
+ * no act and no CELEX, and the case-law norm (`null`: no section).
+ */
+const numberedEuMiss = (label: string, norm: string | null) =>
+  `${label} is EU law. ${RIS_DOES_NOT_CONSOLIDATE} Find the act on EUR-Lex: https://eur-lex.europa.eu.${norm === null ? '' : ` Austrian decisions citing it: ${CASE_LAW_HINT} '${norm}'.`}`;
+
+describe('risLookupCitation — an EU act cited as "EG-Vertrag" or by its act number is an EU miss (#83)', () => {
+  // As in #67: a cite that still reached RIS would come back found: true from this page.
+  beforeEach(() => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    searchCaseLaw.mockResolvedValue(page('search-brkons-celex.json'));
+    searchGazette.mockResolvedValue(page('search-brkons-celex.json'));
+  });
+
+  const GWRL = '6. Geldwäscherichtlinie 2024/1640/EU';
+  // [citation, the guidance every hint gets]
+  const NUMBERED_CITES: ReadonlyArray<[string, string]> = [
+    ['EG-Vertrag Art5', ecTreatyMiss('EG-Vertrag Art 5', 'EG-Vertrag Art5')],
+    ['Art 5 EG-Vertrag', ecTreatyMiss('EG-Vertrag Art 5', 'EG-Vertrag Art5')],
+    ['EG-VERTRAG Art189', ecTreatyMiss('EG-VERTRAG Art 189', 'EG-VERTRAG Art189')],
+    ['EG-Vertrag', ecTreatyMiss('EG-Vertrag', null)],
+    ['Art. 3 VO (EG) 178/2002', numberedEuMiss('VO (EG) 178/2002 Art 3', 'VO (EG) 178/2002 Art3')],
+    [
+      'E Kommission 2002/16/EG Art1;',
+      numberedEuMiss('E Kommission 2002/16/EG Art 1', 'E Kommission 2002/16/EG Art1'),
+    ],
+    ['RL 95/46/EG Art2', numberedEuMiss('RL 95/46/EG Art 2', 'RL 95/46/EG Art2')],
+    ['VO (EU) 2016/679 Art6', numberedEuMiss('VO (EU) 2016/679 Art 6', 'VO (EU) 2016/679 Art6')],
+    [
+      'Richtlinie 2006/123/EG Art 3',
+      numberedEuMiss('Richtlinie 2006/123/EG Art 3', 'Richtlinie 2006/123/EG Art3'),
+    ],
+    [
+      `${GWRL} Art1, Art3, Art30`,
+      `${numberedEuMiss(`${GWRL} Art 1`, `${GWRL} Art1`)} The entry also cites ${GWRL} Art3 and ${GWRL} Art30 — look each up as its own citation.`,
+    ],
+    [
+      'Verordnung (EU) Nr. 1215/2012 Art 25',
+      numberedEuMiss('Verordnung (EU) Nr. 1215/2012 Art 25', 'Verordnung (EU) Nr. 1215/2012 Art25'),
+    ],
+    [
+      'Beschluss Rat 2002/584/Euratom Art2',
+      numberedEuMiss('Beschluss Rat 2002/584/Euratom Art 2', 'Beschluss Rat 2002/584/Euratom Art2'),
+    ],
+    // Case-insensitive, whitespace collapsed.
+    ['rl  95/46/eg art 2', numberedEuMiss('rl  95/46/eg Art 2', 'rl  95/46/eg Art2')],
+    // Bare: under kind auto these read as norms, never as a VfGH or VwGH case number.
+    ['RL 2006/123/EG', numberedEuMiss('RL 2006/123/EG', null)],
+    ['VO (EG) 178/2002', numberedEuMiss('VO (EG) 178/2002', null)],
+    ['2002/16/EG', numberedEuMiss('2002/16/EG', null)],
+    ['(EU) 2016/679', numberedEuMiss('(EU) 2016/679', null)],
+    ['Richtlinie 2006/123/EG;', numberedEuMiss('Richtlinie 2006/123/EG', null)],
+  ];
+
+  it.each(NUMBERED_CITES)(
+    '"%s" returns the same EU miss with no hint, a state hint, or in_force_as_of, and searches nothing',
+    async (citation, guidance) => {
+      const results = [
+        await lookup({ citation }),
+        await lookup({ citation, state: 'burgenland' }),
+        await lookup({ citation, in_force_as_of: '2020-01-01' }),
+        await lookup({ citation, kind: 'norm' }),
+      ];
+      expect(searchLegislation).not.toHaveBeenCalled();
+      expect(searchCaseLaw).not.toHaveBeenCalled();
+      expect(searchGazette).not.toHaveBeenCalled();
+      for (const result of results) {
+        expect(result).toStrictEqual({ found: false, kind: 'norm', guidance });
+      }
+    },
+  );
+
+  it('decides an act number ending in a year before the yearless retry could run (#80)', async () => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    const result = await lookup({ citation: 'Richtlinie (EU) 2019/1158 Art 5' });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(result).toStrictEqual({
+      found: false,
+      kind: 'norm',
+      guidance: numberedEuMiss('Richtlinie (EU) 2019/1158 Art 5', 'Richtlinie (EU) 2019/1158 Art5'),
+    });
+  });
+
+  it('renders a bare act number’s miss on both surfaces', async () => {
+    const result = await runToolContract(risLookupCitation, { citation: 'RL 2006/123/EG' });
+    const guidance = numberedEuMiss('RL 2006/123/EG', null);
+    expect(result.structuredContent).toEqual({ found: false, kind: 'norm', guidance });
+    expect(readCommonMark(contentText(result))).toBe(
+      `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: norm\n\n${guidance}`,
+    );
+  });
+
+  it('takes a bare act number as given under a forced kind: case_number', async () => {
+    searchCaseLaw.mockResolvedValue(zeroHits());
+    const result = await lookup({ citation: 'RL 2006/123/EG', kind: 'case_number' });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(searchCaseLaw).toHaveBeenCalledTimes(1);
+    expect(searchCaseLaw.mock.calls[0]?.[0]).toEqual({
+      caseNumber: 'RL 2006/123/EG',
+      court: 'vfgh',
+      pageSize: 100,
+    });
+    expect(result).toStrictEqual({
+      found: false,
+      kind: 'case_number',
+      guidance:
+        "No decision for 'RL 2006/123/EG' in Vfgh. Pass court explicitly if known — Geschäftszahl format examples per court: ris_list_reference topic courts. Note Justiz carries selected decisions only. Keyword fallback: ris_search_case_law with query.",
+    });
+  });
+
+  it('takes a bare act number as given under a forced kind: gazette', async () => {
+    const result = await lookup({ citation: 'RL 2006/123/EG', kind: 'gazette' });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(searchGazette).not.toHaveBeenCalled();
+    expect(result).toStrictEqual({
+      found: false,
+      kind: 'gazette',
+      guidance:
+        "Could not read a gazette number from 'RL 2006/123/EG'. A gazette citation needs a number and a year — 'BGBl. I Nr. 165/1999', 'BGBl. Nr. 194/1961', 'RGBl. Nr. 189/1902', or 'LGBl. Nr. 61/2026' with a state hint. Formats: ris_list_reference topic citation_formats. To search without a number, browse with ris_search_gazette published_from/published_to.",
+    });
+  });
+
+  /*
+   * Austrian law whose name holds an EU act number, with the number at the end (after a
+   * compound "-RL", or after other words) or at the start: each keeps the search it sent before.
+   * [citation, state, title, section, section type]
+   */
+  it.each([
+    ['UmsetzungsG-RL 2014/54/EU §1', undefined, 'UmsetzungsG-RL 2014/54/EU', '1', 'Paragraph'],
+    [
+      'Entscheidung der Europäischen Kommission zur Festlegung der Bedingungen für RL 94/62/EG Art 1',
+      undefined,
+      'Entscheidung der Europäischen Kommission zur Festlegung der Bedingungen für RL 94/62/EG',
+      '1',
+      'Artikel',
+    ],
+    [
+      'Sammelgesetz - Anpassung Richtlinie (EU) 2024/1233 Art 1',
+      'burgenland',
+      'Sammelgesetz - Anpassung Richtlinie (EU) 2024/1233',
+      '1',
+      'Artikel',
+    ],
+    [
+      'Richtlinie 2016/801/EU, erforderliche Anpassung Art 1',
+      'burgenland',
+      'Richtlinie 2016/801/EU, erforderliche Anpassung',
+      '1',
+      'Artikel',
+    ],
+    ['Bgld. EU-BA-G §1', 'burgenland', 'Bgld. EU-BA-G', '1', 'Paragraph'],
+    ['EU-AHG §1', undefined, 'EU-AHG', '1', 'Paragraph'],
+    ['EU-JZG §1', undefined, 'EU-JZG', '1', 'Paragraph'],
+    ['Ärztinnen-/Ärzte-EU-VO 2014 §1', undefined, 'Ärztinnen-/Ärzte-EU-VO 2014', '1', 'Paragraph'],
+    ['AEUV Art267', undefined, 'AEUV', '267', 'Artikel'],
+    ['EUV Art6', undefined, 'EUV', '6', 'Artikel'],
+    ['EMRK Art8', undefined, 'EMRK', '8', 'Artikel'],
+  ] as const)(
+    '"%s" still searches RIS with the same params',
+    async (citation, state, title, section, sectionType) => {
+      const result = await lookup({ citation, ...(state !== undefined && { state }) });
+      expect(searchLegislation).toHaveBeenCalledTimes(1);
+      expect(searchLegislation.mock.calls[0]?.[0]).toEqual({
+        application: state === undefined ? 'BrKons' : 'LrKons',
+        inForceAsOf: todayInAustria(),
+        pageSize: 100,
+        title,
+        sectionFrom: section,
+        sectionTo: section,
+        sectionType,
+        ...(state !== undefined && { state }),
+      });
+      expect(result.found).toBe(true);
+    },
+  );
+
+  it('advertises the EC Treaty as EG-Vertrag and the act-number form on the tool and in citation_formats', () => {
+    const norm = RIS_CITATION_FORMATS.find((format) => format.kind === 'norm')!;
+    for (const surface of [risLookupCitation.description, norm.resolvesVia]) {
+      expect(surface).toContain('the EC Treaty as EG, EGV, or EG-Vertrag');
+      expect(surface).toContain(
+        'an EU act cited by its number ("RL 2006/123/EG", "VO (EG) 178/2002")',
+      );
+    }
   });
 });
 
@@ -3261,6 +3893,13 @@ describe('risLookupCitation — a comma-joined norms_cited entry resolves its fi
   });
 });
 
+/**
+ * The sentence a resolved norm's note carries after its head when the cite's first norm names the
+ * version it is read in ("idF …", "aF", "nF"), which the lookup never applies (#82, #86).
+ */
+const VERSION_NOT_APPLIED = (date: string) =>
+  ` The version the cite names was not applied: this is the text in force ${date}. To read that version, pass in_force_as_of a date it was in force.`;
+
 describe('risLookupCitation — a norms_cited entry joining full norms with ". " resolves its first norm (#76)', () => {
   /** The sentence naming the rest, as the note and the guidance append it. */
   const ALSO = (cites: readonly string[]) =>
@@ -3271,9 +3910,10 @@ describe('risLookupCitation — a norms_cited entry joining full norms with ". "
    * full norms with ". ", each naming its own law; the first three entries are verbatim. Each
    * entry has to send the plain cite's search and come back with its whole result, the note
    * naming the rest after the plain note's head — and each named cite, looked up on its own as
-   * the note says, has to read as a norm and be searched.
+   * the note says, has to read as a norm and be searched. A first norm naming its version
+   * ('versioned') carries VERSION_NOT_APPLIED before the rest.
    */
-  const CHAINS: ReadonlyArray<[string, string, readonly string[]]> = [
+  const CHAINS: ReadonlyArray<[string, string, readonly string[], 'versioned'?]> = [
     ['ZPO §179. ZPO §275 Abs2', 'ZPO §179', ['ZPO §275 Abs2']],
     ['EO §379 Abs2 Z5. EO §382 Abs1 Z6. EO §384', 'EO §379', ['EO §382 Abs1 Z6', 'EO §384']],
     [
@@ -3319,21 +3959,23 @@ describe('risLookupCitation — a norms_cited entry joining full norms with ". "
       ['VfGG §62 Abs1 zweiter Satz'],
     ],
     // A norm ending in the amending act an "idF" names, by gazette number or by name, ends there.
-    ['AVG §39a idF 1982/199. AVG §40', 'AVG §39a', ['AVG §40']],
-    ['MRG §23 idF WRN 2000. MRG §24', 'MRG §23', ['MRG §24']],
+    ['AVG §39a idF 1982/199. AVG §40', 'AVG §39a', ['AVG §40'], 'versioned'],
+    ['MRG §23 idF WRN 2000. MRG §24', 'MRG §23', ['MRG §24'], 'versioned'],
     // An ordinal after "idF" leads the amending act's name, inside one norm, on either side.
-    ['MRG §16 Abs1 idF 3. WÄG Art 2. ZPO §1', 'MRG §16', ['ZPO §1']],
+    ['MRG §16 Abs1 idF 3. WÄG Art 2. ZPO §1', 'MRG §16', ['ZPO §1'], 'versioned'],
+    // The clause belongs to the later norm, named as written: the first norm names no version.
     ['ZPO §1. MRG §16 Abs1 idF 3. WÄG Art 2', 'ZPO §1', ['MRG §16 Abs1 idF 3. WÄG Art 2']],
   ];
 
   it.each(CHAINS)(
     '"%s" sends the search "%s" sends and names the rest',
-    async (entry, plain, rest) => {
+    async (entry, plain, rest, versioned) => {
       searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
       const chained = await lookup({ citation: entry });
       const single = await lookup({ citation: plain });
       const today = todayInAustria();
       const head = `, in force ${today}.`;
+      const version = versioned === undefined ? '' : VERSION_NOT_APPLIED(today);
 
       expect(searchLegislation).toHaveBeenCalledTimes(2);
       expect(searchLegislation.mock.calls[0]?.[0]).toEqual(searchLegislation.mock.calls[1]?.[0]);
@@ -3341,7 +3983,7 @@ describe('risLookupCitation — a norms_cited entry joining full norms with ". "
       expect(chained.alternatives_count).toBe(single.alternatives_count);
       expect(single.resolution_note).toContain(head);
       expect(chained.resolution_note).toBe(
-        single.resolution_note!.replace(head, `${head}${ALSO(rest)}`),
+        single.resolution_note!.replace(head, `${head}${version}${ALSO(rest)}`),
       );
 
       for (const [i, part] of rest.entries()) {
@@ -3383,13 +4025,16 @@ describe('risLookupCitation — a norms_cited entry joining full norms with ". "
     const guidance = `No document for ZPO § 271 in force on 2026-10-24. If the provision existed at another time, retry ris_search_legislation with title: 'ZPO', section_from/to: '271', section_type: 'Paragraph', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: 'ZPO*'. State law resolves only with an explicit state hint.${ALSO(['ZPO §182a', 'IPRG §3'])}`;
     expect(searchLegislation).toHaveBeenCalledTimes(1);
     expect(result.structuredContent).toEqual({ found: false, kind: 'norm', guidance });
-    expect(contentText(result)).toBe(`**found**: false\n**kind**: norm\n\n${guidance}`);
+    expect(readCommonMark(contentText(result))).toBe(
+      `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: norm\n\n${guidance}`,
+    );
   });
 
   it.each([
     // Real entries whose ". " belongs to one law's name, or leads no other norm: read as before.
     ['EMRK 7. ZP Art4', 'EMRK 7. ZP', '4', 'Artikel'],
-    ['MRG idF 3. WÄG §16 Abs8', 'MRG idF 3. WÄG', '16', 'Paragraph'],
+    // The "idF" clause before the section is the version read, not part of the law (#82).
+    ['MRG idF 3. WÄG §16 Abs8', 'MRG', '16', 'Paragraph'],
     ['EO §85 Abs2 2. Satz', 'EO', '85', 'Paragraph'],
     [
       'Bgld. Kinder- und JugendhilfeG 2013 §5',
@@ -3421,6 +4066,542 @@ describe('risLookupCitation — a norms_cited entry joining full norms with ". "
     for (const surface of [risLookupCitation.description, norm.description]) {
       expect(surface).toContain('"ZPO §179. ZPO §275 Abs2"');
     }
+  });
+});
+
+/**
+ * [entry, the plain cite it reads as, the rest as named]. The entry has to send the plain cite's
+ * search and come back with its whole result, the note naming the rest after the plain note's
+ * head. Shared by the long-title short form (#81) and the version-clause (#82) suites; a
+ * `versioned` entry, one naming the version its law is read in, also carries VERSION_NOT_APPLIED
+ * after the head, before the rest.
+ */
+async function expectReadsAsPlain(
+  entry: string,
+  plain: string,
+  rest: readonly string[],
+  kind: 'auto' | 'norm' = 'auto',
+  versioned = false,
+): Promise<void> {
+  searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+  const read = await lookup({ citation: entry, kind });
+  const single = await lookup({ citation: plain });
+  const head = `, in force ${todayInAustria()}.`;
+  const version = versioned ? VERSION_NOT_APPLIED(todayInAustria()) : '';
+  const also =
+    rest.length === 0
+      ? ''
+      : ` The entry also cites ${rest.length > 1 ? `${rest.slice(0, -1).join(', ')} and ${rest.at(-1)}` : rest[0]} — look ${rest.length === 1 ? 'it' : 'each'} up as its own citation.`;
+
+  expect(searchGazette).not.toHaveBeenCalled();
+  expect(searchLegislation).toHaveBeenCalledTimes(2);
+  expect(searchLegislation.mock.calls[0]?.[0]).toEqual(searchLegislation.mock.calls[1]?.[0]);
+  expect(read.record).toEqual(single.record);
+  expect(read).toMatchObject({ found: true, kind: 'norm' });
+  expect(single.resolution_note).toContain(head);
+  expect(single.resolution_note).not.toContain(VERSION_NOT_APPLIED(todayInAustria()));
+  expect(read.resolution_note).toBe(
+    single.resolution_note!.replace(head, `${head}${version}${also}`),
+  );
+}
+
+describe('risLookupCitation — a long title’s " - <short form> §N" is read as the short form (#81)', () => {
+  const VO_HMV =
+    'Verfahrensordnung zur Herausgabe des Heilmittelverzeichnisses nach §351g ASVG - VO-HMV §29, §32, §34';
+
+  it.each<[string, string, readonly string[]]>([
+    ['StaatsanwaltschaftsG - StAG §35 Abs1', 'StAG §35 Abs1', []],
+    [VO_HMV, 'VO-HMV §29', ['VO-HMV §32', 'VO-HMV §34']],
+    [
+      'Verfahrensordnung für parlamentarische Untersuchungsausschüsse - VO-UA §3, §22',
+      'VO-UA §3',
+      ['VO-UA §22'],
+    ],
+    ['Übk über die zivilrechtlichen Aspekte int Kindesentführung - HKÜ Art12', 'HKÜ Art12', []],
+    // A four-digit year after the short form, as RIS titles carry one ("Jagdgesetz 2004 - TJG 2004").
+    ['Tiroler Jagdgesetz 2004 - TJG 2004 §5', 'TJG 2004 §5', []],
+    // An en dash, as one entry writes the same title.
+    ['Verfahrensordnung für parlamentarische Untersuchungsausschüsse – VO-UA §27', 'VO-UA §27', []],
+    // The first norm of a ". "-joined entry; a later one is named as written.
+    ['StaatsanwaltschaftsG - StAG §35. ZPO §1', 'StAG §35', ['ZPO §1']],
+  ])('"%s" sends the search "%s" sends and names the rest', async (entry, plain, rest) => {
+    await expectReadsAsPlain(entry, plain, rest);
+  });
+
+  it('a short form that misses names it in the guidance and the retry, the rest under it, on both surfaces', async () => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    const result = await runToolContract(risLookupCitation, {
+      citation: VO_HMV,
+      in_force_as_of: '2026-10-24',
+    });
+    const guidance =
+      "No document for VO-HMV § 29 in force on 2026-10-24. If the provision existed at another time, retry ris_search_legislation with title: 'VO-HMV', section_from/to: '29', section_type: 'Paragraph', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: 'VO-HMV*'. State law resolves only with an explicit state hint. The entry also cites VO-HMV §32 and VO-HMV §34 — look each up as its own citation.";
+    expect(searchLegislation).toHaveBeenCalledTimes(1);
+    expect(searchLegislation.mock.calls[0]?.[0]).toEqual({
+      application: 'BrKons',
+      inForceAsOf: '2026-10-24',
+      pageSize: 100,
+      title: 'VO-HMV',
+      sectionFrom: '29',
+      sectionTo: '29',
+      sectionType: 'Paragraph',
+    });
+    expect(result.structuredContent).toEqual({ found: false, kind: 'norm', guidance });
+    expect(readCommonMark(contentText(result))).toBe(
+      `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: norm\n\n${guidance}`,
+    );
+  });
+
+  it('a resolved short form’s "list them" recipe carries the short form', async () => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    const result = await lookup({
+      citation: 'StaatsanwaltschaftsG - StAG §35 Abs1',
+      in_force_as_of: '2026-10-24',
+    });
+    expect(result.resolution_note).toBe(
+      'Resolved via ris_search_legislation (BrKons) — title "StAG", § 35, in force 2026-10-24. 76 more matched — list them with ris_search_legislation title: "StAG", section_from: "35", section_to: "35", section_type: Paragraph, in_force_as_of: "2026-10-24".',
+    );
+  });
+
+  /*
+   * [citation, title, section, sectionType] — today's reading, kept. A " - " not followed by one
+   * word and a §/Artikel number, a dash after a text that already ends in a provision (two whole
+   * cites joined by a dash), a section-first cite, and a long title with no short form.
+   */
+  it.each<[string, string, string, 'Artikel' | 'Paragraph']>([
+    [
+      'Vollstreckungsvertrag Österreich - Jugoslawien betr Schiedssprüche und Schiedsvergleiche Art2 lite',
+      'Vollstreckungsvertrag Österreich - Jugoslawien betr Schiedssprüche und Schiedsvergleiche',
+      '2',
+      'Artikel',
+    ],
+    ['B-VG Art7 Abs1 / Gesetz - Verwaltungsakt', 'B-VG', '7', 'Artikel'],
+    [
+      'EG-RL 97/81/EG - Rahmenvereinbarung über Teilzeitarbeit 31997L0081 §4',
+      'EG-RL 97/81/EG - Rahmenvereinbarung über Teilzeitarbeit 31997L0081',
+      '4',
+      'Paragraph',
+    ],
+    [
+      'Verfahrensordnung für parlamentarische Untersuchungsausschüsse - VO- UA §3 Abs3',
+      'Verfahrensordnung für parlamentarische Untersuchungsausschüsse - VO- UA',
+      '3',
+      'Paragraph',
+    ],
+    [
+      'Verfahrensordnung zur Herausgabe des Erstattungskodex nach §351g ASVG - VO-EKO XII. Abschnitt',
+      'Verfahrensordnung zur Herausgabe des Erstattungskodex nach',
+      '351g',
+      'Paragraph',
+    ],
+    [
+      'Verfahrensordnung zur Herausgabe des Erstattungskodex nach §351g ASVG §23, §24',
+      'Verfahrensordnung zur Herausgabe des Erstattungskodex nach',
+      '351g',
+      'Paragraph',
+    ],
+    ['ASVG §5 - ABGB §1', 'ASVG', '5', 'Paragraph'],
+    ['ASVG §5 Abs1 - ABGB §1', 'ASVG', '5', 'Paragraph'],
+    ['B-VG Art7 - ABGB §1', 'B-VG Art7 - ABGB', '1', 'Paragraph'],
+    ['§ 5 ASVG - ABGB §1', 'ASVG - ABGB §1', '5', 'Paragraph'],
+    ['Art 5 B-VG - ABGB §1', 'Art 5 B-VG - ABGB', '1', 'Paragraph'],
+    ['§ 35 StaatsanwaltschaftsG - StAG', 'StaatsanwaltschaftsG - StAG', '35', 'Paragraph'],
+    ['Long Title - X 12 §5', 'Long Title - X 12', '5', 'Paragraph'],
+    ['Long Title - 2010/28 §5', 'Long Title - 2010/28', '5', 'Paragraph'],
+  ])('"%s" keeps today’s reading', async (citation, title, section, sectionType) => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    const result = await lookup({ citation });
+    expect(searchLegislation).toHaveBeenCalledTimes(1);
+    expect(searchLegislation.mock.calls[0]?.[0]).toEqual({
+      application: 'BrKons',
+      inForceAsOf: todayInAustria(),
+      pageSize: 100,
+      title,
+      sectionFrom: section,
+      sectionTo: section,
+      sectionType,
+    });
+    expect(result).toMatchObject({ found: false, kind: 'norm' });
+  });
+
+  it('a dash between two whole cites names neither as the other’s short form', async () => {
+    await expectReadsAsPlain('ASVG §5 - ABGB §1', 'ASVG §5', []);
+  });
+
+  it('a short form with no §/Artikel number stays unclassified, as before', async () => {
+    const result = await lookup({ citation: 'StaatsanwaltschaftsG - StAG' });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(searchCaseLaw).not.toHaveBeenCalled();
+    expect(searchGazette).not.toHaveBeenCalled();
+    expect(result).toStrictEqual({
+      found: false,
+      kind: 'unknown',
+      guidance: UNCLASSIFIED('StaatsanwaltschaftsG - StAG'),
+    });
+  });
+
+  it('advertises the short form on the tool and in citation_formats', () => {
+    const norm = RIS_CITATION_FORMATS.find((format) => format.kind === 'norm')!;
+    for (const surface of [risLookupCitation.description, norm.description]) {
+      expect(surface).toContain('"StaatsanwaltschaftsG - StAG §35"');
+    }
+  });
+});
+
+describe('risLookupCitation — an "idF" clause, "aF", or "nF" is the version read, not part of the law (#82, #86)', () => {
+  /*
+   * [entry, the plain cite it reads as, the rest as named]. Under kind auto and kind norm, a
+   * version note between the law and its §/Artikel number is dropped, and a gazette number inside
+   * an "idF" clause, before or after the section, no longer routes the cite to the amending act.
+   */
+  const VERSIONED: ReadonlyArray<[string, string, readonly string[]]> = [
+    ['ABGB idF 2. ErwSchG §254 Abs1', 'ABGB §254 Abs1', []],
+    ['WEG idF 3.WÄG §17 Abs2', 'WEG §17 Abs2', []],
+    ['JN idF ZVN 1983 §45', 'JN §45', []],
+    ['EO idF EO-Nov 2000 §211 Abs5', 'EO §211 Abs5', []],
+    ['MRG idF 3. WÄG §16', 'MRG §16', []],
+    ['ABGB idF vor dem ErbRÄG 2015 §1487', 'ABGB §1487', []],
+    ['ABGB idF des 2. ErwSchG §254', 'ABGB §254', []],
+    ['ABGB idF ArtI Z38 KindRÄG 2001 §189 Abs2', 'ABGB §189 Abs2', []],
+    ['ABGB aF §140', 'ABGB §140', []],
+    ['ZPO nF §502 Abs1', 'ZPO §502 Abs1', []],
+    // A gazette number inside the clause, before the section or after it.
+    ['ABGB idF BGBl I 2010/28 §988', 'ABGB §988', []],
+    ['ABGB idF BGBl. I Nr. 15/2013 §167', 'ABGB §167', []],
+    ['ABGB idF DaKRÄG (BGBl I Nr 28/2010) §988', 'ABGB §988', []],
+    ['ABGB §167 Abs3 idF BGBl I 2013/15', 'ABGB §167 Abs3', []],
+    [
+      'Oö LustbarkeitsabgabeG 1979 §14 Abs1 idF LGBl 40/1983',
+      'Oö LustbarkeitsabgabeG 1979 §14',
+      [],
+    ],
+    ['B-VG idF BGBl I 2/2008 Art7', 'B-VG Art7', []],
+    // Section-first, the clause after the law.
+    ['§ 167 ABGB idF BGBl I 2013/15', '§ 167 ABGB', []],
+    ['§ 254 ABGB idF 2. ErwSchG', '§ 254 ABGB', []],
+    ['Art 7 B-VG idF BGBl I 2/2008', 'Art 7 B-VG', []],
+    // The other provisions of a comma-joined entry are named under the plain law.
+    ['ABGB idF 2. ErwSchG §254, §255', 'ABGB §254', ['ABGB §255']],
+  ];
+
+  it.each(VERSIONED)('"%s" sends the search "%s" sends', async (entry, plain, rest) => {
+    await expectReadsAsPlain(entry, plain, rest, 'auto', true);
+  });
+
+  it.each(VERSIONED)(
+    '"%s" under kind norm sends the search "%s" sends',
+    async (entry, plain, rest) => {
+      await expectReadsAsPlain(entry, plain, rest, 'norm', true);
+    },
+  );
+
+  it('a resolved versioned cite says the version was not applied, on both surfaces', async () => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    const result = await runToolContract(risLookupCitation, {
+      citation: 'ABGB aF §140',
+      in_force_as_of: '2026-10-24',
+    });
+    const structured = result.structuredContent as { found: boolean; resolution_note: string };
+    expect(structured.found).toBe(true);
+    expect(structured.resolution_note).toBe(
+      `Resolved via ris_search_legislation (BrKons) — title "ABGB", § 140, in force 2026-10-24.${VERSION_NOT_APPLIED('2026-10-24')} 76 more matched — list them with ris_search_legislation title: "ABGB", section_from: "140", section_to: "140", section_type: Paragraph, in_force_as_of: "2026-10-24".`,
+    );
+    expect(contentText(result)).toContain(`**resolution_note**: ${structured.resolution_note}\n`);
+  });
+
+  /*
+   * [entry, where its version sits, the plain cite it reads as, the rest as named] — a version
+   * named after the section, or in the first norm of a ". "-joined entry, is no more applied than
+   * one before it. A later provision of a comma-joined entry is named with the clause after it.
+   */
+  it.each<[string, string, string, readonly string[]]>([
+    ['ABGB §180 Abs1 idF KindNamRÄG 2013', 'after the section', 'ABGB §180', []],
+    ['BAO §299 idF 2002/I/097', 'after the section, a VwGH-number tail', 'BAO §299', []],
+    ['ABGB §140 aF', 'after the section, "aF"', 'ABGB §140', []],
+    [
+      'MRG §16 Abs1 idF 3. WÄG Art 2',
+      'after the section, an ordinal-led amending act',
+      'MRG §16',
+      [],
+    ],
+    ['ABGB aF §140, §141', 'in the law of a comma-joined entry', 'ABGB §140', ['ABGB §141']],
+    [
+      'ABGB §254, §255 idF 2. ErwSchG',
+      'after a later provision of a comma-joined entry',
+      'ABGB §254',
+      ['ABGB §255 idF 2. ErwSchG'],
+    ],
+    [
+      'ASVG §609 Abs19, §615 Abs1 Z4, jeweils idF Sozialrechts-ÄnderungsG 2004',
+      'a comma-joined entry whose clause covers each provision',
+      'ASVG §609',
+      ['ASVG §615 Abs1 Z4, jeweils idF Sozialrechts-ÄnderungsG 2004'],
+    ],
+  ])(
+    '"%s" (%s) sends the search "%s" sends and says the version was not applied',
+    async (entry, _where, plain, rest) => {
+      await expectReadsAsPlain(entry, plain, rest, 'auto', true);
+    },
+  );
+
+  /*
+   * [entry] — no version named in the first norm's own text: the note says nothing about one. The
+   * later norms of a ". "-joined entry carry their own clause into the cite the note names; a word
+   * merely containing "aF", "nF", or "idF" is no version.
+   */
+  it.each([
+    ['ZPO §1. MRG §16 Abs1 idF 3. WÄG Art 2'],
+    ['ZPO §1. ABGB aF §140'],
+    ['ZPO §1. ABGB §254, §255 idF 2. ErwSchG'],
+    ['ABGB §140'],
+    ['VwGVG §28'],
+    ['ABGB §140 aFx'],
+    ['ABGB §140 naF'],
+    ['ABGB §140 idFx'],
+  ])('"%s" names no version of its first norm: no version sentence', async (citation) => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    const result = await lookup({ citation, in_force_as_of: '2026-10-24' });
+    expect(result.found).toBe(true);
+    expect(result.resolution_note).not.toContain('was not applied');
+  });
+
+  it('a versioned cite whose year matched nothing names both the dropped year and the version', async () => {
+    searchLegislation
+      .mockResolvedValueOnce(zeroHits())
+      .mockResolvedValueOnce(page('search-brkons-vwgvg-section-28.json'));
+    const result = await lookup({
+      citation: 'VwGVG 2014 idF BGBl I 2018/57 §28',
+      in_force_as_of: '2026-10-25',
+    });
+    expect(result.resolution_note).toBe(
+      `Resolved via ris_search_legislation (BrKons) — title "VwGVG", § 28, in force 2026-10-25. Title "VwGVG 2014" matched nothing, so the year was dropped.${VERSION_NOT_APPLIED('2026-10-25')}`,
+    );
+  });
+
+  it('a versioned cite that misses returns no version sentence: nothing was returned', async () => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    const result = await lookup({ citation: 'ABGB aF §140', in_force_as_of: '2026-10-24' });
+    expect(result).toEqual({
+      found: false,
+      kind: 'norm',
+      guidance:
+        "No document for ABGB § 140 in force on 2026-10-24. If the provision existed at another time, retry ris_search_legislation with title: 'ABGB', section_from/to: '140', section_type: 'Paragraph', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: 'ABGB*'. State law resolves only with an explicit state hint.",
+    });
+  });
+
+  it('a versioned cite that misses names the plain law in the guidance and the retry, on both surfaces', async () => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    const result = await runToolContract(risLookupCitation, {
+      citation: 'ABGB idF BGBl I 2010/28 §988',
+      in_force_as_of: '2026-10-24',
+    });
+    const guidance =
+      "No document for ABGB § 988 in force on 2026-10-24. If the provision existed at another time, retry ris_search_legislation with title: 'ABGB', section_from/to: '988', section_type: 'Paragraph', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: 'ABGB*'. State law resolves only with an explicit state hint.";
+    expect(searchGazette).not.toHaveBeenCalled();
+    expect(result.structuredContent).toEqual({ found: false, kind: 'norm', guidance });
+    expect(readCommonMark(contentText(result))).toBe(
+      `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: norm\n\n${guidance}`,
+    );
+  });
+
+  it('a resolved versioned cite’s "list them" recipe carries the plain law and the requested date', async () => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    const result = await lookup({
+      citation: 'ABGB idF 2. ErwSchG §254 Abs1',
+      in_force_as_of: '2026-10-24',
+    });
+    expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject({ inForceAsOf: '2026-10-24' });
+    expect(result.resolution_note).toBe(
+      `Resolved via ris_search_legislation (BrKons) — title "ABGB", § 254, in force 2026-10-24.${VERSION_NOT_APPLIED('2026-10-24')} 76 more matched — list them with ris_search_legislation title: "ABGB", section_from: "254", section_to: "254", section_type: Paragraph, in_force_as_of: "2026-10-24".`,
+    );
+  });
+
+  /*
+   * [citation, title, section] — today's reading, kept: a clause after the section with a named or
+   * VwGH-number tail, which the section tail already drops.
+   */
+  it.each([
+    ['ABGB §180 Abs1 idF KindNamRÄG 2013', 'ABGB', '180'],
+    ['BAO §299 idF 2002/I/097', 'BAO', '299'],
+  ])('"%s" keeps today’s reading', async (citation, title, section) => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    await lookup({ citation });
+    expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject({ title, sectionFrom: section });
+  });
+
+  it.each([
+    [
+      '2. COVID-19-MaßnahmenV BGBl II 278/2021 idF BGBl II 394/2021 §11 Abs3',
+      { application: 'BgblAuth', number: '278/2021', part: 'part2' },
+    ],
+    [
+      '3. Covid-19-MaßnahmenV BGBl II 441/2021 idF BGBl II 459/2021',
+      { application: 'BgblAuth', number: '441/2021', part: 'part2' },
+    ],
+    // The law's own gazette prefix misspelled ("BGBI"), its number still before the clause.
+    [
+      '4. COVID-19-SchutzmaßnahmenV BGBI II 58/2021 idF BGBl II 111/2021 §2',
+      { application: 'BgblAuth', number: '58/2021', part: 'part2' },
+    ],
+  ])(
+    '"%s" names its law by gazette number before the clause: a gazette cite, as before',
+    async (citation, params) => {
+      searchGazette.mockResolvedValue(zeroHits());
+      const result = await lookup({ citation });
+      expect(searchLegislation).not.toHaveBeenCalled();
+      expect(searchGazette.mock.calls[0]?.[0]).toEqual(params);
+      expect(result).toMatchObject({ found: false, kind: 'gazette' });
+    },
+  );
+
+  /*
+   * [entry, the bare law it reads as] — a cite naming no §/Artikel number reads as its law alone,
+   * the way the bare abbreviation does (#86); a gazette number in the clause never makes it a
+   * gazette cite.
+   */
+  const PROVISION_FREE: ReadonlyArray<[string, string]> = [
+    ['ABGB idF BGBl 1970/342', 'ABGB'],
+    ['ASVG idF BGBl I 2013/3', 'ASVG'],
+    ['GSVG idF 19.GSVGNov BGBl 19', 'GSVG'],
+    ['ABGB idF KindNamRÄG 2013', 'ABGB'],
+    ['AVG idF 1982/199', 'AVG'],
+  ];
+
+  it.each(PROVISION_FREE)('"%s" reads as "%s" alone', async (entry, law) => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    const read = await lookup({ citation: entry });
+    const bare = await lookup({ citation: law });
+    expect(searchGazette).not.toHaveBeenCalled();
+    expect(searchCaseLaw).not.toHaveBeenCalled();
+    expect(searchLegislation).toHaveBeenCalledTimes(2);
+    expect(searchLegislation.mock.calls[0]?.[0]).toEqual({
+      application: 'BrKons',
+      inForceAsOf: todayInAustria(),
+      pageSize: 100,
+      title: law,
+    });
+    expect(searchLegislation.mock.calls[1]?.[0]).toEqual(searchLegislation.mock.calls[0]?.[0]);
+    const head = `, in force ${todayInAustria()}.`;
+    expect(bare.resolution_note).toContain(head);
+    expect(read).toEqual({
+      ...bare,
+      resolution_note: bare.resolution_note!.replace(
+        head,
+        `${head}${VERSION_NOT_APPLIED(todayInAustria())}`,
+      ),
+    });
+  });
+
+  it.each(PROVISION_FREE)('"%s" under kind norm reads as "%s" alone', async (entry, law) => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    await lookup({ citation: entry, kind: 'norm' });
+    expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject({ title: law });
+  });
+
+  /*
+   * [entry, the gazette search it sends, or null for none] — a clause naming the amending act by
+   * gazette number, then a Roman-numbered Artikel, cites a provision of that amending act: read as
+   * before, a gazette cite under kind auto and unread under kind norm.
+   */
+  it.each<[string, Record<string, string> | null]>([
+    [
+      'AngG idF des BG 3.7.1975 BGBl 1975/418 ArtII Abs1',
+      { application: 'BgblPdf', number: '418/1975' },
+    ],
+    [
+      'EVKO. AO und AnfO idF IRÄG BGBl 1982/370 ArtX',
+      { application: 'BgblPdf', number: '370/1982' },
+    ],
+    ['TirPGG idF LGBl 1999/1 ArtII', null],
+    ['EGVG idF BGBl 1990/356 ArtIX Abs1 Z1', { application: 'BgblPdf', number: '356/1990' }],
+    ['AngG idF BGBl 1975/418 Art. IX', { application: 'BgblPdf', number: '418/1975' }],
+    ['AngG idF BGBl 1975/418 Art II', { application: 'BgblPdf', number: '418/1975' }],
+  ])('"%s" cites an Artikel of the amending act: read as before', async (citation, params) => {
+    searchGazette.mockResolvedValue(zeroHits());
+    const auto = await lookup({ citation });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(auto).toMatchObject({ found: false, kind: 'gazette' });
+    if (params === null) expect(searchGazette).not.toHaveBeenCalled();
+    else expect(searchGazette.mock.calls[0]?.[0]).toEqual(params);
+
+    const norm = await lookup({ citation, kind: 'norm' });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(norm).toEqual({ found: false, kind: 'norm', guidance: UNREADABLE_NORM(citation) });
+  });
+
+  it('a provision-free versioned cite naming an amending act by gazette is no gazette cite on either surface', async () => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    const result = await runToolContract(risLookupCitation, {
+      citation: 'ABGB idF BGBl 1970/342',
+      in_force_as_of: '2026-10-24',
+    });
+    const guidance =
+      "No document for ABGB in force on 2026-10-24. If the provision existed at another time, retry ris_search_legislation with title: 'ABGB', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: 'ABGB*'. State law resolves only with an explicit state hint.";
+    expect(searchGazette).not.toHaveBeenCalled();
+    expect(result.structuredContent).toEqual({ found: false, kind: 'norm', guidance });
+    expect(readCommonMark(contentText(result))).toBe(
+      `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: norm\n\n${guidance}`,
+    );
+  });
+
+  it('a municipal plan read in a council resolution’s version is looked up by its name', async () => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    const result = await lookup({
+      citation: 'Bebauungsplan der Stadtgemeinde Klosterneuburg idF des Beschlusses vom 28.02.03',
+      in_force_as_of: '2026-10-24',
+    });
+    expect(searchLegislation.mock.calls[0]?.[0]).toMatchObject({
+      title: 'Bebauungsplan der Stadtgemeinde Klosterneuburg',
+    });
+    expect(result).toMatchObject({ found: false, kind: 'norm' });
+  });
+
+  it('a provision-free versioned cite whose law is no bare name stays unclassified, as before', async () => {
+    const result = await lookup({
+      citation: 'COVID-19 BH Landeck Verordnung Nr. 119/2020 idF 2020/181',
+    });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(searchCaseLaw).not.toHaveBeenCalled();
+    expect(searchGazette).not.toHaveBeenCalled();
+    expect(result).toStrictEqual({
+      found: false,
+      kind: 'unknown',
+      guidance: UNCLASSIFIED('COVID-19 BH Landeck Verordnung Nr. 119/2020 idF 2020/181'),
+    });
+  });
+
+  it('an Artikel number no shape reads, after a clause, is not dropped with it: unread, as before', async () => {
+    const citation = 'Berufshaftpflichtversicherung ABHV 2000 idF 2009 Art2.2.1';
+    const result = await lookup({ citation });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(result).toEqual({ found: false, kind: 'norm', guidance: UNREADABLE_NORM(citation) });
+  });
+
+  it('a leading CELEX names the act without the clause', async () => {
+    const result = await lookup({
+      citation: '32006L0022 HarmonisierungDV-RL Strassenverkehr idF 32020R1057',
+    });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      found: false,
+      kind: 'norm',
+      guidance: euMiss('HarmonisierungDV-RL Strassenverkehr', null, '32006L0022', null),
+    });
+  });
+
+  it('a cite opening with "idF" names no law before it: the gazette reading stays', async () => {
+    searchGazette.mockResolvedValue(zeroHits());
+    await lookup({ citation: 'idF BGBl 1/2000 §1' });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(searchGazette.mock.calls[0]?.[0]).toMatchObject({ number: '1/2000' });
+  });
+
+  it('advertises the dropped version note on the tool and in citation_formats', () => {
+    const norm = RIS_CITATION_FORMATS.find((format) => format.kind === 'norm')!;
+    for (const surface of [risLookupCitation.description, norm.description]) {
+      expect(surface).toContain('"ABGB idF 2. ErwSchG §254"');
+    }
+    expect(norm.description).toContain('(resolution_note says the cited version was not applied)');
   });
 });
 
@@ -3606,7 +4787,9 @@ describe('risLookupCitation — a cite reads as its plain form past sub-provisio
     const guidance = `'Art6(1)' names a provision, Art 6, but no law, so nothing was searched. Add the law's abbreviation: '<abbr> Art 6'. Formats: ris_list_reference topic citation_formats.`;
     expect(searchLegislation).not.toHaveBeenCalled();
     expect(result.structuredContent).toEqual({ found: false, kind: 'norm', guidance });
-    expect(contentText(result)).toBe(`**found**: false\n**kind**: norm\n\n${guidance}`);
+    expect(readCommonMark(contentText(result))).toBe(
+      `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: norm\n\n${guidance}`,
+    );
   });
 
   it('advertises the ordinal-led form and the dropped sub-provisions and ";" on the tool and in citation_formats', () => {
@@ -3628,10 +4811,18 @@ describe('risLookupCitation — a cite reads as its plain form past sub-provisio
     const forced = await lookup({ citation: SZK, kind: 'norm', in_force_as_of: '2026-10-24' });
     const guidance = `No document for ${SZK} in force on 2026-10-24. If the provision existed at another time, retry ris_search_legislation with title: '${SZK}', include_all_versions: true. If the abbreviation is uncertain, search ris_search_legislation title: '${SZK}*'. State law resolves only with an explicit state hint.`;
     expect(auto.structuredContent).toEqual({ found: false, kind: 'norm', guidance });
-    expect(contentText(auto)).toBe(`**found**: false\n**kind**: norm\n\n${guidance}`);
+    expect(readCommonMark(contentText(auto))).toBe(
+      `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: norm\n\n${guidance}`,
+    );
     expect(forced).toEqual(auto.structuredContent);
-    expect(searchLegislation).toHaveBeenCalledTimes(2);
-    expect(searchLegislation.mock.calls[1]?.[0]).toEqual(searchLegislation.mock.calls[0]?.[0]);
+    // Each run searches the cite, then — its year matching nothing — the cite without it (#80).
+    const [autoFirst, autoRetry, forcedFirst, forcedRetry] = searchLegislation.mock.calls.map(
+      ([params]) => params as object,
+    );
+    expect(searchLegislation).toHaveBeenCalledTimes(4);
+    expect(forcedFirst).toEqual(autoFirst);
+    expect(autoRetry).toEqual({ ...autoFirst, title: 'Steuer- und Zollkoordination' });
+    expect(forcedRetry).toEqual(autoRetry);
   });
 
   it('a forced case-number route keeps a terminal ";" as given', async () => {
@@ -3852,7 +5043,7 @@ describe('risLookupCitation — a leading EU case-law CELEX is named as an EU co
   });
 });
 
-describe('risLookupCitation — the EU-act, comma-joined, ". "-joined, and sub-provision parsing stays linear in the citation length (#67, #72, #73, #76)', () => {
+describe('risLookupCitation — the EU-act, comma-joined, ". "-joined, short-form, version-note, and sub-provision parsing stays linear in the citation length (#67, #72, #73, #76, #81, #82, #86)', () => {
   it.each([
     [
       'repeated attached parentheses after a section',
@@ -4088,5 +5279,304 @@ describe('risLookupCitation — the EU-act, comma-joined, ". "-joined, and sub-p
   it('a recital digit run, across the full 5k–320k span', async () => {
     searchLegislation.mockResolvedValue(zeroHits());
     await expectLinearResolution((n) => `ErwGr ${'1'.repeat(n)} XYZ`, {});
+  });
+
+  // An EU act cited by its number (#83): designator words, digit runs, and whitespace runs.
+  it.each([
+    [
+      'a long designator word',
+      (n: number) => `${'Geldwäsche'.repeat(Math.floor(n / 10))}richtlinie 2024/1640/EU Art1`,
+    ],
+    [
+      'a long word that never ends in a designator',
+      (n: number) => `${'richtlinie'.repeat(Math.floor(n / 10))}x 2024/1640/EU Art1`,
+    ],
+    ['a whitespace run after the designator', (n: number) => `RL${' '.repeat(n)}2006/123/EG Art1`],
+    ['a whitespace run in a bare act number', (n: number) => `VO (EG)${' '.repeat(n)}178/2002`],
+    ['repeated designators', (n: number) => `${'RL '.repeat(Math.floor(n / 3))}2006/123/EG Art1`],
+    [
+      'one long line of designators ending in a break',
+      (n: number) => `${'RL '.repeat(Math.floor(n / 3))}\n2006/123/EG`,
+    ],
+    [
+      'breaks throughout a bare act number',
+      (n: number) => `RL${'  \r\n'.repeat(Math.floor(n / 4))}2006/123/EG`,
+    ],
+  ] as const)('%s', async (_shape, build) => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    searchCaseLaw.mockResolvedValue(zeroHits());
+    await expectLinearResolution(build, {}, 1_250);
+  });
+
+  it.each([
+    ['a long digit run in an act number', (n: number) => `RL ${'1'.repeat(n)}/123/EG Art1`],
+    ['a long digit run in a bare act number', (n: number) => `VO (EG) ${'1'.repeat(n)}/2002`],
+    ['a long digit run with no closing type', (n: number) => `RL 2006/${'1'.repeat(n)}`],
+  ])('%s, across the full 5k–320k span', async (_shape, build) => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    searchCaseLaw.mockResolvedValue(zeroHits());
+    await expectLinearResolution(build, {});
+  });
+
+  // A long title's " - <short form>" (#81), and a version note before or after the section (#82, #86).
+  it.each([
+    [
+      'a long run of " - " before a short form',
+      (n: number) => `A${' - '.repeat(Math.floor(n / 3))}B §1`,
+    ],
+    [
+      'repeated " - <word>" with no provision after any',
+      (n: number) => `A${' - B'.repeat(Math.floor(n / 4))} x §1`,
+    ],
+    [
+      'repeated short forms after a whole cite',
+      (n: number) => `ASVG §1${' - B §1'.repeat(Math.floor(n / 7))}`,
+    ],
+    [
+      'a whitespace run between a short form and its provision',
+      (n: number) => `A - B${' '.repeat(n)}§1`,
+    ],
+    ['a whitespace run after a short form’s year', (n: number) => `A - B 2004${' '.repeat(n)}x`],
+    [
+      'repeated sub-provisions before a dash',
+      (n: number) => `ASVG §1${' Abs1'.repeat(Math.floor(n / 5))} - ABGB §1`,
+    ],
+    [
+      'repeated sub-provisions and a word before a dash',
+      (n: number) => `ASVG §1${' Abs1'.repeat(Math.floor(n / 5))} x - ABGB §1`,
+    ],
+    ['repeated section signs before a dash', (n: number) => `A ${'§'.repeat(n)} - B §1`],
+    [
+      'repeated Artikel numbers before a dash',
+      (n: number) => `A${' Art 1'.repeat(Math.floor(n / 6))} - B §1`,
+    ],
+    [
+      'one long line of " - <word>" ending in a break',
+      (n: number) => `${'A - B '.repeat(Math.floor(n / 6))}\n§1`,
+    ],
+    ['breaks throughout " - "', (n: number) => `A${' -\r\n'.repeat(Math.floor(n / 4))}B §1`],
+    [
+      'a long clause before the section',
+      (n: number) => `ABGB idF ${'X '.repeat(Math.floor(n / 2))}§1`,
+    ],
+    [
+      'a repeated "idF " run before the section',
+      (n: number) => `ABGB ${'idF '.repeat(Math.floor(n / 4))}§1`,
+    ],
+    [
+      'a repeated "idF " run with no section',
+      (n: number) => `ABGB ${'idF '.repeat(Math.floor(n / 4))}`,
+    ],
+    [
+      'a repeated "idF " run before a gazette number',
+      (n: number) => `ABGB ${'idF '.repeat(Math.floor(n / 4))}BGBl 1/2000`,
+    ],
+    [
+      'repeated " aF" before the section',
+      (n: number) => `ABGB${' aF'.repeat(Math.floor(n / 3))} §1`,
+    ],
+    ['a whitespace run before "idF"', (n: number) => `ABGB${' '.repeat(n)}idF BGBl 1/2000`],
+    [
+      'repeated gazette prefixes in a clause with no section',
+      (n: number) => `ABGB idF ${'BGBl '.repeat(Math.floor(n / 5))}1970/342`,
+    ],
+    [
+      'one long line of a clause ending in a break',
+      (n: number) => `ABGB idF ${'X '.repeat(Math.floor(n / 2))}\n§1`,
+    ],
+    [
+      'breaks throughout an "idF" run',
+      (n: number) => `ABGB${' idF\r\n'.repeat(Math.floor(n / 6))}§1`,
+    ],
+    [
+      'repeated Artikel words after a gazette number in a clause',
+      (n: number) => `ABGB idF BGBl 1/2000${' Art'.repeat(Math.floor(n / 4))}`,
+    ],
+    [
+      'a whitespace run after an Artikel word in a clause',
+      (n: number) => `ABGB idF BGBl 1/2000 Art${' '.repeat(n)}x`,
+    ],
+    [
+      'repeated gazette prefixes before a Roman-numbered Artikel',
+      (n: number) => `ABGB idF ${'BGBl '.repeat(Math.floor(n / 5))}1/2000 ArtII`,
+    ],
+  ] as const)('%s', async (_shape, build) => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    searchGazette.mockResolvedValue(zeroHits());
+    await expectLinearResolution(build, {}, 1_250);
+  });
+
+  it.each([
+    [
+      'a long gazette number in a clause after the section',
+      (n: number) => `ABGB §167 idF BGBl I ${'1'.repeat(n)}/2013`,
+    ],
+    [
+      'a long gazette number in a clause before the section',
+      (n: number) => `ABGB idF BGBl I ${'1'.repeat(n)}/2010 §988`,
+    ],
+    ['a long word after a dash', (n: number) => `A - ${'B'.repeat(n)} §1`],
+    ['a long digit run in the word after a dash', (n: number) => `A - B${'1'.repeat(n)} §1`],
+    [
+      'a long Roman numeral after an Artikel in a clause',
+      (n: number) => `ABGB idF BGBl 1/2000 Art${'I'.repeat(n)}x`,
+    ],
+  ])('%s, across the full 5k–320k span', async (_shape, build) => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    searchGazette.mockResolvedValue(zeroHits());
+    await expectLinearResolution(build, {});
+  });
+
+  // A resolved cite, its own text read for the version it names (#82, #86).
+  it.each([
+    ['repeated " a" words before the section', (n: number) => `ABGB${' a'.repeat(n / 2)} §1`],
+    ['repeated " id" words before the section', (n: number) => `ABGB${' id'.repeat(n / 5)} §1`],
+    ['repeated " aFx" words after the section', (n: number) => `ABGB §1${' aFx'.repeat(n / 5)}`],
+    [
+      'one long line of " idFx" words ending in a break',
+      (n: number) => `ABGB §1${' idFx'.repeat(n / 5)}\ny`,
+    ],
+    ['breaks throughout before "aF"', (n: number) => `ABGB${'  \r\n'.repeat(n / 5)}aF §1`],
+  ] as const)('%s', async (_shape, build) => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    await expectLinearResolution(build, {}, 1_250);
+  });
+
+  it('repeated " i" words after the section, across the full 5k–320k span', async () => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    await expectLinearResolution((n) => `ABGB §1${' i'.repeat(n / 2)}`, {});
+  });
+});
+
+describe('risLookupCitation — content[] reads back RIS and caller text verbatim (#79)', () => {
+  /**
+   * The shared hostile metadata (every non-URL string and array element swapped for a
+   * HOSTILE_TEXT shape, `overrides` laid on top — fields that set the nested values
+   * (`norm_index`, `translation`) the fixture lacks), plus the document number struck through
+   * and the organ inline-marked.
+   */
+  function hostileHit(
+    hit: RisHit,
+    offset: number,
+    overrides: Record<string, unknown> = {},
+  ): RisHit {
+    return {
+      ...hostileMetadata(hit, offset, overrides),
+      documentNumber: `~~${hit.documentNumber}~~`,
+      organ: HOSTILE_TEXT.inline,
+    };
+  }
+
+  /**
+   * Assert the format() text of a resolved lookup reads back, through a CommonMark parse, as
+   * exactly the result's `structuredContent`: the found, kind, and resolution_note lines, the
+   * authored "Resolved document" heading, the record block ({@link recordRead}), and the
+   * alternatives_count trailer when there is one — every string verbatim in its own field's line,
+   * no markup but the authored heading, bold labels, and links — and that the text links exactly
+   * the record's URLs, in order. Returns the parsed text.
+   */
+  function expectReadBack(result: ToolResult): string {
+    expect(result.isError).not.toBe(true);
+    const structured = result.structuredContent as {
+      alternatives_count?: number;
+      kind: string;
+      record: object;
+      resolution_note: string;
+    };
+    const text = contentText(result);
+    const read = readCommonMark(text);
+    expect(read).toBe(
+      `⟨strong⟩found⟨/strong⟩: true\n⟨strong⟩kind⟨/strong⟩: ${structured.kind}\n⟨strong⟩resolution_note⟨/strong⟩: ${structured.resolution_note}\n\n${RECORD_HEADING}${recordRead(structured.record)}${structured.alternatives_count === undefined ? '' : `\n\n⟨strong⟩alternatives_count⟨/strong⟩: ${structured.alternatives_count}`}`,
+    );
+    expect(linkDestinations(text)).toEqual(recordUrls(structured.record));
+    return read;
+  }
+
+  it('reads back a resolved norm record: a multi-line title, every scalar, array element, and translation field', async () => {
+    const base = page('search-brkons-celex.json');
+    const hit = hostileHit(base.hits[0]!, 0, {
+      source: HOSTILE_TEXT.blockMarkers,
+      title: HOSTILE_TEXT.multiLineTitle,
+    });
+    searchLegislation.mockResolvedValue({ ...base, hits: [hit] });
+    const result = await runToolContract(risLookupCitation, { citation: '§ 6 DSG' });
+    const { record } = result.structuredContent as { record: Record<string, unknown> };
+    // structuredContent relays the RIS strings as written.
+    expect(record).toMatchObject({
+      document_number: `~~${base.hits[0]!.documentNumber}~~`,
+      title: HOSTILE_TEXT.multiLineTitle,
+      translation: { source: HOSTILE_TEXT.blockMarkers },
+    });
+    const read = expectReadBack(result);
+    expect(read).toContain(
+      `⟨strong⟩document_number⟨/strong⟩: ~~${base.hits[0]!.documentNumber}~~\n`,
+    );
+    const urls = record.content_urls as Record<string, string>;
+    expect(Object.keys(urls).length).toBeGreaterThan(0);
+    for (const key of Object.keys(urls)) expect(read).toContain(`⟨a⟩${key}⟨/a⟩`);
+    expect(linkDestinations(contentText(result))).toEqual(
+      expect.arrayContaining(Object.values(urls)),
+    );
+  });
+
+  it('reads back a resolved gazette record, its bare URL fields as links whose text is the URL', async () => {
+    const base = page('search-bgblauth-celex.json');
+    searchGazette.mockResolvedValue({ ...base, hits: [hostileHit(base.hits[0]!, 1)] });
+    const result = await runToolContract(risLookupCitation, { citation: 'BGBl. I Nr. 8/2026' });
+    const { record } = result.structuredContent as { record: Record<string, unknown> };
+    expect(record.authentic_pdf_url).toMatch(WEB_URL);
+    const read = expectReadBack(result);
+    expect(read).toContain(
+      `⟨strong⟩authentic_pdf_url⟨/strong⟩: ⟨a⟩${String(record.authentic_pdf_url)}⟨/a⟩`,
+    );
+    expect((record.celex_references as string[]).length).toBeGreaterThan(1);
+  });
+
+  it('reads back a resolved case-number record, its nested norm index and organ included', async () => {
+    const base = page('search-vfgh.json');
+    const hit = hostileHit(base.hits[0]!, 2, {
+      abbreviation: HOSTILE_TEXT.pipeAndBackslash,
+      title: HOSTILE_TEXT.multiLineTitle,
+    });
+    searchCaseLaw.mockResolvedValue({ ...base, hits: [hit] });
+    const result = await runToolContract(risLookupCitation, { citation: 'G 287/2022' });
+    const { record } = result.structuredContent as { record: Record<string, unknown> };
+    expect(record).toMatchObject({
+      organ: HOSTILE_TEXT.inline,
+      norm_index: {
+        abbreviation: HOSTILE_TEXT.pipeAndBackslash,
+        title: HOSTILE_TEXT.multiLineTitle,
+      },
+    });
+    const read = expectReadBack(result);
+    expect(read).toContain(
+      `⟨strong⟩norm_index⟨/strong⟩: title ${HOSTILE_TEXT.multiLineTitle} · abbreviation ${HOSTILE_TEXT.pipeAndBackslash}`,
+    );
+    expect(read).toContain(`⟨strong⟩organ⟨/strong⟩: ${HOSTILE_TEXT.inline}\n`);
+  });
+
+  const MARKED = 'X *y* _z_ `c` ~~s~~ [a](b) <b>w</b> | \\';
+
+  it('reads back a resolution note quoting the cited title', async () => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    const result = await runToolContract(risLookupCitation, { citation: `${MARKED} §1` });
+    const { resolution_note } = result.structuredContent as { resolution_note: string };
+    expect(resolution_note).toContain(`title "${MARKED}"`);
+    const read = expectReadBack(result);
+    expect(read).toContain(`⟨strong⟩resolution_note⟨/strong⟩: ${resolution_note}\n`);
+  });
+
+  it.each([
+    [`${MARKED} §1`, 'norm'],
+    ['6. Geldwäscherichtlinie 2024/1640/EU Art1', 'norm'],
+    ['<b>x</b> *42*/2020', 'unknown'],
+    ['Art6 Abs1', 'norm'],
+  ])('reads back the whole found: false text for "%s"', async (citation, kind) => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    const result = await runToolContract(risLookupCitation, { citation });
+    const { guidance } = result.structuredContent as { guidance: string };
+    expect(readCommonMark(contentText(result))).toBe(
+      `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: ${kind}\n\n${guidance}`,
+    );
   });
 });
