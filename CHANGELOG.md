@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.5.5](changelog/0.5.x/0.5.5.md) — 2026-10-25
+
+Every tool's content[] escapes RIS-authored text, so multi-line titles no longer break headings or open lists; ris_lookup_citation resolves more norm cite shapes (cited years RIS omits, idF clauses, short forms after a long title, EU act numbers) and chained searches share one search budget.
+
 ## [0.5.4](changelog/0.5.x/0.5.4.md) — 2026-10-24
 
 ris_get_document and the document resource read from ogd.ris.bka.gv.at, since www.ris.bka.gv.at answers automated clients with a bot-check page (now a non-retryable content_host_blocked); ris_lookup_citation reads more norms_cited shapes, period-joined OGH norms included, and answers EC Treaty cites as EU misses.

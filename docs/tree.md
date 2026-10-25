@@ -1,6 +1,6 @@
 # ris-austria-mcp-server - Directory Structure
 
-Generated on: 2026-10-24 20:17:02
+Generated on: 2026-10-25 08:39:36
 
 ```text
 ris-austria-mcp-server/
@@ -226,15 +226,30 @@ ris-austria-mcp-server/
 │   │       ├── search-bgblpdf-50-1999.json
 │   │       ├── search-bgblpdf-celex.json
 │   │       ├── search-brkons-alvg-1977.json
+│   │       ├── search-brkons-asylg-section-1.json
+│   │       ├── search-brkons-ausstrg-section-43.json
+│   │       ├── search-brkons-avg-section-1.json
+│   │       ├── search-brkons-bfa-vg-section-21.json
 │   │       ├── search-brkons-bvg-article-10.json
+│   │       ├── search-brkons-bwg-section-70.json
 │   │       ├── search-brkons-celex.json
+│   │       ├── search-brkons-dsg-section-1-as-of-1995.json
+│   │       ├── search-brkons-dsg-section-1.json
 │   │       ├── search-brkons-dsg-section-6.json
 │   │       ├── search-brkons-estg-section-2.json
+│   │       ├── search-brkons-gewo-section-1.json
+│   │       ├── search-brkons-gspg-section-2.json
 │   │       ├── search-brkons-kfg-section-1.json
 │   │       ├── search-brkons-kschg-section-5.json
 │   │       ├── search-brkons-multi.json
+│   │       ├── search-brkons-orf-g.json
 │   │       ├── search-brkons-praemien-section-2.json
+│   │       ├── search-brkons-tkg-section-5.json
 │   │       ├── search-brkons-ugb-section-1.json
+│   │       ├── search-brkons-ustg-section-1.json
+│   │       ├── search-brkons-vstg-section-1.json
+│   │       ├── search-brkons-vwgvg-section-28.json
+│   │       ├── search-brkons-weg-section-1.json
 │   │       ├── search-bvb.json
 │   │       ├── search-bvwg-w213-2337298-1.json
 │   │       ├── search-dsk-gz-trailing-space.json
@@ -242,6 +257,7 @@ ris-austria-mcp-server/
 │   │       ├── search-ecli-ogh-6ob236-23h.json
 │   │       ├── search-ecli-vfgh-g13-2025.json
 │   │       ├── search-ecli-vwgh-ra-2025-07-0289.json
+│   │       ├── search-erlaesse-befoerderungszuschuss.json
 │   │       ├── search-erlaesse.json
 │   │       ├── search-erv-translations.json
 │   │       ├── search-gra.json
