@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.5.5-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/ris-austria-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.3.1-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/ris-austria-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/ris-austria-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.4-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.5.5-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/ris-austria-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.4.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/ris-austria-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/ris-austria-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.4-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -98,7 +98,13 @@ The resource mirrors `ris_get_document`, so tool-only clients lose nothing.
 
 - One `citation` per call, classified as a norm ("§ 6 DSG"), gazette number ("BGBl. I Nr. 165/1999"), case number ("VfGH G 13/2025") or ECLI, or collection number ("VfSlg 19.632/2012"). `kind` forces a route, `court` and `state` narrow it, and `in_force_as_of` pins a norm's version (default today)
 - Returns `found`, `kind`, and a `record` in the matching search tool's shape, with `alternatives_count` when several documents matched. A miss returns `found: false` with `guidance` instead of an error
-- A norm resolves to the cited law ("§ 2 EStG" → EStG 1988 § 2, "AlVG 1977" → the AlVG, which RIS files without its year, "VwGVG 2014 §28" → VwGVG § 28, searched again without the year its title lacks), its sub-provisions and a trailing ";" set aside ("Art. 6 (1) B-VG" → B-VG Art 6), an ordinal-led abbreviation read like any other ("1. COVID-19-JuBG §1"), the version a law is cited in set aside ("ABGB idF BGBl I 2010/28 §988" → ABGB § 988 as in force on the requested date, never the amending act's gazette entry, the note saying the cited version was not applied), a long title read by its short form ("StaatsanwaltschaftsG - StAG §35" → StAG § 35), and a comma-joined entry ("DSG §1, §24") or one joining full norms with ". " ("ZPO §179. ZPO §275 Abs2") resolves its first provision and names the rest; an EU act RIS does not consolidate ("DSGVO Art32"), or one cited by its number ("RL 2006/123/EG", "VO (EG) 178/2002 Art3"), returns `found: false` with its EUR-Lex link, without a RIS request; "BGBl. Nr. 50/2025" without its part comes back ambiguous, naming parts I, II, and III
+- A norm resolves to the cited law:
+  - the law is matched as RIS files it ("§ 2 EStG" → EStG 1988 § 2; "AlVG 1977" → the AlVG, filed without its year; "VwGVG 2014 §28" → VwGVG § 28), and a long title is read by its short form ("StaatsanwaltschaftsG - StAG §35" → StAG § 35)
+  - sub-provisions and a trailing ";" are set aside ("Art. 6 (1) B-VG" → B-VG Art 6), and an ordinal-led abbreviation reads like any other ("1. COVID-19-JuBG §1")
+  - a cited version is set aside ("ABGB idF BGBl I 2010/28 §988" → ABGB § 988 as in force on the requested date, never the amending act's gazette entry), with a note saying the cited version was not applied
+  - an entry citing several provisions ("DSG §1, §24", "ZPO §179. ZPO §275 Abs2") resolves the first and names the rest
+- An EU act RIS does not consolidate ("DSGVO Art32", "RL 2006/123/EG", "VO (EG) 178/2002 Art3") returns `found: false` with its EUR-Lex link, without a RIS request
+- A gazette number without its part ("BGBl. Nr. 50/2025") comes back ambiguous, naming parts I, II, and III
 
 ---
 
@@ -150,121 +156,32 @@ Agent-friendly output:
 
 ## Getting started
 
-### Public Hosted Instance
+Connect to the hosted instance, no install:
 
-A public instance is available at `https://ris-austria.caseyjhand.com/mcp` — no installation required. Point any MCP client at it via Streamable HTTP:
-
-```json
-{
-  "mcpServers": {
-    "ris-austria-mcp-server": {
-      "type": "streamable-http",
-      "url": "https://ris-austria.caseyjhand.com/mcp"
-    }
-  }
-}
+```sh
+claude mcp add --transport http ris-austria-mcp-server https://ris-austria.caseyjhand.com/mcp
 ```
 
-### Self-Hosted / Local
+Or run it locally:
 
-Add the server to your MCP client configuration with Bun:
-
-```json
-{
-  "mcpServers": {
-    "ris-austria-mcp-server": {
-      "type": "stdio",
-      "command": "bunx",
-      "args": ["@cyanheads/ris-austria-mcp-server@latest"]
-    }
-  }
-}
+```sh
+claude mcp add ris-austria-mcp-server -- npx -y @cyanheads/ris-austria-mcp-server
 ```
 
-Or with npx (no Bun required):
+For other clients, add this to the MCP config file:
 
 ```json
 {
   "mcpServers": {
     "ris-austria-mcp-server": {
-      "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@cyanheads/ris-austria-mcp-server@latest"]
+      "args": ["-y", "@cyanheads/ris-austria-mcp-server"]
     }
   }
 }
 ```
 
-Or with Docker:
-
-```json
-{
-  "mcpServers": {
-    "ris-austria-mcp-server": {
-      "type": "stdio",
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-e", "MCP_TRANSPORT_TYPE=stdio",
-        "ghcr.io/cyanheads/ris-austria-mcp-server:latest"
-      ]
-    }
-  }
-}
-```
-
-Add any [configuration](#configuration) variables under an `"env"` key for bunx/npx, or as additional `-e NAME=value` arguments for Docker.
-
-For Streamable HTTP, set the transport and start the server:
-
-```sh
-MCP_TRANSPORT_TYPE=http MCP_HTTP_PORT=3010 bun run start:http
-# Server listens at http://localhost:3010/mcp
-```
-
-### Prerequisites
-
-- [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+).
-- No API key: the RIS OGD API is keyless.
-
-### Installation
-
-1. **Clone the repository:**
-
-```sh
-git clone https://github.com/cyanheads/ris-austria-mcp-server.git
-```
-
-2. **Navigate into the directory:**
-
-```sh
-cd ris-austria-mcp-server
-```
-
-3. **Install dependencies and build:**
-
-```sh
-bun install
-bun run rebuild
-```
-
-4. **Add to your MCP client configuration file:**
-
-```json
-{
-  "mcpServers": {
-    "ris-austria-mcp-server": {
-      "type": "stdio",
-      "command": "node",
-      "args": ["/absolute/path/to/ris-austria-mcp-server/dist/index.js"],
-      "env": {
-        "MCP_TRANSPORT_TYPE": "stdio",
-        "MCP_LOG_LEVEL": "info"
-      }
-    }
-  }
-}
-```
+No API key is needed. For Docker or a source build, see [Running the server](#running-the-server).
 
 ## Configuration
 
@@ -285,6 +202,15 @@ See [`.env.example`](./.env.example) for the full list of optional overrides.
 ## Running the server
 
 ### Local development
+
+Requires [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+).
+
+- **Clone and install:**
+
+  ```sh
+  git clone https://github.com/cyanheads/ris-austria-mcp-server.git
+  cd ris-austria-mcp-server && bun install
+  ```
 
 - **Build and run:**
 
@@ -309,11 +235,10 @@ See [`.env.example`](./.env.example) for the full list of optional overrides.
 ### Docker
 
 ```sh
-docker build -t ris-austria-mcp-server .
-docker run --rm -p 3010:3010 ris-austria-mcp-server
+docker run --rm -p 3010:3010 ghcr.io/cyanheads/ris-austria-mcp-server:latest
 ```
 
-The Dockerfile defaults to HTTP transport, stateless session mode, and logs to `/var/log/ris-austria-mcp-server`. OpenTelemetry peer dependencies are installed by default; build with `--build-arg OTEL_ENABLED=false` to omit them.
+The image defaults to HTTP transport, stateless session mode, and logs to `/var/log/ris-austria-mcp-server`. To run it over stdio from an MCP client, use `"command": "docker"` with `"args": ["run", "-i", "--rm", "-e", "MCP_TRANSPORT_TYPE=stdio", "ghcr.io/cyanheads/ris-austria-mcp-server:latest"]`. To build locally, `docker build -t ris-austria-mcp-server .`; OpenTelemetry peer dependencies are installed by default — build with `--build-arg OTEL_ENABLED=false` to omit them.
 
 ## Project structure
 
