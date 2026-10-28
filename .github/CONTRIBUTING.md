@@ -2,7 +2,7 @@
 
 Thanks for using `@cyanheads/ris-austria-mcp-server`. Bugs, feature requests, and documentation gaps all belong in an issue — that's where they get read and picked up.
 
-Open one from the **Issues** tab and pick the **Bug Report** or **Feature Request** form. Both are structured, and filling in the fields is what makes an issue actionable.
+Open one from the **Issues** tab and pick the **Bug Report** or **Feature Request** form. Both are structured, and filling in the fields is what makes an issue actionable. Anything that fits neither can be a plain issue — a half-formed idea in your own words is fine.
 
 ## Server bug or framework bug?
 

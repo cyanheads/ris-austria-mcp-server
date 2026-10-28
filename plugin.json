@@ -1,0 +1,32 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ris-austria-mcp-server",
+  "version": "0.5.5",
+  "description": "Search Austrian consolidated federal & state law, court decisions, and the authentic Bundesgesetzblatt from the official RIS via MCP. Keyless. STDIO or Streamable HTTP.",
+  "author": {
+    "name": "Casey Hand",
+    "email": "casey@caseyjhand.com",
+    "url": "https://caseyjhand.com"
+  },
+  "homepage": "https://github.com/cyanheads/ris-austria-mcp-server#readme",
+  "repository": "git+https://github.com/cyanheads/ris-austria-mcp-server.git",
+  "license": "Apache-2.0",
+  "keywords": [
+    "ris",
+    "austria",
+    "austrian-law",
+    "legal-research",
+    "case-law",
+    "legislation",
+    "gazette",
+    "bundesgesetzblatt",
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "typescript",
+    "bun",
+    "stdio",
+    "streamable-http",
+    "ai-agent"
+  ]
+}
