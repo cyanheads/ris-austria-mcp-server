@@ -51,6 +51,7 @@ await createApp({
     risListReference,
   ],
   resources: [risDocumentResource],
+  skills: 'skills',
   setup(core) {
     // Parse RIS_* here so a bad value stops startup behind the config banner, not every call.
     getServerConfig();
