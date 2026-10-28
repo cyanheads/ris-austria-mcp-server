@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.6.0](changelog/0.6.x/0.6.0.md) — 2026-10-28
+
+Publishes the ris-austria-guide Agent Skill over MCP as skill://ris-austria-guide/SKILL.md, adds the Agent Plugins root manifests, and moves to mcp-ts-core 0.13.18, whose HTTP transport no longer retains memory per request.
+
 ## [0.5.5](changelog/0.5.x/0.5.5.md) — 2026-10-25
 
 Every tool's content[] escapes RIS-authored text, so multi-line titles no longer break headings or open lists; ris_lookup_citation resolves more norm cite shapes (cited years RIS omits, idF clauses, short forms after a long title, EU act numbers) and chained searches share one search budget.
