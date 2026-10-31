@@ -1,12 +1,16 @@
 /**
  * @fileoverview ris://document/{application}/{documentNumber} — the injectable markdown twin
- * of ris_get_document. Reads the same content path (HTML rendition converted to markdown) for
- * an (application, documentNumber) pair. Applications with no text rendition (authentic-PDF-only,
- * PDF-only, or metadata-only) return a short note pointing at the usable artifact instead of
- * text. Oversized text degrades to the same outline the tool emits — §/Artikel/Anlage sections,
- * or `Part n of N` byte windows where the rendition carries no such headings — plus a note
- * pointing at ris_get_document (which carries the sections selector this bare-string resource
- * cannot). Backed by the shared renderDocument helper from the tool definition.
+ * of ris_get_document. Reads the same content path (HTML rendition converted to markdown, image
+ * sources resolved to absolute URLs) for an (application, documentNumber) pair. Applications
+ * whose only rendition is a PDF (authentic-PDF-only, PDF-only), and an html rendition that is
+ * nothing but page images, return the PDF's extracted text, fenced since it is not markdown,
+ * with a note naming the PDF; metadata-only applications, and a PDF whose text cannot be
+ * extracted, return a short note pointing at the usable artifact instead of text — or, for the
+ * image-only rendition, its image links followed by that note. Oversized text degrades to the
+ * same outline the tool emits — §/Artikel/Anlage sections, or `Part n of N` byte windows where
+ * the rendition carries no such headings — plus a note pointing at ris_get_document (which
+ * carries the sections selector this bare-string resource cannot). Backed by the shared
+ * renderDocument helper from the tool definition.
  * @module mcp-server/resources/definitions/ris-document
  */
 
@@ -16,6 +20,7 @@ import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import {
   addressableSections,
   exampleSectionNames,
+  fencedText,
   outlineDocument,
   renderDocument,
   renderOutlineSections,
@@ -28,7 +33,7 @@ export const risDocumentResource = resource('ris://document/{application}/{docum
   name: 'ris_document',
   title: 'RIS Document (Markdown)',
   description:
-    'Markdown text of one RIS document — the injectable twin of ris_get_document (markdown format). Addressed by application code and technical document number, both copied verbatim from a ris_search_* or ris_lookup_citation result. Applications that publish no text rendition (district/municipal promulgations, court rules, party-transparency decisions, council minutes, and the 1848–1940 imperial gazettes) return a short note pointing at the authentic PDF or scan instead.',
+    'Markdown text of one RIS document — the injectable twin of ris_get_document (markdown format). Addressed by application code and technical document number, both copied verbatim from a ris_search_* or ris_lookup_citation result. Applications that publish only a PDF (district/municipal promulgations and court rules as the signed authentic PDF, party-transparency decisions, council minutes) return the text extracted from it in a fenced block, a "--- Page N of M ---" line before each page, with a note naming the PDF; the 1848–1940 imperial gazettes, and a PDF with no extractable text (a scan — no OCR is performed), return a short note pointing at the authentic PDF or scan instead.',
   mimeType: 'text/markdown',
   cacheHint: { ttlMs: 86_400_000, cacheScope: 'public' },
   params: z.object({
@@ -55,7 +60,7 @@ export const risDocumentResource = resource('ris://document/{application}/{docum
     {
       reason: 'upstream_error',
       code: JsonRpcErrorCode.ServiceUnavailable,
-      when: 'The RIS content host was unreachable or returned a server error.',
+      when: 'The RIS content host was unreachable or returned a server error. A PDF read for its text degrades to a note naming the PDF instead.',
       retryable: true,
       recovery:
         'The RIS content host is temporarily unavailable — retry the read after a short delay.',
@@ -63,7 +68,7 @@ export const risDocumentResource = resource('ris://document/{application}/{docum
     {
       reason: 'content_host_blocked',
       code: JsonRpcErrorCode.ConfigurationError,
-      when: 'The configured RIS content host answered with a bot-check page ("Security Check") instead of the document — it refuses automated clients, so every read through it fails the same way.',
+      when: 'The configured RIS content host answered with a bot-check page ("Security Check") instead of the document — it refuses automated clients, so every read through it fails the same way. A PDF read for its text degrades to a note naming the PDF instead.',
       retryable: false,
       recovery:
         'Retrying will not help: the RIS content host this server is configured with answers automated clients with a bot-check page. Call ris_get_document with format: urls_only for the rendition URLs without a fetch, and report it to the server operator: RIS_CONTENT_BASE_URL should be https://ogd.ris.bka.gv.at (the default), the host that serves RIS documents to automated clients; if it already is, that host is challenging the server’s network address.',
@@ -71,7 +76,7 @@ export const risDocumentResource = resource('ris://document/{application}/{docum
     {
       reason: 'upstream_timeout',
       code: JsonRpcErrorCode.Timeout,
-      when: 'The content host did not return the rendition within the fetch deadline — typically a cold render, which it performs on first request before caching the result.',
+      when: 'The content host did not return the rendition within the fetch deadline — typically a cold render, which it performs on first request before caching the result. A PDF read for its text degrades to a note naming the PDF instead.',
       retryable: true,
       recovery:
         'Retry the identical read once or twice — the host renders a document on first request and caches it, so a later read often returns instantly. If it keeps timing out, check the document number against a fresh search result (a wrong number renders a slow 404 that looks identical), or use ris_get_document with format: urls_only and fetch the rendition URL yourself, without this deadline.',
@@ -121,8 +126,13 @@ export const risDocumentResource = resource('ris://document/{application}/{docum
         ? `Document too large to inline${size}. It carries no §/Artikel/Anlage headings, so it is listed as ${sections.length} contiguous windows cut at line breaks — read them in the order they are named. Use the ris_get_document tool with sections:[…] to retrieve one — e.g. ${exampleSectionNames(addressable)}. This resource carries no selector.`
         : `Document too large to inline${size}. Use the ris_get_document tool with sections:[…] to retrieve specific sections — e.g. ${exampleSectionNames(sections)}. This resource carries no section selector.`,
     );
-    return decision.kind === 'full'
-      ? decision.text
-      : `${renderOutlineSections(decision.sections)}\n\n${decision.notice}`;
+    // The note on what the text is follows it: where it was extracted from a PDF, or where an
+    // image-only rendition's PDF had none.
+    const provenance =
+      rendition.provenanceNotice !== undefined ? `\n\n${rendition.provenanceNotice}` : '';
+    if (decision.kind === 'outline') {
+      return `${renderOutlineSections(decision.sections)}\n\n${decision.notice}${provenance}`;
+    }
+    return `${fencedText(decision.text, 'markdown', rendition.textSource)}${provenance}`;
   },
 });

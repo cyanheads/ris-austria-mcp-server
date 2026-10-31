@@ -1,10 +1,10 @@
 /**
  * @fileoverview Tests for the ris://document/{application}/{documentNumber} resource — the
  * markdown-only twin of ris_get_document, backed by the shared `renderDocument` helper,
- * including overflow degradation to a section outline plus a tool-retrieval notice.
- * Mocked the same way as the get_document tool suite: `buildDocumentContentUrl` delegates
- * to a real `RisService` instance (pure URL construction), `fetchDocumentContent` is a
- * `vi.fn()` resolving canned content.
+ * including overflow degradation to a section outline plus a tool-retrieval notice and PDF-only
+ * documents read as fenced extracted text. Mocked the same way as the get_document tool suite:
+ * `buildDocumentContentUrl` delegates to a real `RisService` instance (pure URL construction),
+ * `fetchDocumentContent` and `fetchDocumentBytes` are `vi.fn()`s resolving canned content.
  * @module tests/resources/ris-document.resource.test
  */
 
@@ -19,14 +19,17 @@ import {
   timeout,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { pdfParser } from '@cyanheads/mcp-ts-core/utils';
 import { createWorkerHandler } from '@cyanheads/mcp-ts-core/worker';
+import MarkdownIt from 'markdown-it';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { risDocumentResource } from '@/mcp-server/resources/definitions/ris-document.resource.js';
 import type { RisContentFormat } from '@/services/ris/ris-service.js';
 
-const { buildDocumentContentUrl, fetchDocumentContent } = vi.hoisted(() => ({
+const { buildDocumentContentUrl, fetchDocumentBytes, fetchDocumentContent } = vi.hoisted(() => ({
   buildDocumentContentUrl: vi.fn(),
+  fetchDocumentBytes: vi.fn(),
   fetchDocumentContent: vi.fn(),
 }));
 
@@ -41,7 +44,7 @@ vi.mock('@/services/ris/ris-service.js', async (importOriginal) => {
   );
   return {
     ...actual,
-    getRisService: () => ({ buildDocumentContentUrl, fetchDocumentContent }),
+    getRisService: () => ({ buildDocumentContentUrl, fetchDocumentBytes, fetchDocumentContent }),
   };
 });
 
@@ -112,8 +115,41 @@ function oversizedArticlesHtml(): string {
 
 beforeEach(() => {
   buildDocumentContentUrl.mockClear();
+  fetchDocumentBytes.mockReset();
   fetchDocumentContent.mockReset();
 });
+
+/** Read a PDF fixture as bytes. */
+function pdfFixture(name: string): Uint8Array {
+  return new Uint8Array(readFileSync(new URL(`../fixtures/ris/${name}`, import.meta.url)));
+}
+
+/** Serve `pdf` for every PDF fetch — a fresh copy each time, since extraction detaches it. */
+function servePdf(pdf: Uint8Array): void {
+  fetchDocumentBytes.mockImplementation((url: string) =>
+    Promise.resolve({ bytes: new Uint8Array(pdf), url }),
+  );
+}
+
+/** Serve `text` for every rendition fetch, reporting the URL it was asked for as the URL fetched. */
+function serveRendition(text: string): void {
+  fetchDocumentContent.mockImplementation((url: string) =>
+    Promise.resolve({ text, byteSize: text.length, url }),
+  );
+}
+
+/** The Avsv announcement folder on the default content host. */
+const AVSV_FOLDER = 'https://ogd.ris.bka.gv.at/Dokumente/Avsv/AVSV_2026_0062';
+
+/** Read `ris://document/{application}/{documentNumber}` through the handler. */
+async function readDocument(application: string, documentNumber: string): Promise<string> {
+  const ctx = createMockContext({
+    errors: risDocumentResource.errors,
+    uri: new URL(`ris://document/${application}/${documentNumber}`),
+  });
+  const params = risDocumentResource.params!.parse({ application, documentNumber });
+  return (await risDocumentResource.handler(params, ctx)) as string;
+}
 
 describe('risDocumentResource — resolves via the shared renderDocument helper', () => {
   it('returns markdown-converted document text for a full-text application', async () => {
@@ -196,18 +232,80 @@ describe('risDocumentResource — resolves via the shared renderDocument helper'
     expect(ordinals).not.toMatch(/\d\\\./u);
   });
 
-  it('falls back to the unavailable-format notice text for an authentic_pdf_only application', async () => {
-    const ctx = createMockContext({
-      errors: risDocumentResource.errors,
-      uri: new URL('ris://document/Bvb/BVB_BU_JE_20260703_9'),
-    });
-    const params = risDocumentResource.params!.parse({
-      application: 'Bvb',
-      documentNumber: 'BVB_BU_JE_20260703_9',
-    });
-    const result = await risDocumentResource.handler(params, ctx);
-    expect(result).toContain('Bvb publishes only the signed authentic PDF');
+  // The tool's PDF path backs this surface too (#97): a PDF-only document reads as its
+  // extracted text, fenced, since PDF text is not Markdown.
+  it('returns a PDF-only document’s extracted text, fenced, with the provenance note', async () => {
+    const pdf = pdfFixture('document-begut-companion-text-layer.pdf');
+    servePdf(pdf);
+    const { text } = await pdfParser.extractText(new Uint8Array(pdf));
+    const pages = text as string[];
+    const expected = pages
+      .map((page, i) => `--- Page ${i + 1} of ${pages.length} ---\n${page.trim()}`)
+      .join('\n\n');
+
+    const result = await readDocument('Mrp', 'MRP_20261021_67');
+
+    const fences = new MarkdownIt('default', { html: true })
+      .parse(result, {})
+      .flatMap((token) => (token.type === 'fence' ? [token.content] : []));
+    expect(fences).toEqual([`${expected}\n`]);
+    expect(result).toContain('Text extracted from the PDF');
+    expect(result).toContain(
+      'https://ogd.ris.bka.gv.at/Dokumente/Mrp/MRP_20261021_67/MRP_20261021_67.pdf',
+    );
     expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the unavailable-format notice text when an authentic PDF has no text layer', async () => {
+    servePdf(pdfFixture('document-no-text-layer.pdf'));
+    const result = await readDocument('Bvb', 'BVB_BU_JE_20260703_9');
+    expect(result).toContain('Bvb publishes only the signed authentic PDF');
+    expect(result).toContain('none of its 2 pages carries a text layer');
+    expect(fetchDocumentBytes).toHaveBeenCalledWith(
+      'https://ogd.ris.bka.gv.at/Dokumente/Bvb/BVB_BU_JE_20260703_9/BVB_BU_JE_20260703_9.pdfsig',
+      expect.anything(),
+      expect.objectContaining({ maxBytes: 16 * 1024 * 1024 }),
+    );
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+
+  it('keeps the metadata-only note for BgblAlt, with no fetch at all', async () => {
+    const result = await readDocument('BgblAlt', 'NOR12345');
+    expect(result).toContain('metadata-only');
+    expect(fetchDocumentBytes).not.toHaveBeenCalled();
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+
+  // Same converter as the tool: RIS's root-relative image paths resolve against the
+  // rendition's URL on the content host (#91).
+  it('emits the same absolute image URLs as the tool', async () => {
+    serveRendition(
+      readFileSync(new URL('../fixtures/ris/document-avsv-images.html', import.meta.url), 'utf8'),
+    );
+    const result = await readDocument('Avsv', 'AVSV_2026_0062');
+
+    expect(result).toContain(`![2\\*Converted](<${AVSV_FOLDER}/image001.jpg>)`);
+    expect(result).toContain(`![2\\*Converted](<${AVSV_FOLDER}/image002.jpg>)`);
+    expect(result).not.toContain('](/Dokumente');
+    expect(result).toContain('Dachverband der Sozialversicherungsträger');
+    expect(fetchDocumentBytes).not.toHaveBeenCalled();
+  });
+
+  it('keeps an image-only rendition’s image URLs, with the note, when its PDF has no text', async () => {
+    serveRendition(
+      '<div class="paperw100"><p><img src="/Dokumente/Avsv/AVSV_2026_0062/image001.jpg" alt="" /></p></div>',
+    );
+    servePdf(pdfFixture('document-no-text-layer.pdf'));
+    const result = await readDocument('Avsv', 'AVSV_2026_0062');
+
+    expect(result.startsWith(`![](<${AVSV_FOLDER}/image001.jpg>)\n\n`)).toBe(true);
+    expect(result).toContain('carries only 1 page image and no extractable text');
+    expect(result).toContain(`content_urls.pdf (${AVSV_FOLDER}/AVSV_2026_0062.pdf)`);
+    expect(fetchDocumentBytes).toHaveBeenCalledWith(
+      `${AVSV_FOLDER}/AVSV_2026_0062.pdf`,
+      expect.anything(),
+      expect.objectContaining({ maxBytes: 16 * 1024 * 1024 }),
+    );
   });
 });
 
@@ -321,6 +419,13 @@ describe('risDocumentResource — error mapping', () => {
       documentNumber: 'NOR40262691',
     });
     const err = await captureError(risDocumentResource.handler(params, ctx));
+    expect(err.code).toBe(JsonRpcErrorCode.NotFound);
+    expect(err.data).toMatchObject({ reason: 'document_not_found' });
+  });
+
+  it('maps a PDF-only document’s PDF 404 to the document_not_found contract error', async () => {
+    fetchDocumentBytes.mockRejectedValue(notFound('RIS content host returned 404.', {}));
+    const err = await readError('ris://document/Mrp/MRP_20991231_1');
     expect(err.code).toBe(JsonRpcErrorCode.NotFound);
     expect(err.data).toMatchObject({ reason: 'document_not_found' });
   });

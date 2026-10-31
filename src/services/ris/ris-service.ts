@@ -19,7 +19,8 @@
  * out of retry, and caller cancellation remains `RequestCancelled`. A content host's bot-check
  * page is a `ConfigurationError` with reason `content_host_blocked`, never retried.
  * Content fetches are allowlisted to the `/Dokumente/` tree on exactly those two origins, plus
- * a configured content host (SSRF guard).
+ * a configured content host (SSRF guard). A binary rendition (a PDF) is read under a byte
+ * ceiling the caller sets and a deadline shared by both attempts.
  * @module services/ris/ris-service
  */
 
@@ -169,6 +170,54 @@ function failOnBotCheck(error: unknown, origin: string): unknown {
     { reason: 'content_host_blocked', retryable: false },
     { cause: error },
   );
+}
+
+/** A binary rendition read whole, as {@link RisService.fetchDocumentBytes} returns it. */
+export interface RisDocumentBytes {
+  /** The rendition's bytes. */
+  readonly bytes: Uint8Array;
+  /** The URL fetched, on the configured content host. */
+  readonly url: string;
+}
+
+/**
+ * Read a response body into one buffer of at most `maxBytes`: a `Content-Length` over it fails
+ * before the body is read, and a body that streams past it is cancelled at the chunk that
+ * crosses it.
+ */
+async function readCappedBody(
+  response: Response,
+  maxBytes: number,
+  file: string,
+): Promise<Uint8Array> {
+  const tooLarge = () =>
+    validationError(`RIS content ${file} is over the ${maxBytes}-byte read ceiling.`, {
+      maxBytes,
+      reason: 'content_too_large',
+    });
+  if (Number(response.headers.get('content-length')) > maxBytes) {
+    await response.body?.cancel();
+    throw tooLarge();
+  }
+  const reader = response.body?.getReader();
+  if (reader === undefined) return new Uint8Array();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (let read = await reader.read(); !read.done; read = await reader.read()) {
+    total += read.value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw tooLarge();
+    }
+    chunks.push(read.value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 /** Rendition formats a content URL can be constructed for. */
@@ -388,6 +437,54 @@ export class RisService {
         context: requestContext,
         maxRetries: CONTENT_MAX_RETRIES,
         operation: 'RisService.fetchDocumentContent',
+        signal: ctx.signal,
+      },
+    );
+  }
+
+  /**
+   * Fetch one binary rendition (a PDF) from the content host, allowlist-guarded like
+   * {@link fetchDocumentContent} and retried the same way, but bounded on both axes a caller
+   * needs before it can afford to process the bytes: `maxBytes` caps what is read (see
+   * {@link readCappedBody}), and `deadlineMs` is one wall-clock budget across both attempts and
+   * the backoff between them, each attempt's fetch capped at whatever is left of it.
+   *
+   * @throws {McpError} `ValidationError` with `data.reason: 'content_too_large'` past
+   *   `maxBytes`, never retried; `NotFound` for a 404; `Timeout` once `deadlineMs` runs out;
+   *   otherwise the same classification as {@link fetchDocumentContent}.
+   */
+  async fetchDocumentBytes(
+    url: string,
+    ctx: Context,
+    limits: { readonly deadlineMs: number; readonly maxBytes: number },
+  ): Promise<RisDocumentBytes> {
+    const target = assertFetchableDocumentUrl(url, this.config.contentBaseUrl);
+    const file = target.pathname.slice(target.pathname.lastIndexOf('/') + 1);
+    const requestContext = this.requestContext('RisService.fetchDocumentBytes', ctx);
+    return await withRetry(
+      async ({ remainingMs, signal }) => {
+        const response = await fetchWithTimeout(
+          target,
+          Math.min(CONTENT_TIMEOUT_MS, remainingMs),
+          requestContext,
+          {
+            expectedStatuses: [404],
+            headers: { 'User-Agent': this.userAgent() },
+            signal,
+          },
+        ).catch((error: unknown) => {
+          throw failOnBotCheck(error, target.origin);
+        });
+        const bytes = await readCappedBody(response, limits.maxBytes, file);
+        ctx.log.debug('RIS content fetched', { byteSize: bytes.byteLength, file });
+        return { bytes, url: target.href };
+      },
+      {
+        baseDelayMs: RETRY_BASE_DELAY_MS,
+        context: requestContext,
+        deadlineMs: limits.deadlineMs,
+        maxRetries: CONTENT_MAX_RETRIES,
+        operation: 'RisService.fetchDocumentBytes',
         signal: ctx.signal,
       },
     );

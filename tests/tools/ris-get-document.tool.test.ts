@@ -3,11 +3,12 @@
  * (rejected before any network call), format handling (markdown/html/xml/urls_only) across
  * full, authentic_pdf_only, pdf_only, and metadata-only applications, screen-reader-twin
  * stripping at the markdown boundary, overflow-to-outline and selective section retrieval
- * (including unmatched-selector disclosure), error-contract mapping, and format() parity. The
- * RIS service module is mocked so the suite is fully offline: `buildDocumentContentUrl`
- * delegates to a real `RisService` instance (pure URL construction — no network),
- * `fetchDocumentContent` is a `vi.fn()` resolving canned content — for the rendering cases,
- * real RIS markup captured under `tests/fixtures/ris/`.
+ * (including unmatched-selector disclosure), PDF text extraction and its degradations,
+ * image-only renditions, error-contract mapping, and format() parity. The RIS service module is
+ * mocked so the suite is fully offline: `buildDocumentContentUrl` delegates to a real
+ * `RisService` instance (pure URL construction — no network), `fetchDocumentContent` and
+ * `fetchDocumentBytes` are `vi.fn()`s resolving canned content — for the rendering cases, real
+ * RIS markup and PDFs captured under `tests/fixtures/ris/`.
  * @module tests/tools/ris-get-document.tool.test
  */
 
@@ -22,8 +23,9 @@ import {
   timeout,
 } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
-import { markdown } from '@cyanheads/mcp-ts-core/utils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { markdown, pdfParser } from '@cyanheads/mcp-ts-core/utils';
+import MarkdownIt from 'markdown-it';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   addressableSections,
@@ -38,18 +40,21 @@ import {
   windowDocument,
 } from '@/mcp-server/tools/definitions/ris-get-document.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
-import type { RisContentFormat } from '@/services/ris/ris-service.js';
+import { type RisContentFormat, RisService } from '@/services/ris/ris-service.js';
 
 import {
   contentText,
   contractError,
+  HOSTILE_TEXT,
   linkDestinations,
   readCommonMark,
+  type ToolResult,
   type WireError,
 } from './_wire.js';
 
-const { buildDocumentContentUrl, fetchDocumentContent } = vi.hoisted(() => ({
+const { buildDocumentContentUrl, fetchDocumentBytes, fetchDocumentContent } = vi.hoisted(() => ({
   buildDocumentContentUrl: vi.fn(),
+  fetchDocumentBytes: vi.fn(),
   fetchDocumentContent: vi.fn(),
 }));
 
@@ -64,7 +69,7 @@ vi.mock('@/services/ris/ris-service.js', async (importOriginal) => {
   );
   return {
     ...actual,
-    getRisService: () => ({ buildDocumentContentUrl, fetchDocumentContent }),
+    getRisService: () => ({ buildDocumentContentUrl, fetchDocumentBytes, fetchDocumentContent }),
   };
 });
 
@@ -143,9 +148,19 @@ const ABSATZ_LISTS_HTML = fixture('document-brkons-absatz-lists.html');
  */
 const ORDINALS_HTML = fixture('document-bgblauth-ordinals.html');
 
+/**
+ * Serve `text` for every rendition fetch, reporting the URL it was asked for as the URL fetched —
+ * as the service does, whose `url` is always the rendition's URL on the content host.
+ */
+function serveRendition(text: string): void {
+  fetchDocumentContent.mockImplementation((url: string) =>
+    Promise.resolve({ text, byteSize: text.length, url }),
+  );
+}
+
 /** Resolve the tool against canned rendition text. */
 async function callTool(html: string, input: Record<string, unknown>) {
-  fetchDocumentContent.mockResolvedValue({ text: html, byteSize: html.length, url: 'https://x' });
+  serveRendition(html);
   const ctx = createMockContext({ errors: risGetDocument.errors });
   const parsed = risGetDocument.input.parse({
     document_number: 'NOR40262691',
@@ -157,6 +172,7 @@ async function callTool(html: string, input: Record<string, unknown>) {
 
 beforeEach(() => {
   buildDocumentContentUrl.mockClear();
+  fetchDocumentBytes.mockReset();
   fetchDocumentContent.mockReset();
 });
 
@@ -742,9 +758,41 @@ describe('risGetDocument — companion documents (materials)', () => {
   // html or xml twin — nearly all of them review-draft covering letters — and RIS answers 404
   // for a rendition it does not list. The contract's own recovery is written for the
   // document_number + application mode and would send this caller to re-copy an identifier
-  // they never passed.
-  it('recovers a companion 404 by naming the missing rendition, not the document number', async () => {
+  // they never passed. markdown reads such a companion's PDF instead (#97), so html and xml
+  // point there.
+  it.each(['html', 'xml'] as const)(
+    'recovers a companion %s 404 by naming the missing rendition and format: markdown',
+    async (format) => {
+      fetchDocumentContent.mockRejectedValue(
+        notFound('RIS content host returned 404.', { url: 'https://x' }),
+      );
+      const ctx = createMockContext({ errors: risGetDocument.errors });
+      const input = risGetDocument.input.parse({
+        document_url: `${LEGACY_FOLDER}/COO_2026_100_2_1907117.html`,
+        format,
+      });
+      const err = await captureError(risGetDocument.handler(input, ctx));
+
+      expect(err.code).toBe(JsonRpcErrorCode.NotFound);
+      expect(err.data).toMatchObject({ reason: 'document_not_found' });
+      expect(err.data?.recovery).toMatchObject({
+        hint: expect.stringContaining(`no ${format} rendition`),
+      });
+      expect(err.data?.recovery).toMatchObject({
+        hint: expect.stringContaining('format: markdown'),
+      });
+      expect(err.data?.recovery).not.toMatchObject({
+        hint: expect.stringContaining('document_number'),
+      });
+      expect(fetchDocumentBytes).not.toHaveBeenCalled();
+    },
+  );
+
+  it('calls a companion URL stale when its html and its PDF both 404', async () => {
     fetchDocumentContent.mockRejectedValue(
+      notFound('RIS content host returned 404.', { url: 'https://x' }),
+    );
+    fetchDocumentBytes.mockRejectedValue(
       notFound('RIS content host returned 404.', { url: 'https://x' }),
     );
     const ctx = createMockContext({ errors: risGetDocument.errors });
@@ -753,13 +801,18 @@ describe('risGetDocument — companion documents (materials)', () => {
     });
     const err = await captureError(risGetDocument.handler(input, ctx));
 
+    expect(fetchDocumentBytes).toHaveBeenCalledWith(
+      onContentHost(`${LEGACY_FOLDER}/COO_2026_100_2_1907117.pdf`),
+      ctx,
+      expect.objectContaining({ maxBytes: 16 * 1024 * 1024 }),
+    );
     expect(err.code).toBe(JsonRpcErrorCode.NotFound);
     expect(err.data).toMatchObject({ reason: 'document_not_found' });
     expect(err.data?.recovery).toMatchObject({
-      hint: expect.stringContaining('no markdown rendition'),
+      hint: expect.stringContaining('stale'),
     });
     expect(err.data?.recovery).toMatchObject({
-      hint: expect.stringContaining('urls_only'),
+      hint: expect.stringContaining('ris_search_drafts'),
     });
     expect(err.data?.recovery).not.toMatchObject({
       hint: expect.stringContaining('document_number'),
@@ -777,6 +830,8 @@ describe('risGetDocument — companion documents (materials)', () => {
     expect(err.data?.recovery).toMatchObject({
       hint: expect.stringContaining('ris_lookup_citation'),
     });
+    // A full-text document's html 404 is a wrong number, never a cue to read its PDF.
+    expect(fetchDocumentBytes).not.toHaveBeenCalled();
   });
 
   // RIS 404s the renditions it does not list for a companion: RTF is published for many but
@@ -1155,24 +1210,30 @@ describe('risGetDocument — ordinal escapes in markdown (#60)', () => {
 });
 
 describe('risGetDocument — format_unavailable degradation (notice, not error)', () => {
-  it('surfaces authentic_pdf_url and a notice for an authentic_pdf_only application', async () => {
-    const ctx = createMockContext({ errors: risGetDocument.errors });
-    const input = risGetDocument.input.parse({
-      document_number: 'BVB_BU_JE_20260703_9',
-      application: 'Bvb',
-      format: 'markdown',
-    });
-    const result = await risGetDocument.handler(input, ctx);
-    expect(result.text).toBeUndefined();
-    expect(result.content_urls).toEqual({});
-    expect(result.authentic_pdf_url).toBe(
-      'https://ogd.ris.bka.gv.at/Dokumente/Bvb/BVB_BU_JE_20260703_9/BVB_BU_JE_20260703_9.pdfsig',
-    );
-    const notice = getEnrichment(ctx).notice as string;
-    expect(notice).toContain('Bvb publishes only the signed authentic PDF');
-    expect(notice).toContain(result.authentic_pdf_url as string);
-    expect(fetchDocumentContent).not.toHaveBeenCalled();
-  });
+  // markdown reads the PDF's text (#97); html and xml have no rendition to return.
+  it.each(['html', 'xml'] as const)(
+    'surfaces authentic_pdf_url and a notice for an authentic_pdf_only application (%s)',
+    async (format) => {
+      const ctx = createMockContext({ errors: risGetDocument.errors });
+      const input = risGetDocument.input.parse({
+        document_number: 'BVB_BU_JE_20260703_9',
+        application: 'Bvb',
+        format,
+      });
+      const result = await risGetDocument.handler(input, ctx);
+      expect(result.text).toBeUndefined();
+      expect(result.content_urls).toEqual({});
+      expect(result.authentic_pdf_url).toBe(
+        'https://ogd.ris.bka.gv.at/Dokumente/Bvb/BVB_BU_JE_20260703_9/BVB_BU_JE_20260703_9.pdfsig',
+      );
+      const notice = getEnrichment(ctx).notice as string;
+      expect(notice).toContain('Bvb publishes only the signed authentic PDF');
+      expect(notice).toContain(result.authentic_pdf_url as string);
+      expect(notice).toContain('format: markdown returns the text extracted from it');
+      expect(fetchDocumentContent).not.toHaveBeenCalled();
+      expect(fetchDocumentBytes).not.toHaveBeenCalled();
+    },
+  );
 
   it('surfaces content_urls.pdf and a notice for a pdf_only application', async () => {
     const ctx = createMockContext({ errors: risGetDocument.errors });
@@ -1190,26 +1251,819 @@ describe('risGetDocument — format_unavailable degradation (notice, not error)'
     const notice = getEnrichment(ctx).notice as string;
     expect(notice).toContain('Upts publishes a PDF only');
     expect(notice).toContain(result.content_urls.pdf as string);
+    expect(notice).toContain('format: markdown returns the text extracted from it');
     expect(fetchDocumentContent).not.toHaveBeenCalled();
+    expect(fetchDocumentBytes).not.toHaveBeenCalled();
   });
 
-  it('surfaces no content URLs and the ÖNB guidance for a metadata-only application', async () => {
+  // A sections:[…] selector sent with a format_unavailable result is reported as ignored.
+  it('says a sections:[…] selector was ignored on a pdf_only application’s html request', async () => {
     const ctx = createMockContext({ errors: risGetDocument.errors });
     const input = risGetDocument.input.parse({
-      document_number: 'NOR12345',
-      application: 'BgblAlt',
-      format: 'xml',
+      document_number: 'UPTS_2026_1',
+      application: 'Upts',
+      format: 'html',
+      sections: ['Part 2 of 3'],
     });
     const result = await risGetDocument.handler(input, ctx);
     expect(result.text).toBeUndefined();
-    expect(result.content_urls).toEqual({});
-    expect(result.authentic_pdf_url).toBeUndefined();
-    expect(result.binding_status).toBe('historical_record');
     const notice = getEnrichment(ctx).notice as string;
-    expect(notice).toContain('metadata-only');
-    expect(notice).toContain('ris_search_gazette');
-    expect(buildDocumentContentUrl).not.toHaveBeenCalled();
+    expect(notice.startsWith('sections:[…] was ignored')).toBe(true);
+    expect(notice).toContain('"Part 2 of 3"');
+    expect(notice).toContain('Upts publishes a PDF only');
+  });
+
+  it.each(['markdown', 'xml'] as const)(
+    'surfaces no content URLs and the ÖNB guidance for a metadata-only application (%s)',
+    async (format) => {
+      const ctx = createMockContext({ errors: risGetDocument.errors });
+      const input = risGetDocument.input.parse({
+        document_number: 'NOR12345',
+        application: 'BgblAlt',
+        format,
+      });
+      const result = await risGetDocument.handler(input, ctx);
+      expect(result.text).toBeUndefined();
+      expect(result.content_urls).toEqual({});
+      expect(result.authentic_pdf_url).toBeUndefined();
+      expect(result.binding_status).toBe('historical_record');
+      const notice = getEnrichment(ctx).notice as string;
+      expect(notice).toContain('metadata-only');
+      expect(notice).toContain('ris_search_gazette');
+      expect(buildDocumentContentUrl).not.toHaveBeenCalled();
+      expect(fetchDocumentContent).not.toHaveBeenCalled();
+      expect(fetchDocumentBytes).not.toHaveBeenCalled();
+    },
+  );
+});
+
+/** Every image source a CommonMark parse of `markdown` finds, in document order. */
+function imageSources(markdown: string): string[] {
+  return new MarkdownIt('default', { html: true })
+    .parse(markdown, {})
+    .flatMap((token) =>
+      (token.children ?? []).flatMap((child) =>
+        child.type === 'image' ? [String(child.attrGet('src') ?? '')] : [],
+      ),
+    );
+}
+
+// RIS writes image sources root-relative (`/Dokumente/…`), which only resolve against the host
+// the rendition came from. markdown resolves each against the rendition's URL (#91); html and
+// xml stay exactly as published.
+describe('risGetDocument — image references in markdown (#91)', () => {
+  /** A real Avsv announcement: header text, then two scanned pages as images. */
+  const IMAGES_HTML = fixture('document-avsv-images.html');
+  const AVSV = { application: 'Avsv', document_number: 'AVSV_2026_0062' } as const;
+  const AVSV_FOLDER = 'https://ogd.ris.bka.gv.at/Dokumente/Avsv/AVSV_2026_0062';
+
+  it('resolves a main document’s root-relative images against its rendition URL, on both surfaces', async () => {
+    serveRendition(IMAGES_HTML);
+    const result = await runToolContract(risGetDocument, AVSV);
+    expect(result.isError).not.toBe(true);
+    const sc = result.structuredContent as { notice?: string; text: string; text_source: string };
+    const expected = [`${AVSV_FOLDER}/image001.jpg`, `${AVSV_FOLDER}/image002.jpg`];
+
+    expect(sc.text).toContain(`![2\\*Converted](<${AVSV_FOLDER}/image001.jpg>)`);
+    expect(sc.text).not.toContain('](/Dokumente');
+    expect(imageSources(sc.text)).toEqual(expected);
+    expect(imageSources(contentText(result))).toEqual(expected);
+    // Its text stays, and a rendition carrying text never reads its PDF or gains a notice.
+    expect(sc.text).toContain(
+      'Amtliche Verlautbarung der österreichischen Sozialversicherung im Internet',
+    );
+    expect(sc.text_source).toBe('html');
+    expect(sc.notice).toBeUndefined();
+    expect(fetchDocumentBytes).not.toHaveBeenCalled();
+  });
+
+  it('resolves against the content host when the document_url arrived on www.', async () => {
+    serveRendition(IMAGES_HTML);
+    const result = await runToolContract(risGetDocument, {
+      document_url: 'https://www.ris.bka.gv.at/Dokumente/Avsv/AVSV_2026_0062/AVSV_2026_0062.html',
+    });
+    const { text } = result.structuredContent as { text: string };
+
+    expect(imageSources(text)).toEqual([
+      `${AVSV_FOLDER}/image001.jpg`,
+      `${AVSV_FOLDER}/image002.jpg`,
+    ]);
+  });
+
+  it('resolves an image in a table cell, inside a link, and in a nested list item', async () => {
+    const folder = 'https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_X';
+    serveRendition(
+      [
+        '<table><tr><td><img src="/Dokumente/a.gif" alt="A"></td></tr></table>',
+        '<p><a href="https://example.org/x"><img src="b.gif" alt="B"></a></p>',
+        '<ol><li><p>Text</p><ol><li><img src="../c.gif" title="C"></li></ol></li></ol>',
+        '<p><img src="data:image/gif;base64,R0lGOD"><img alt="no source"></p>',
+      ].join(''),
+    );
+    const result = await runToolContract(risGetDocument, {
+      document_url: `${folder}/BEGUT_X.html`,
+    });
+    const { text } = result.structuredContent as { text: string };
+    const expected = [
+      'https://ogd.ris.bka.gv.at/Dokumente/a.gif',
+      `${folder}/b.gif`,
+      'https://ogd.ris.bka.gv.at/Dokumente/Begut/c.gif',
+    ];
+
+    expect(imageSources(text)).toEqual(expected);
+    expect(imageSources(contentText(result))).toEqual(expected);
+    expect(linkDestinations(text)).toEqual(['https://example.org/x']);
+    // A data: image and an image with no source are dropped, as the converter always has.
+    expect(text).not.toContain('data:');
+    expect(text).not.toContain('no source');
+  });
+
+  it.each(['html', 'xml'] as const)(
+    'returns the %s rendition byte-identical, its relative image paths intact',
+    async (format) => {
+      const { result } = await callTool(IMAGES_HTML, { ...AVSV, format });
+
+      expect(result.text).toBe(IMAGES_HTML);
+      expect(fetchDocumentBytes).not.toHaveBeenCalled();
+    },
+  );
+});
+
+// RIS publishes some documents only as a PDF — Mrp and Upts plainly, Bvb, GrA, and KmGer as
+// the signed PDF, and one draft companion in eight with no html twin. markdown reads the PDF's
+// text layer for them (#97); html and xml still have nothing to return.
+describe('risGetDocument — PDF text (#97)', () => {
+  /** A real three-page Begut companion PDF (COO_2026_100_2_1612856) with a text layer. */
+  const TEXT_LAYER_PDF = new Uint8Array(
+    readFileSync(
+      new URL('../fixtures/ris/document-begut-companion-text-layer.pdf', import.meta.url),
+    ),
+  );
+  /** A two-page PDF of vector drawing only — no text layer to extract. */
+  const NO_TEXT_PDF = new Uint8Array(
+    readFileSync(new URL('../fixtures/ris/document-no-text-layer.pdf', import.meta.url)),
+  );
+  const MRP = { application: 'Mrp', document_number: 'MRP_20261021_67' } as const;
+  const MRP_PDF = 'https://ogd.ris.bka.gv.at/Dokumente/Mrp/MRP_20261021_67/MRP_20261021_67.pdf';
+  const KMGER = 'KMGER_LVWGTI_20260807_LVwG_102_123_2026';
+  const KMGER_PDFSIG = `https://ogd.ris.bka.gv.at/Dokumente/KmGer/${KMGER}/${KMGER}.pdfsig`;
+  const SIXTEEN_MIB = 16 * 1024 * 1024;
+  const COMMONMARK = new MarkdownIt('default', { html: true });
+  const realService = new RisService('test-agent/0.0.0');
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  /** Serve `pdf` for every PDF fetch — a fresh copy each time, since extraction detaches it. */
+  function servePdf(pdf: Uint8Array): void {
+    fetchDocumentBytes.mockImplementation((url: string) =>
+      Promise.resolve({ bytes: new Uint8Array(pdf), url }),
+    );
+  }
+
+  /** Send the PDF fetch through the real service over `fetchMock`: ceiling, deadline, retry. */
+  function overNetwork(fetchMock: ReturnType<typeof vi.fn>): void {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchDocumentBytes.mockImplementation((...args: Parameters<RisService['fetchDocumentBytes']>) =>
+      realService.fetchDocumentBytes(...args),
+    );
+  }
+
+  /** A fetch that never answers and rejects once its signal aborts. */
+  function hangingFetch(): ReturnType<typeof vi.fn> {
+    return vi.fn(
+      (_url: unknown, init: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => {
+            reject(init.signal?.reason as Error);
+          });
+        }),
+    );
+  }
+
+  /** The page text extraction yields for `pdf`, joined under the page lines the tool emits. */
+  async function pageMarkedText(pdf: Uint8Array): Promise<string> {
+    const { text } = await pdfParser.extractText(new Uint8Array(pdf));
+    const pages = text as string[];
+    return pages
+      .map((page, i) => `--- Page ${i + 1} of ${pages.length} ---\n${page.trim()}`)
+      .join('\n\n');
+  }
+
+  /** The literal of every fenced code block in `markdown`, as a CommonMark reader takes it. */
+  function fencedBlocks(markdown: string): string[] {
+    return COMMONMARK.parse(markdown, {}).flatMap((token) =>
+      token.type === 'fence' ? [token.content] : [],
+    );
+  }
+
+  /** The structuredContent of a successful contract run, with the fields the PDF arm sets. */
+  function record(result: ToolResult) {
+    expect(result.isError).not.toBe(true);
+    return result.structuredContent as {
+      authentic_pdf_url?: string;
+      binding_status: string;
+      byte_size?: number;
+      content_urls: Record<string, string>;
+      kind: string;
+      notice?: string;
+      sections?: { bytes: number; name: string }[];
+      text?: string;
+      text_source?: string;
+    };
+  }
+
+  it('returns a PDF-only document’s page-marked text, fenced in content[], with its provenance', async () => {
+    servePdf(TEXT_LAYER_PDF);
+    const expected = await pageMarkedText(TEXT_LAYER_PDF);
+    const result = await runToolContract(risGetDocument, MRP);
+    const sc = record(result);
+
+    expect(sc).toMatchObject({
+      binding_status: 'preparatory',
+      byte_size: new TextEncoder().encode(expected).length,
+      content_urls: { pdf: MRP_PDF },
+      kind: 'full',
+      text: expected,
+      text_source: 'pdf',
+    });
+    expect(sc.text?.startsWith('--- Page 1 of 3 ---\n1 von 3\nTextgegenüberstellung\n')).toBe(true);
+    expect(sc.text).toContain('\n\n--- Page 2 of 3 ---\n2 von 3\n');
+    expect(sc.text).toContain('\n\n--- Page 3 of 3 ---\n3 von 3\n');
+    expect(sc.notice).toContain('Text extracted from the PDF');
+    expect(sc.notice).toContain(MRP_PDF);
+    expect(fetchDocumentBytes).toHaveBeenCalledTimes(1);
+    expect(fetchDocumentBytes).toHaveBeenCalledWith(MRP_PDF, expect.anything(), {
+      deadlineMs: expect.any(Number),
+      maxBytes: SIXTEEN_MIB,
+    });
     expect(fetchDocumentContent).not.toHaveBeenCalled();
+
+    // content[]: the text reads back from one fenced block, byte for byte, and the notice reads
+    // back from the trailer — PDF text is not Markdown, so nothing in it renders live.
+    const content = contentText(result);
+    expect(fencedBlocks(content)).toEqual([`${expected}\n`]);
+    expect(readCommonMark(content)).toContain(sc.notice as string);
+    expect(content).toContain('**Text source:** pdf');
+  });
+
+  it('reads the signed PDF of an authentic-PDF-only application and names it the binding artifact', async () => {
+    servePdf(TEXT_LAYER_PDF);
+    const result = await runToolContract(risGetDocument, {
+      application: 'KmGer',
+      document_number: KMGER,
+    });
+    const sc = record(result);
+
+    expect(fetchDocumentBytes).toHaveBeenCalledWith(KMGER_PDFSIG, expect.anything(), {
+      deadlineMs: expect.any(Number),
+      maxBytes: SIXTEEN_MIB,
+    });
+    expect(sc).toMatchObject({
+      authentic_pdf_url: KMGER_PDFSIG,
+      binding_status: 'authentic',
+      content_urls: {},
+      kind: 'full',
+      text_source: 'pdf',
+    });
+    expect(sc.notice).toContain(`authentic_pdf_url (${KMGER_PDFSIG})`);
+    expect(sc.notice).toContain('legally binding');
+  });
+
+  it('fences PDF text that carries backtick runs and Markdown syntax so it reads back verbatim', async () => {
+    servePdf(TEXT_LAYER_PDF);
+    const page = ['# Kopf', '1. Absatz eins', '- Punkt', '```', '``````', '~~~', '> Zitat'].join(
+      '\n',
+    );
+    vi.spyOn(pdfParser, 'extractText').mockResolvedValue({ totalPages: 1, text: [page] });
+    const result = await runToolContract(risGetDocument, MRP);
+    const sc = record(result);
+
+    expect(sc.text).toBe(`--- Page 1 of 1 ---\n${page}`);
+    expect(fencedBlocks(contentText(result))).toEqual([`${sc.text}\n`]);
+  });
+
+  it('outlines a long PDF text into Part n of N windows that rejoin to the whole text', async () => {
+    servePdf(TEXT_LAYER_PDF);
+    const pages = Array.from({ length: 30 }, (_, p) =>
+      Array.from(
+        { length: 30 },
+        (_, l) =>
+          `Seite ${p + 1} Zeile ${l + 1}: Der Senat hat erwogen, dass die Beschwerde unbegründet ist.`,
+      ).join('\n'),
+    );
+    const whole = pages.map((page, i) => `--- Page ${i + 1} of 30 ---\n${page}`).join('\n\n');
+    vi.spyOn(pdfParser, 'extractText').mockResolvedValue({ totalPages: 30, text: pages });
+
+    const outline = record(await runToolContract(risGetDocument, MRP));
+    expect(outline).toMatchObject({
+      byte_size: new TextEncoder().encode(whole).length,
+      kind: 'outline',
+      text_source: 'pdf',
+      truncated: true,
+    });
+    const names = outline.sections?.map((section) => section.name) ?? [];
+    expect(names.length).toBeGreaterThanOrEqual(2);
+    expect(names).toEqual(names.map((_, i) => `Part ${i + 1} of ${names.length}`));
+    // The provenance and the outline guidance share the one notice field.
+    expect(outline.notice).toContain('Text extracted from the PDF');
+    expect(outline.notice).toContain('Document too large to return in full');
+
+    const windows: string[] = [];
+    for (const name of names) {
+      const window = record(await runToolContract(risGetDocument, { ...MRP, sections: [name] }));
+      expect(window).toMatchObject({ kind: 'full', text_source: 'pdf' });
+      expect(window.notice).toContain('Text extracted from the PDF');
+      windows.push(window.text as string);
+    }
+    expect(windows.join('')).toBe(whole);
+  });
+
+  it('reads a companion filed as a PDF only when its html rendition 404s', async () => {
+    const folder = 'https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_100_2_1612831';
+    fetchDocumentContent.mockRejectedValue(
+      notFound('RIS content host returned 404.', { url: 'https://x' }),
+    );
+    servePdf(TEXT_LAYER_PDF);
+    const result = await runToolContract(risGetDocument, {
+      document_url: `${folder}/COO_2026_100_2_1612856.pdf`,
+    });
+    const sc = record(result);
+
+    expect(fetchDocumentContent).toHaveBeenCalledWith(
+      `${folder}/COO_2026_100_2_1612856.html`,
+      expect.anything(),
+    );
+    expect(fetchDocumentBytes).toHaveBeenCalledWith(
+      `${folder}/COO_2026_100_2_1612856.pdf`,
+      expect.anything(),
+      { deadlineMs: expect.any(Number), maxBytes: SIXTEEN_MIB },
+    );
+    expect(sc).toMatchObject({
+      kind: 'full',
+      text: await pageMarkedText(TEXT_LAYER_PDF),
+      text_source: 'pdf',
+    });
+    expect(sc.notice).toContain('companion document has no html rendition');
+    expect(sc.notice).toContain(`${folder}/COO_2026_100_2_1612856.pdf`);
+  });
+
+  it('keeps a full-text rendition on its one html fetch, with text_source html and no PDF read', async () => {
+    const { result } = await callTool(SR_ONLY_HTML, {});
+
+    expect(result.text_source).toBe('html');
+    expect(fetchDocumentContent).toHaveBeenCalledTimes(1);
+    expect(fetchDocumentBytes).not.toHaveBeenCalled();
+  });
+
+  it('answers an unknown document number on a PDF-only application with document_not_found', async () => {
+    fetchDocumentBytes.mockRejectedValue(
+      notFound('RIS content host returned 404.', { url: MRP_PDF }),
+    );
+    const err = await contractError(risGetDocument, {
+      application: 'Mrp',
+      document_number: 'MRP_20991231_1',
+    });
+
+    expect(err.code).toBe(JsonRpcErrorCode.NotFound);
+    expect(err.data).toMatchObject({ reason: 'document_not_found' });
+    expect(err.data?.recovery).toMatchObject({
+      hint: expect.stringContaining('ris_lookup_citation'),
+    });
+  });
+
+  describe('degrades to the format_unavailable notice, never to empty text', () => {
+    /** Assert the degraded success: no text on either surface, the notice naming `reason`. */
+    function expectDegraded(result: ToolResult, reason: string): string {
+      const sc = record(result);
+      expect(sc).toMatchObject({ content_urls: { pdf: MRP_PDF }, kind: 'full' });
+      expect(sc.text).toBeUndefined();
+      expect(sc.text_source).toBeUndefined();
+      expect(sc.notice).toContain(
+        `Mrp publishes a PDF only — no markdown rendition exists. Fetch the PDF from content_urls.pdf (${MRP_PDF}).`,
+      );
+      expect(sc.notice).toContain(reason);
+      expect(fencedBlocks(contentText(result))).toEqual([]);
+      return sc.notice as string;
+    }
+
+    it('for a PDF with no text layer on any page', async () => {
+      servePdf(NO_TEXT_PDF);
+      expectDegraded(
+        await runToolContract(risGetDocument, MRP),
+        'none of its 2 pages carries a text layer',
+      );
+    });
+
+    it('for bytes that are not a readable PDF', async () => {
+      servePdf(new TextEncoder().encode('<html><body>Not a PDF</body></html>'));
+      expectDegraded(await runToolContract(risGetDocument, MRP), 'could not be read as a PDF');
+    });
+
+    it('for a PDF over the 16 MiB ceiling, without reading past it', async () => {
+      let pulled = 0;
+      const fetchMock = vi.fn(() => {
+        const body = new ReadableStream<Uint8Array>({
+          pull(controller) {
+            pulled += 1;
+            controller.enqueue(new Uint8Array(1024 * 1024));
+          },
+        });
+        return Promise.resolve(new Response(body, { status: 200 }));
+      });
+      overNetwork(fetchMock);
+      const spy = vi.spyOn(pdfParser, 'extractText');
+
+      expectDegraded(
+        await runToolContract(risGetDocument, MRP),
+        `over the ${SIXTEEN_MIB}-byte ceiling`,
+      );
+      expect(pulled).toBeLessThan(24);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('for a PDF fetch that runs out of time, inside the call’s one deadline', async () => {
+      const fetchMock = hangingFetch();
+      overNetwork(fetchMock);
+      vi.useFakeTimers();
+      const t0 = Date.now();
+      let settledAt = 0;
+      const pending = runToolContract(risGetDocument, MRP).then((result) => {
+        settledAt = Date.now();
+        return result;
+      });
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      expectDegraded(await pending, 'within this call’s time budget');
+      // Both attempts and the backoff fit inside the budget, ahead of the extraction headroom.
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(settledAt - t0).toBeLessThanOrEqual(38_000);
+    });
+
+    it('for a content host answering 5xx on both attempts', async () => {
+      const fetchMock = vi.fn(() =>
+        Promise.resolve(new Response('<html>Service Unavailable</html>', { status: 503 })),
+      );
+      overNetwork(fetchMock);
+      vi.useFakeTimers();
+      const pending = runToolContract(risGetDocument, MRP);
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expectDegraded(await pending, 'the content host failed to return it');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('for a content host answering 429 on every attempt', async () => {
+      const fetchMock = vi.fn(() =>
+        Promise.resolve(new Response('Too Many Requests', { status: 429 })),
+      );
+      overNetwork(fetchMock);
+      vi.useFakeTimers();
+      const pending = runToolContract(risGetDocument, MRP);
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expectDegraded(await pending, 'the content host is limiting requests');
+    });
+
+    it('for a content host refusing the PDF with a 4xx other than 404', async () => {
+      const fetchMock = vi.fn(() => Promise.resolve(new Response('Forbidden', { status: 403 })));
+      overNetwork(fetchMock);
+      vi.useFakeTimers();
+      const pending = runToolContract(risGetDocument, MRP);
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expectDegraded(await pending, 'the content host answered HTTP 403');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    // A content host that challenges automated clients degrades a PDF-only markdown read to the
+    // notice, never to an error.
+    it('for a content host answering with a bot-check page, without retrying it', async () => {
+      const page = fixture('error-503-security-check.html');
+      const fetchMock = vi.fn(() =>
+        Promise.resolve(
+          new Response(page, { headers: { 'content-type': 'text/html' }, status: 503 }),
+        ),
+      );
+      overNetwork(fetchMock);
+      vi.useFakeTimers();
+      const pending = runToolContract(risGetDocument, MRP);
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      const notice = expectDegraded(await pending, 'the content host refused automated access');
+      expect(notice).toContain('bot-check page');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('and says a sections:[…] selector was ignored', async () => {
+      servePdf(NO_TEXT_PDF);
+      const notice = expectDegraded(
+        await runToolContract(risGetDocument, { ...MRP, sections: ['Part 2 of 3'] }),
+        'none of its 2 pages carries a text layer',
+      );
+      expect(notice.startsWith('sections:[…] was ignored')).toBe(true);
+      expect(notice).toContain('"Part 2 of 3"');
+    });
+
+    it('when a companion’s html 404 arrives too late to leave time for its PDF', async () => {
+      vi.useFakeTimers();
+      fetchDocumentContent.mockImplementation(
+        () =>
+          new Promise((_resolve, reject) => {
+            setTimeout(() => {
+              reject(notFound('RIS content host returned 404.', { url: 'https://x' }));
+            }, 40_000);
+          }),
+      );
+      servePdf(TEXT_LAYER_PDF);
+      const pending = runToolContract(risGetDocument, {
+        document_url:
+          'https://ogd.ris.bka.gv.at/Dokumente/Begut/BEGUT_COO_2026_100_2_1612831/COO_2026_100_2_1612856.html',
+      });
+      await vi.advanceTimersByTimeAsync(60_000);
+      const sc = record(await pending);
+
+      expect(fetchDocumentBytes).not.toHaveBeenCalled();
+      expect(sc.text).toBeUndefined();
+      expect(sc.notice).toContain('companion document has no html rendition');
+      expect(sc.notice).toContain('within this call’s time budget');
+    });
+  });
+
+  // Many draft companions are filed as one picture per PDF page: their markdown is image
+  // references and nothing else, so their text — where there is any — is in the PDF (#91).
+  describe('an image-only html rendition (#91)', () => {
+    /** A real RegV annex: fifteen page images, no text; its PDF is a scan with no text layer. */
+    const IMAGE_ONLY_HTML = fixture('document-regv-image-only-companion.html');
+    const FOLDER =
+      'https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_662F23A5_A6D4_44F4_8120_16B96A5B9BD0';
+    const STEM = 'Anlagen_0007_78FCBB51_6585_4A5C_B208_F957ACBA9490';
+    const ANNEX = { document_url: `${FOLDER}/${STEM}.html` } as const;
+    const ANNEX_PDF = `${FOLDER}/${STEM}.pdf`;
+    const PAGE_IMAGES = Array.from(
+      { length: 15 },
+      (_, i) =>
+        `${FOLDER}/Temp60943112-08d8-4f83-a9f6-5becd01a4391.${String(i + 1).padStart(4, '0')}.gif`,
+    );
+
+    /** Assert the content[] trailer reads back as one block quote holding `notice` verbatim. */
+    function expectTrailer(result: ToolResult, notice: string): void {
+      expect(result.content).toHaveLength(2);
+      const trailer = result.content[1];
+      if (trailer?.type !== 'text') throw new Error('expected a text trailer in content[]');
+      expect(readCommonMark(trailer.text)).toBe(
+        ['⟨blockquote_open⟩', notice, '⟨blockquote_close⟩'].join('\n\n'),
+      );
+    }
+
+    it('reads its PDF’s text instead, naming the PDF and the page images it replaces', async () => {
+      serveRendition(IMAGE_ONLY_HTML);
+      servePdf(TEXT_LAYER_PDF);
+      const result = await runToolContract(risGetDocument, ANNEX);
+      const sc = record(result);
+      const expected = await pageMarkedText(TEXT_LAYER_PDF);
+
+      expect(fetchDocumentContent).toHaveBeenCalledWith(
+        `${FOLDER}/${STEM}.html`,
+        expect.anything(),
+      );
+      expect(fetchDocumentBytes).toHaveBeenCalledWith(ANNEX_PDF, expect.anything(), {
+        deadlineMs: expect.any(Number),
+        maxBytes: SIXTEEN_MIB,
+      });
+      expect(sc).toMatchObject({
+        byte_size: new TextEncoder().encode(expected).length,
+        kind: 'full',
+        text: expected,
+        text_source: 'pdf',
+      });
+      expect(sc.notice).toContain('carries only 15 page images and no text');
+      expect(sc.notice).toContain(`content_urls.pdf (${ANNEX_PDF})`);
+      expect(sc.notice).toContain('"--- Page N of M ---"');
+      // content[]: the PDF text fenced verbatim, no image left, the notice in the trailer.
+      expect(fencedBlocks(contentText(result))).toEqual([`${expected}\n`]);
+      expect(imageSources(contentText(result))).toEqual([]);
+      expectTrailer(result, sc.notice as string);
+    });
+
+    it('keeps its absolute image URLs and says why when its PDF has no text', async () => {
+      serveRendition(IMAGE_ONLY_HTML);
+      servePdf(NO_TEXT_PDF);
+      const result = await runToolContract(risGetDocument, ANNEX);
+      const sc = record(result);
+
+      expect(sc).toMatchObject({ kind: 'full', text_source: 'html' });
+      expect(imageSources(sc.text as string)).toEqual(PAGE_IMAGES);
+      expect(sc.notice).toContain('carries only 15 page images and no extractable text');
+      expect(sc.notice).toContain(`content_urls.pdf (${ANNEX_PDF})`);
+      expect(sc.notice).toContain('none of its 2 pages carries a text layer');
+      expect(imageSources(contentText(result))).toEqual(PAGE_IMAGES);
+      expectTrailer(result, sc.notice as string);
+    });
+
+    it('counts a single page image in the singular', async () => {
+      serveRendition('<div><p><img src="/Dokumente/RegV/R/Temp.0001.gif" alt="" /></p></div>');
+      servePdf(NO_TEXT_PDF);
+      const sc = record(await runToolContract(risGetDocument, ANNEX));
+
+      expect(sc.notice).toContain('carries only 1 page image and no extractable text');
+    });
+
+    it('keeps its absolute image URLs when its PDF 404s, since its html rendition exists', async () => {
+      serveRendition(IMAGE_ONLY_HTML);
+      fetchDocumentBytes.mockRejectedValue(
+        notFound('RIS content host returned 404.', { url: ANNEX_PDF }),
+      );
+      const result = await runToolContract(risGetDocument, ANNEX);
+      const sc = record(result);
+
+      expect(sc).toMatchObject({ kind: 'full', text_source: 'html' });
+      expect(imageSources(sc.text as string)).toEqual(PAGE_IMAGES);
+      expect(sc.notice).toContain('carries only 15 page images and no extractable text');
+      expect(sc.notice).toContain(`content_urls.pdf (${ANNEX_PDF})`);
+      expect(sc.notice).toContain('no PDF is published at that URL');
+      expectTrailer(result, sc.notice as string);
+    });
+
+    it.each([
+      ['text beside an image', '<p>Sehr geehrte Damen und Herren,</p><p><img src="/logo.gif"></p>'],
+      ['an image inside a link', '<p><a href="https://example.org/"><img src="/a.gif"></a></p>'],
+      ['only a data: image', '<p><img src="data:image/gif;base64,R0lGOD"></p>'],
+      ['no text and no image', '<p>&#160;</p>'],
+    ])('never reads the PDF of a rendition with %s, and adds no notice', async (_shape, html) => {
+      serveRendition(html);
+      const sc = record(await runToolContract(risGetDocument, ANNEX));
+
+      expect(sc).toMatchObject({ kind: 'full', text_source: 'html' });
+      expect(sc.notice).toBeUndefined();
+      expect(fetchDocumentBytes).not.toHaveBeenCalled();
+    });
+
+    it('outlines one too large to inline, its notice ahead of the outline guidance', async () => {
+      const image =
+        '<p><img src="/Dokumente/RegV/REGV_662F23A5_A6D4_44F4_8120_16B96A5B9BD0/Temp60943112-08d8-4f83-a9f6-5becd01a4391.0001.gif" /></p>';
+      serveRendition(image.repeat(400));
+      servePdf(NO_TEXT_PDF);
+      const sc = record(await runToolContract(risGetDocument, ANNEX));
+
+      expect(sc).toMatchObject({ kind: 'outline', text_source: 'html', truncated: true });
+      expect(sc.sections?.[0]?.name).toMatch(/^Part 1 of \d+$/u);
+      const notice = sc.notice as string;
+      expect(notice.startsWith('This document’s html rendition carries only 400 page images')).toBe(
+        true,
+      );
+      expect(notice).toContain('Document too large to return in full');
+    });
+
+    it('reads its PDF only within the call’s one deadline', async () => {
+      vi.useFakeTimers();
+      fetchDocumentContent.mockImplementation(
+        (url: string) =>
+          new Promise((resolve) => {
+            setTimeout(() => {
+              resolve({ text: IMAGE_ONLY_HTML, byteSize: IMAGE_ONLY_HTML.length, url });
+            }, 40_000);
+          }),
+      );
+      servePdf(TEXT_LAYER_PDF);
+      const pending = runToolContract(risGetDocument, ANNEX);
+      await vi.advanceTimersByTimeAsync(60_000);
+      const sc = record(await pending);
+
+      expect(fetchDocumentBytes).not.toHaveBeenCalled();
+      expect(imageSources(sc.text as string)).toEqual(PAGE_IMAGES);
+      expect(sc.notice).toContain('carries only 15 page images and no extractable text');
+      expect(sc.notice).toContain('within this call’s time budget');
+    });
+
+    it('aborts its PDF fetch on caller cancellation rather than degrading', async () => {
+      serveRendition(IMAGE_ONLY_HTML);
+      const fetchMock = hangingFetch();
+      overNetwork(fetchMock);
+      const spy = vi.spyOn(pdfParser, 'extractText');
+      const controller = new AbortController();
+      const ctx = createMockContext({ errors: risGetDocument.errors, signal: controller.signal });
+      const pending = Promise.resolve(
+        risGetDocument.handler(risGetDocument.input.parse(ANNEX), ctx),
+      ).catch((e: unknown) => e);
+      await vi.waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+      controller.abort();
+      const err = await pending;
+
+      expect(err).toBeInstanceOf(McpError);
+      expect((err as McpError).code).toBe(JsonRpcErrorCode.RequestCancelled);
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  it('fails a missing PDF extractor as a configuration error, not a degraded success', async () => {
+    servePdf(TEXT_LAYER_PDF);
+    vi.spyOn(pdfParser, 'extractText').mockRejectedValue(
+      configurationError('Install "unpdf" to use PDF text extraction: bun add unpdf'),
+    );
+    const err = await contractError(risGetDocument, MRP);
+
+    expect(err.code).toBe(JsonRpcErrorCode.ConfigurationError);
+  });
+
+  it('aborts the PDF fetch on caller cancellation and never starts extraction', async () => {
+    const fetchMock = hangingFetch();
+    overNetwork(fetchMock);
+    const spy = vi.spyOn(pdfParser, 'extractText');
+    const controller = new AbortController();
+    const ctx = createMockContext({ errors: risGetDocument.errors, signal: controller.signal });
+    const pending = Promise.resolve(
+      risGetDocument.handler(risGetDocument.input.parse(MRP), ctx),
+    ).catch((e: unknown) => e);
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+    controller.abort();
+    const err = await pending;
+
+    // Thrown, not absorbed into a degraded success.
+    expect(err).toBeInstanceOf(McpError);
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.RequestCancelled);
+    const init = fetchMock.mock.calls[0]?.[1] as { signal: AbortSignal };
+    expect(init.signal.aborted).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('runs two concurrent extractions one after the other', async () => {
+    servePdf(TEXT_LAYER_PDF);
+    const realExtract = pdfParser.extractText.bind(pdfParser);
+    const events: string[] = [];
+    let releaseFirst = (): void => {};
+    const firstHeld = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let calls = 0;
+    vi.spyOn(pdfParser, 'extractText').mockImplementation(async (input, options, context) => {
+      calls += 1;
+      const n = calls;
+      events.push(`start ${n}`);
+      if (n === 1) await firstHeld;
+      const result = await realExtract(input, options, context);
+      events.push(`end ${n}`);
+      return result;
+    });
+
+    const first = runToolContract(risGetDocument, MRP);
+    await vi.waitFor(() => {
+      expect(events).toEqual(['start 1']);
+    });
+    const second = runToolContract(risGetDocument, {
+      application: 'Upts',
+      document_number: 'UPTS_2026_1',
+    });
+    await vi.waitFor(() => {
+      expect(fetchDocumentBytes).toHaveBeenCalledTimes(2);
+    });
+    // One macrotask turn drains every microtask the second call queued after its fetch: without
+    // the slot, its extraction would have started by now.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(events).toEqual(['start 1']);
+
+    releaseFirst();
+    const results = await Promise.all([first, second]);
+    expect(events).toEqual(['start 1', 'end 1', 'start 2', 'end 2']);
+    for (const result of results) expect(record(result).text_source).toBe('pdf');
+  });
+
+  it('counts the wait for the extraction slot against the call’s deadline', async () => {
+    vi.useFakeTimers();
+    servePdf(TEXT_LAYER_PDF);
+    let releaseFirst = (): void => {};
+    const firstHeld = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const spy = vi.spyOn(pdfParser, 'extractText').mockImplementationOnce(async () => {
+      await firstHeld;
+      return { totalPages: 1, text: ['Erste Seite'] };
+    });
+
+    const first = runToolContract(risGetDocument, MRP);
+    const second = runToolContract(risGetDocument, {
+      application: 'Upts',
+      document_number: 'UPTS_2026_1',
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+    const waited = record(await second);
+
+    expect(waited.text).toBeUndefined();
+    expect(waited.notice).toContain('Upts publishes a PDF only');
+    expect(waited.notice).toContain('within this call’s time budget');
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    releaseFirst();
+    expect(record(await first).text).toBe('--- Page 1 of 1 ---\nErste Seite');
   });
 });
 
@@ -1654,7 +2508,9 @@ describe('risGetDocument — raw html/xml output budget (#36)', () => {
 // backslash (#60) of that fixture's Absatz and Ziffer lists, and the two that include
 // Artikel 1 carry the hard breaks between its Absatz (72) list lines (`\x20\x20` in a snapshot
 // is that trailing hard-break space). Every row's content_urls sit on the default content host,
-// https://ogd.ris.bka.gv.at (#75), and render as `[HTML](<url>)` destinations (#79).
+// https://ogd.ris.bka.gv.at (#75), and render as `[HTML](<url>)` destinations (#79). The notice
+// trailer is escaped Markdown, so its `sections:[…]` reads `sections:\[…\]` there (#88). Every
+// row's text comes from the HTML rendition, and says so as text_source (#97).
 describe('risGetDocument — markdown output unchanged by the raw-format budget (#36)', () => {
   /** The structuredContent fields every row shares: one BrKons document, rendered as markdown. */
   const MARKDOWN_RECORD = {
@@ -1668,6 +2524,7 @@ describe('risGetDocument — markdown output unchanged by the raw-format budget 
     },
     document_number: 'NOR40262691',
     format: 'markdown',
+    text_source: 'html',
   };
   /** The RegV fixture's three Artikel sections as markdown; the whole text is all three. */
   const ARTIKEL_1 =
@@ -1705,7 +2562,7 @@ describe('risGetDocument — markdown output unchanged by the raw-format budget 
       [
         {
           "text": "## NOR40262691 (BrKons)
-      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** full
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** full | **Text source:** html
       **Size:** 515 bytes
       **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
 
@@ -1747,7 +2604,7 @@ describe('risGetDocument — markdown output unchanged by the raw-format budget 
       [
         {
           "text": "## NOR40262691 (BrKons)
-      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** full
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** full | **Text source:** html
       **Size:** 3448 bytes
       **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
 
@@ -1822,7 +2679,7 @@ describe('risGetDocument — markdown output unchanged by the raw-format budget 
       [
         {
           "text": "## NOR40262691 (BrKons)
-      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** full
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** full | **Text source:** html
       **Size:** 1062 bytes
       **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
 
@@ -1864,7 +2721,7 @@ describe('risGetDocument — markdown output unchanged by the raw-format budget 
       [
         {
           "text": "## NOR40262691 (BrKons)
-      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** full
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** full | **Text source:** html
       **Size:** 1062 bytes
       **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
 
@@ -1913,7 +2770,7 @@ describe('risGetDocument — markdown output unchanged by the raw-format budget 
       [
         {
           "text": "## NOR40262691 (BrKons)
-      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** outline
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** outline | **Text source:** html
       **Size:** 3448 bytes (truncated — retrieve sections from the outline below)
       **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
 
@@ -1926,7 +2783,7 @@ describe('risGetDocument — markdown output unchanged by the raw-format budget 
         {
           "text": "
 
-      > sections:[…] matched nothing — "Artikel 9999" named no section of this document, so the outline below is a selector mismatch, not a size overflow. Copy a name verbatim from sections and re-call ris_get_document with the same addressing — e.g. "Artikel 1", "Artikel 2", "Artikel 3".",
+      > sections:\\[…\\] matched nothing — "Artikel 9999" named no section of this document, so the outline below is a selector mismatch, not a size overflow. Copy a name verbatim from sections and re-call ris_get_document with the same addressing — e.g. "Artikel 1", "Artikel 2", "Artikel 3".",
           "type": "text",
         },
       ]
@@ -1955,7 +2812,7 @@ describe('risGetDocument — markdown output unchanged by the raw-format budget 
       [
         {
           "text": "## NOR40262691 (BrKons)
-      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** outline
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** outline | **Text source:** html
       **Size:** 72093 bytes (truncated — retrieve sections from the outline below)
       **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
 
@@ -1971,7 +2828,7 @@ describe('risGetDocument — markdown output unchanged by the raw-format budget 
         {
           "text": "
 
-      > Document too large to return in full (72093 bytes). Re-call ris_get_document with the same addressing plus sections:[…] naming entries from the outline — e.g. "Artikel 1", "Artikel 2", "Artikel 3".",
+      > Document too large to return in full (72093 bytes). Re-call ris_get_document with the same addressing plus sections:\\[…\\] naming entries from the outline — e.g. "Artikel 1", "Artikel 2", "Artikel 3".",
           "type": "text",
         },
       ]
@@ -1997,7 +2854,7 @@ describe('risGetDocument — markdown output unchanged by the raw-format budget 
       [
         {
           "text": "## NOR40262691 (BrKons)
-      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** outline
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** outline | **Text source:** html
       **Size:** 117087 bytes (truncated — retrieve sections from the outline below)
       **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
 
@@ -2010,7 +2867,7 @@ describe('risGetDocument — markdown output unchanged by the raw-format budget 
         {
           "text": "
 
-      > Document too large to return in full (117087 bytes). It carries no §/Artikel/Anlage headings, so the outline lists 3 contiguous windows covering the whole text — read them in the order they are named, and expect a window to open mid-sentence, since the cuts are line breaks rather than sentence or § boundaries. Re-call ris_get_document with the same addressing plus sections:[…] naming entries from the outline — e.g. "Part 1 of 3", "Part 2 of 3", "Part 3 of 3".",
+      > Document too large to return in full (117087 bytes). It carries no §/Artikel/Anlage headings, so the outline lists 3 contiguous windows covering the whole text — read them in the order they are named, and expect a window to open mid-sentence, since the cuts are line breaks rather than sentence or § boundaries. Re-call ris_get_document with the same addressing plus sections:\\[…\\] naming entries from the outline — e.g. "Part 1 of 3", "Part 2 of 3", "Part 3 of 3".",
           "type": "text",
         },
       ]
@@ -2034,7 +2891,7 @@ describe('risGetDocument — markdown output unchanged by the raw-format budget 
       [
         {
           "text": "## NOR40262691 (BrKons)
-      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** full
+      **Binding:** consolidated_informational | **Format:** markdown | **Kind:** full | **Text source:** html
       **Size:** 5827 bytes
       **Renditions:** [HTML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.html>) · [PDF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.pdf>) · [RTF](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.rtf>) · [XML](<https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40262691/NOR40262691.xml>)
 
@@ -2082,7 +2939,7 @@ describe('risGetDocument — markdown output unchanged by the raw-format budget 
         {
           "text": "
 
-      > sections:[…] was ignored — this rendition has no addressable entries, so "Artikel 2" could not be resolved. Raw html and xml are never sliced; markdown carries entries when it has §/Artikel/Anlage headings, or once it overflows the 40000-byte budget. The whole document follows.",
+      > sections:\\[…\\] was ignored — this rendition has no addressable entries, so "Artikel 2" could not be resolved. Raw html and xml are never sliced; markdown carries entries when it has §/Artikel/Anlage headings, or once it overflows the 40000-byte budget. The whole document follows.",
           "type": "text",
         },
       ]
@@ -2191,6 +3048,225 @@ describe('risGetDocument — sections selector disclosure (under budget)', () =>
     expect(result.byte_size).toBeLessThan(OUTLINE_BUDGET_BYTES);
     expect(result.text).toContain('xPARAx0x');
     expect(getEnrichment(ctx).notice).toContain('no addressable entries');
+  });
+});
+
+// The framework writes a notice into content[] as authored Markdown, and these notices quote
+// caller text — an unmatched sections:[…] name, a document_number inside a URL — so content[]
+// has to escape it to read back what structuredContent.notice carries (#88).
+describe('risGetDocument — notices read back verbatim in content[]', () => {
+  /** A RegV document; its rendition is the three-Artikel fixture, under the byte budget. */
+  const REGV = {
+    application: 'RegV',
+    document_number: 'REGV_1ADD1A33_54AA_4943_99C3_C6C6E7D434C3',
+  };
+  const NAME = '*Artikel* [9]';
+
+  /** One call over the wire against canned rendition text. */
+  function call(text: string, input: Record<string, unknown>) {
+    fetchDocumentContent.mockResolvedValue({ text, byteSize: text.length, url: 'https://x' });
+    return runToolContract(risGetDocument, input);
+  }
+
+  /**
+   * Assert a CommonMark parse of the content[] trailer — the framework appends it after
+   * format() — reads exactly one block quote holding structuredContent.notice as written, and
+   * return that notice.
+   */
+  function expectNoticeReadBack(result: ToolResult): string {
+    expect(result.isError).not.toBe(true);
+    const { notice } = result.structuredContent as { notice?: string };
+    if (notice === undefined) throw new Error('expected a notice in structuredContent');
+    expect(result.content).toHaveLength(2);
+    const trailer = result.content[1];
+    if (trailer?.type !== 'text') throw new Error('expected a text trailer in content[]');
+    expect(readCommonMark(trailer.text)).toBe(
+      ['⟨blockquote_open⟩', notice, '⟨blockquote_close⟩'].join('\n\n'),
+    );
+    return notice;
+  }
+
+  it('reads back an unmatched name on a total miss (kind: outline)', async () => {
+    const result = await call(ARTIKEL_SECTIONS_HTML, { ...REGV, sections: [NAME] });
+
+    expect(result.structuredContent).toMatchObject({ kind: 'outline' });
+    const notice = expectNoticeReadBack(result);
+    expect(notice).toContain(`"${NAME}" named no section of this document`);
+    expect(notice).not.toContain('\\');
+  });
+
+  it('reads back an unmatched name on a partial miss (kind: full)', async () => {
+    const result = await call(ARTIKEL_SECTIONS_HTML, { ...REGV, sections: ['Artikel 2', NAME] });
+
+    expect(result.structuredContent).toMatchObject({ kind: 'full' });
+    const notice = expectNoticeReadBack(result);
+    expect(notice).toContain(`"${NAME}" named no entry of this document`);
+    expect(notice).not.toContain('\\');
+  });
+
+  // DOCUMENT_NUMBER_PATTERN admits `~`, which encodeURIComponent leaves as is, so a
+  // `~~NOR1~~` number reaches the URL the format_unavailable notice names.
+  it('reads back a ~~NOR1~~ document number inside a format_unavailable URL', async () => {
+    const result = await runToolContract(risGetDocument, {
+      application: 'Mrp',
+      document_number: '~~NOR1~~',
+      format: 'html',
+    });
+
+    const notice = expectNoticeReadBack(result);
+    expect(notice).toContain('https://ogd.ris.bka.gv.at/Dokumente/Mrp/~~NOR1~~/~~NOR1~~.pdf');
+    expect(notice).not.toContain('\\');
+  });
+
+  // Escaping changes nothing in a notice with no Markdown-active characters, so its trailer
+  // stays byte-identical to the framework's own block quote.
+  it('renders a plain notice exactly as the framework default does', async () => {
+    const result = await runToolContract(risGetDocument, {
+      application: 'Upts',
+      document_number: 'UPTS_2026_1',
+      format: 'html',
+    });
+
+    const notice = expectNoticeReadBack(result);
+    expect(result.content[1]).toEqual({ type: 'text', text: `\n\n> ${notice}` });
+  });
+
+  it('keeps a multi-line name with line-leading block markers inside the block quote', async () => {
+    const name = `${HOSTILE_TEXT.multiLineTitle}\n${HOSTILE_TEXT.blockMarkers}`;
+    const result = await call(ARTIKEL_SECTIONS_HTML, { ...REGV, sections: [name] });
+
+    expect(expectNoticeReadBack(result)).toContain(`"${name}" named no section`);
+  });
+
+  // The cut counts code points, so a name outside the BMP is never split inside a character.
+  it('quotes long caller names shortened, on both surfaces', async () => {
+    const long = '𝔄'.repeat(121);
+    const exact = 'y'.repeat(120);
+    const result = await call(ARTIKEL_SECTIONS_HTML, { ...REGV, sections: [long, exact] });
+
+    expect(expectNoticeReadBack(result)).toContain(
+      `"${'𝔄'.repeat(120)}…", "${exact}" named no section of this document`,
+    );
+  });
+
+  // Sizes double from the smallest; each is checked before the next is built, and the largest
+  // is held to a fixed multiple of the smallest.
+  it('quotes long caller names shortened, whatever their length', async () => {
+    const CPU_BOUND_MS = 50;
+    const doublings = (from: number, to: number) =>
+      Array.from({ length: Math.log2(to / from) + 1 }, (_, i) => from * 2 ** i);
+    const shapes: readonly { make: (n: number) => string; sizes: number[] }[] = [
+      { make: (n) => '1'.repeat(n), sizes: doublings(5_000, 320_000) },
+      { make: (n) => `${'§1 x'.repeat(n / 4)}\ny`, sizes: doublings(640, 40_960) },
+      { make: (n) => `x${'  \r\n'.repeat(n / 4)}`, sizes: doublings(640, 40_960) },
+      { make: (n) => `a${' '.repeat(n)}b`, sizes: doublings(640, 40_960) },
+    ];
+    /** The least thread CPU time, in ms, of three calls whose one unmatched name is `name`. */
+    const cpuMs = async (name: string) => {
+      let least = Number.POSITIVE_INFINITY;
+      for (let run = 0; run < 3; run++) {
+        const start = process.threadCpuUsage();
+        const result = await call(ARTIKEL_SECTIONS_HTML, { ...REGV, sections: [name] });
+        const used = process.threadCpuUsage(start);
+        expect(result.structuredContent).toMatchObject({ kind: 'outline' });
+        least = Math.min(least, (used.user + used.system) / 1000);
+      }
+      return least;
+    };
+
+    await cpuMs('Artikel 9999');
+    for (const [shape, { make, sizes }] of shapes.entries()) {
+      const costs: number[] = [];
+      for (const n of sizes) {
+        const cost = await cpuMs(make(n));
+        expect(cost, `shape ${shape}, ${n}`).toBeLessThan(CPU_BOUND_MS);
+        costs.push(cost);
+      }
+      expect(sizes.at(-1)! / sizes[0]!).toBe(64);
+      expect(costs.at(-1)! / costs[0]!, `shape ${shape}`).toBeLessThan(256);
+    }
+  });
+
+  // A notice names a document only through URLs built from document_number, which is held to
+  // the RIS character set (letters, digits, `_ . ~ -`) before any URL exists.
+  it('rejects a document_number outside the RIS character set before a notice names it', async () => {
+    for (const documentNumber of ['UPTS 2026 1', 'UPTS 2026_1', 'UPTS_2026_1\t', 'UPTS　2026']) {
+      const error = await contractError(risGetDocument, {
+        application: 'Upts',
+        document_number: documentNumber,
+        format: 'html',
+      });
+      expect(error.data?.reason, JSON.stringify(documentNumber)).toBe('invalid_addressing');
+    }
+  });
+
+  it.each([
+    [
+      'an over-budget xml rendition (kind: link)',
+      `<Dokument>${'B'.repeat(50_000)}</Dokument>`,
+      'xml',
+    ],
+    ['an under-budget html rendition (kind: full)', SR_ONLY_HTML, 'html'],
+  ] as const)('reads back the selector-ignored notice on %s', async (_label, text, format) => {
+    const result = await call(text, { ...REGV, format, sections: [NAME] });
+
+    const notice = expectNoticeReadBack(result);
+    expect(notice).toContain('sections:[…] was ignored');
+    expect(notice).toContain(`"${NAME}" could not be resolved`);
+  });
+
+  it.each([
+    [
+      'a section outline',
+      () =>
+        call(oversizedArticlesHtml(), { document_number: 'NOR40262691', application: 'BrKons' }),
+    ],
+    [
+      'a window outline',
+      () =>
+        call(headingFreeDecisionHtml(400), {
+          document_number: 'JJT_20260101_BVWG_001',
+          application: 'Bvwg',
+        }),
+    ],
+    [
+      'a kind: link result',
+      () =>
+        call(`<Dokument>${'B'.repeat(50_000)}</Dokument>`, {
+          document_number: 'NOR40262691',
+          application: 'BrKons',
+          format: 'xml',
+        }),
+    ],
+    [
+      'an authentic_pdf_only application',
+      () =>
+        runToolContract(risGetDocument, {
+          document_number: 'BVB_BU_JE_20260703_9',
+          application: 'Bvb',
+          format: 'html',
+        }),
+    ],
+    [
+      'a pdf_only application',
+      () =>
+        runToolContract(risGetDocument, {
+          document_number: 'UPTS_2026_1',
+          application: 'Upts',
+          format: 'html',
+        }),
+    ],
+    [
+      'a metadata-only application',
+      () =>
+        runToolContract(risGetDocument, {
+          document_number: 'NOR12345',
+          application: 'BgblAlt',
+          format: 'xml',
+        }),
+    ],
+  ])('reads back the notice on %s as one block quote', async (_label, run) => {
+    expectNoticeReadBack(await run());
   });
 });
 
@@ -2466,8 +3542,28 @@ describe('markdown post-passes — time on adversarial input', () => {
   });
 
   // The converter's own escape pass runs over every text node of the rendition.
+  const RENDITION_URL = 'https://ogd.ris.bka.gv.at/Dokumente/RegV/REGV_X/Anlagen_0001_X.html';
+
   it('toMarkdown stays linear on a long digit run', () => {
-    expectLinear((size) => `<p>${'1'.repeat(size)}</p>`, toMarkdown);
+    expectLinear(
+      (size) => `<p>${'1'.repeat(size)}</p>`,
+      (html) => toMarkdown(html, RENDITION_URL),
+    );
+  });
+
+  // An image reference turns on the image-only check over the whole markdown. Each shape tops
+  // out at 64,000 characters; the digit run above carries the full span.
+  it.each<[string, (size: number) => string]>([
+    [
+      'one image, then one long line',
+      (size) => `<img src="/a.gif" /><p>${'§1 x'.repeat(size / 20)}\ny</p>`,
+    ],
+    [
+      'one image, then line breaks throughout',
+      (size) => `<img src="/a.gif" /><pre>${'  \r\n'.repeat(size / 20)}</pre>`,
+    ],
+  ])('toMarkdown stays linear on %s', (_shape, make) => {
+    expectLinear(make, (html) => toMarkdown(html, RENDITION_URL));
   });
 
   it.each<[string, (size: number) => string]>([
@@ -2556,6 +3652,7 @@ describe('risGetDocument — format() parity', () => {
       if (url !== undefined) expect(text).toContain(url);
     }
     expect(text).toContain('World');
+    expect(text).toContain('**Text source:** html');
   });
 
   // DOCUMENT_NUMBER_PATTERN admits `~`, and the number is echoed into the heading: a raw

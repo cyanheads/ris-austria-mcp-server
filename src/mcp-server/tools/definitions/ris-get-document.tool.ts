@@ -7,11 +7,17 @@
  * opaque filenames no document number reaches (see {@link COMPANION_STEMS} for the shapes
  * RIS files them under).
  * Format availability varies by application (full text · authentic-PDF-only · PDF-only ·
- * metadata-only) — a text-format request against a non-text application degrades to a
- * `format_unavailable` notice on a success result, never an error. Markdown conversion drops
- * the `.sr-only` screen-reader twin RIS ships beside every abbreviated citation, keeping the
- * visible form; renders each Absatz, Ziffer, and litera under its own statutory label, with no
- * generated list ordinal; and escapes a `N. ` ordinal only where it would open a list item.
+ * metadata-only). Where a PDF is a document's only rendition — the PDF-only and
+ * authentic-PDF-only applications, and a companion filed with no html twin — `markdown` returns
+ * the PDF's extracted text instead (see {@link readPdfText}), marked `text_source: pdf` and
+ * fenced in `content[]`; `html` and `xml` there, every format on a metadata-only application,
+ * and a PDF whose text cannot be extracted degrade to a `format_unavailable` notice on a
+ * success result, never an error. An html rendition that converts to page images alone reads
+ * its PDF's text the same way, keeping the images with a notice when the PDF has none.
+ * Markdown conversion drops the `.sr-only` screen-reader twin RIS ships beside every
+ * abbreviated citation, keeping the visible form; renders each Absatz, Ziffer, and litera under its own statutory label, with no
+ * generated list ordinal; escapes a `N. ` ordinal only where it would open a list item; and
+ * resolves each root-relative image source against the rendition's URL.
  * `html` and `xml` pass through untouched. Oversized markdown overflows to a
  * retrievable outline rather than a silent truncation — its §/Artikel/Anlage sections, or
  * `Part n of N` byte windows where it carries no such headings; a follow-up call with
@@ -26,14 +32,21 @@
 
 import type { Context } from '@cyanheads/mcp-ts-core';
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { JsonRpcErrorCode, McpError, validationError } from '@cyanheads/mcp-ts-core/errors';
+import {
+  JsonRpcErrorCode,
+  McpError,
+  requestCancelled,
+  validationError,
+} from '@cyanheads/mcp-ts-core/errors';
 import {
   escapeMarkdownInline,
   markdown,
+  markdownImage,
   markdownLink,
   OUTLINE_VARIANT,
   type OutlineResult,
   outlineOnOverflow,
+  pdfParser,
   type SectionMeta,
 } from '@cyanheads/mcp-ts-core/utils';
 import { NodeHtmlMarkdown, type TranslatorConfigFactory } from 'node-html-markdown';
@@ -47,8 +60,9 @@ import {
   RIS_CONTENT_FORMATS,
   type RisContentFormat,
 } from '@/services/ris/ris-service.js';
+import type { RisDocumentContent } from '@/services/ris/types.js';
 
-import { renditionLinks } from './_shared.js';
+import { joinNotices, renditionLinks } from './_shared.js';
 
 /** The seven canonical binding labels (Design Decisions › Binding status). */
 const BINDING_STATUSES = [
@@ -61,8 +75,15 @@ const BINDING_STATUSES = [
   'translation',
 ] as const satisfies readonly RisBindingStatus[];
 
-/** Requested output format. `markdown` and `html` both read the HTML rendition. */
+/**
+ * Requested output format. `markdown` and `html` both read the HTML rendition, and `markdown`
+ * reads the PDF's text where a document has no HTML rendition.
+ */
 export type DocumentFormat = 'markdown' | 'html' | 'xml' | 'urls_only';
+
+/** The rendition markdown text came from — the `text_source` output values. */
+const TEXT_SOURCES = ['html', 'pdf'] as const;
+type TextSource = (typeof TEXT_SOURCES)[number];
 
 /**
  * Serialized-length budget for inlining document text, and the size of one addressable
@@ -259,9 +280,9 @@ const LINE_START_ORDINAL_MARK = new RegExp(
 const ANY_ORDINAL_MARK = new RegExp(ORDINAL_ESCAPE_MARK, 'gu');
 
 /**
- * HTML→markdown converter for the `markdown` format. Markdown only — `html` and `xml` return
- * the authentic rendition byte-for-byte and never route through here. Read it through
- * {@link toMarkdown}, which settles the ordinal escapes.
+ * HTML→markdown converter for one rendition of the `markdown` format. Markdown only — `html`
+ * and `xml` return the authentic rendition byte-for-byte and never route through here. Read it
+ * through {@link toMarkdown}, which settles the ordinal escapes.
  *
  * node-html-markdown keeps a separate translator collection per nesting context, and a
  * constructor-supplied custom translator only reaches the top-level one. RIS renders its
@@ -274,12 +295,32 @@ const ANY_ORDINAL_MARK = new RegExp(ORDINAL_ESCAPE_MARK, 'gu');
  * in running text would come out as `1\. Oktober`. The option keeps the library's other
  * alternatives verbatim; the ordinal escape moves to `textReplace`, which runs right after it
  * on the same escaped text and writes {@link ORDINAL_ESCAPE_MARK} where the backslash went.
+ *
+ * RIS writes image sources root-relative (`/Dokumente/…`), which resolve only against the host
+ * the rendition came from, so each one is resolved against `renditionUrl` and written with
+ * `markdownImage` — on every collection that translates images (top level, table cells, link
+ * text; code blocks drop them). Each image reference written is pushed to `images`. The library
+ * takes no base URL, so the converter is built per rendition.
  */
-const MARKDOWN_CONVERTER = ((): NodeHtmlMarkdown => {
+function markdownConverter(renditionUrl: string, images: string[]): NodeHtmlMarkdown {
+  // Options are built fresh for every converter: the constructor appends a pattern to
+  // `textReplace` in place, so a shared array would gain one per call.
   const converter = new NodeHtmlMarkdown({
     lineStartEscape: [/^(\s*?)((?:\+\s)|(?:[=>-])|(?:#{1,6}\s))/gm, '$1\\$2'],
     textReplace: [[/(\d)(\.\s)/g, `$1${ORDINAL_ESCAPE_MARK}$2`]],
   });
+  // As the library's own translator: no source or a `data:` source drops the image.
+  const translateImage: TranslatorConfigFactory = ({ node }) => {
+    const src = node.getAttribute('src') ?? '';
+    if (src === '' || /^data:/iu.test(src)) return { ignore: true };
+    const image = markdownImage(
+      node.getAttribute('alt') ?? '',
+      URL.parse(src, renditionUrl)?.href ?? src,
+      node.getAttribute('title'),
+    );
+    images.push(image);
+    return { content: image, recurse: false };
+  };
   for (const collection of [
     converter.translators,
     converter.aTagTranslators,
@@ -290,12 +331,19 @@ const MARKDOWN_CONVERTER = ((): NodeHtmlMarkdown => {
   ]) {
     collection.set('span', translateSpan);
   }
+  for (const collection of [
+    converter.translators,
+    converter.aTagTranslators,
+    converter.tableCellTranslators,
+  ]) {
+    collection.set('img', translateImage);
+  }
   converter.translators.set(
     'li',
     labelledListItem(converter.translators.get('li') as TranslatorConfigFactory),
   );
   return converter;
-})();
+}
 
 /**
  * Settle the ordinal escapes the converter marked: a `N. ` that opens an output line (after
@@ -308,9 +356,37 @@ export function resolveOrdinalEscapes(markdown: string): string {
   return markdown.replace(LINE_START_ORDINAL_MARK, '$1$2\\').replace(ANY_ORDINAL_MARK, '');
 }
 
-/** Convert an RIS HTML rendition to the markdown the `markdown` format returns. */
-export function toMarkdown(html: string): string {
-  return resolveOrdinalEscapes(MARKDOWN_CONVERTER.translate(html.toWellFormed()));
+/** An RIS HTML rendition converted to markdown — see {@link toMarkdown}. */
+export interface RenditionMarkdown {
+  /** The markdown the `markdown` format returns. */
+  readonly markdown: string;
+  /**
+   * Set only when the rendition is image-only — at least one image reference and otherwise
+   * only whitespace, as RIS publishes a companion filed as one picture per PDF page: how many
+   * images it holds.
+   */
+  readonly pageImages?: number;
+}
+
+/** Strip every whitespace character, leaving what a reader sees as content. */
+function withoutWhitespace(text: string): string {
+  return text.replace(/\s+/gu, '');
+}
+
+/**
+ * Convert an RIS HTML rendition to the markdown the `markdown` format returns, every image
+ * source resolved against `renditionUrl` — the URL the rendition was fetched from.
+ */
+export function toMarkdown(html: string, renditionUrl: string): RenditionMarkdown {
+  const images: string[] = [];
+  const converted = resolveOrdinalEscapes(
+    markdownConverter(renditionUrl, images).translate(html.toWellFormed()),
+  );
+  // Image references in document order with only whitespace between them: what is left once
+  // whitespace is stripped from both sides is the same string.
+  const imageOnly =
+    images.length > 0 && withoutWhitespace(converted) === withoutWhitespace(images.join(''));
+  return imageOnly ? { markdown: converted, pageImages: images.length } : { markdown: converted };
 }
 
 /** Map an empty string from a form-based client to `undefined`. */
@@ -346,8 +422,17 @@ export interface DocumentRendition {
   readonly documentNumber: string;
   /** The format served (echoes the request). */
   readonly format: DocumentFormat;
+  /**
+   * The notice every result built from the markdown text carries, saying what that text is:
+   * where it was extracted from a PDF, the notice naming that PDF and what extraction loses;
+   * where an image-only rendition's PDF yielded no text, that the text holds only its page
+   * images, and why.
+   */
+  readonly provenanceNotice?: string;
   /** Document text in the requested format; absent for urls_only and unavailable formats. */
   readonly text?: string;
+  /** The rendition markdown `text` came from; absent for the raw formats and when no text. */
+  readonly textSource?: TextSource;
   /** Present when the requested text format is unavailable for this application. */
   readonly unavailableNotice?: string;
 }
@@ -465,8 +550,9 @@ function authenticPdfFrom(pdfUrl: string): string {
  * `.pdfsig` on none — so those three are what gets constructed. The other 2,829 (12.0%,
  * nearly all Begut covering letters) carry PDF, or PDF and RTF, and nothing else: RIS 404s a
  * rendition it does not list, so the constructed XML and HTML are dead for them and only the
- * PDF resolves. Which case a companion falls in is legible only from the search result that
- * listed it, never from the URL, so the same three are built either way.
+ * PDF resolves — {@link renderDocument} reads its text for `markdown`. Which case a companion
+ * falls in is legible only from the search result that listed it, never from the URL, so the
+ * same three are built either way.
  */
 function buildRenditionUrls(
   service: ReturnType<typeof getRisService>,
@@ -483,7 +569,8 @@ function buildRenditionUrls(
   const pdf = service.buildDocumentContentUrl(app.code, documentNumber, 'pdf');
   const authenticPdfUrl = app.binding === 'authentic' ? authenticPdfFrom(pdf) : undefined;
   if (app.formats === 'authentic_pdf_only') {
-    // The signed PDF is the only rendition; the plain .pdf is not published separately.
+    // The signed PDF is the one rendition surfaced. RIS also serves a plain .pdf for these,
+    // byte-identical to the .pdfsig, so listing it would name the same artifact twice.
     return { contentUrls: {}, ...(authenticPdfUrl !== undefined && { authenticPdfUrl }) };
   }
   if (app.formats === 'pdf_only') return { contentUrls: { pdf } };
@@ -498,19 +585,241 @@ function buildRenditionUrls(
   };
 }
 
-/** Compose the `format_unavailable` notice for an application with no text rendition. */
+/**
+ * Compose the `format_unavailable` notice for an application with no text rendition. On a
+ * PDF-only application an html or xml request is pointed at `markdown`, which reads the PDF's
+ * text; a markdown request gets this notice only when that read failed, and the caller appends
+ * why.
+ */
 function formatUnavailableNotice(
   app: RisApplication,
   format: DocumentFormat,
   urls: { contentUrls: RenditionContentUrls; authenticPdfUrl?: string },
 ): string {
+  const markdownPointer =
+    format === 'markdown' ? '' : ' format: markdown returns the text extracted from it.';
   if (app.formats === 'authentic_pdf_only') {
-    return `${app.code} publishes only the signed authentic PDF (amtssigniert, .pdfsig) — no ${format} rendition exists. Fetch the authentic PDF from authentic_pdf_url${urls.authenticPdfUrl !== undefined ? ` (${urls.authenticPdfUrl})` : ''}.`;
+    return `${app.code} publishes only the signed authentic PDF (amtssigniert, .pdfsig) — no ${format} rendition exists. Fetch the authentic PDF from authentic_pdf_url${urls.authenticPdfUrl !== undefined ? ` (${urls.authenticPdfUrl})` : ''}.${markdownPointer}`;
   }
   if (app.formats === 'pdf_only') {
-    return `${app.code} publishes a PDF only — no ${format} rendition exists. Fetch the PDF from content_urls.pdf${urls.contentUrls.pdf !== undefined ? ` (${urls.contentUrls.pdf})` : ''}.`;
+    return `${app.code} publishes a PDF only — no ${format} rendition exists. Fetch the PDF from content_urls.pdf${urls.contentUrls.pdf !== undefined ? ` (${urls.contentUrls.pdf})` : ''}.${markdownPointer}`;
   }
   return `${app.code} carries no content URLs in RIS — it is metadata-only, with document scans hosted by the Austrian National Library (ÖNB). Retrieve the record and its ÖNB scan link via ris_search_gazette or ris_lookup_citation; RIS serves no fetchable rendition here.`;
+}
+
+/**
+ * Ceiling on a PDF read for its text. Over it the call degrades to the `format_unavailable`
+ * notice, so a ceiling set too low costs text, never a failure.
+ */
+const PDF_MAX_BYTES = 16 * 1024 * 1024;
+
+/**
+ * One wall-clock budget for a call that reads a PDF's text, counted from the call's start: the
+ * html fetch a companion makes before it falls back to its PDF, the PDF fetch, the wait for the
+ * extraction slot, and the extraction. Sized to end inside the MCP SDK's default request timeout.
+ */
+const PDF_TEXT_BUDGET_MS = 48_000;
+
+/**
+ * Budget an extraction needs left before it may start. Extraction runs to completion once it
+ * starts, so it is bounded before it begins: the PDF fetch and the wait for the extraction slot
+ * both end this far short of the budget, and extraction starts only on a live caller signal
+ * with at least this much left.
+ */
+const EXTRACTION_HEADROOM_MS = 10_000;
+
+/** What extraction loses, said on every result built from a PDF's text. */
+const PDF_TEXT_CAVEAT =
+  'Extraction can put line breaks, tables, and footnotes out of order, and a "--- Page N of M ---" line opens each page.';
+
+/** The `format_unavailable` reason for a PDF read that ran out of the call's budget. */
+const PDF_OUT_OF_TIME =
+  'it could not be fetched and read within this call’s time budget — retry the call';
+
+/**
+ * Whether this call holds the process-wide PDF extraction slot. Extractions run one at a time:
+ * calls queue for the slot in arrival order, each waiter's grant in {@link extractionWaiters}.
+ */
+let extractionBusy = false;
+const extractionWaiters: (() => void)[] = [];
+
+/**
+ * Wait for the extraction slot: `true` once this call holds it (free it with
+ * {@link releaseExtractionSlot}), `false` if `waitMs` passes first. Rejects as cancelled when
+ * `signal` aborts first.
+ */
+function acquireExtractionSlot(signal: AbortSignal, waitMs: number): Promise<boolean> {
+  if (!extractionBusy) {
+    extractionBusy = true;
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve, reject) => {
+    const cancelled = () =>
+      requestCancelled('The request was cancelled while it waited to extract the PDF text.');
+    if (signal.aborted) {
+      reject(cancelled());
+      return;
+    }
+    const leave = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      const index = extractionWaiters.indexOf(grant);
+      if (index !== -1) extractionWaiters.splice(index, 1);
+    };
+    const grant = (): void => {
+      leave();
+      resolve(true);
+    };
+    const onAbort = (): void => {
+      leave();
+      reject(cancelled());
+    };
+    const timer = setTimeout(() => {
+      leave();
+      resolve(false);
+    }, waitMs);
+    extractionWaiters.push(grant);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/** Hand the extraction slot to the longest-waiting call, or free it. */
+function releaseExtractionSlot(): void {
+  const next = extractionWaiters.shift();
+  if (next === undefined) extractionBusy = false;
+  else next();
+}
+
+/** The `format_unavailable` reason for a PDF fetch failure the call degrades on, else none. */
+function pdfFetchFailure(error: unknown): string | undefined {
+  if (!(error instanceof McpError)) return;
+  if (error.data?.reason === 'content_too_large') {
+    return `the PDF is over the ${PDF_MAX_BYTES}-byte ceiling for text extraction`;
+  }
+  if (error.code === JsonRpcErrorCode.Timeout) return PDF_OUT_OF_TIME;
+  if (error.code === JsonRpcErrorCode.ServiceUnavailable) {
+    return 'the content host failed to return it — retry after a short delay';
+  }
+  if (error.code === JsonRpcErrorCode.RateLimited) {
+    return 'the content host is limiting requests — retry after a short delay';
+  }
+  // The PDF is the only fetch a PDF-only application's markdown makes, and that answer was this
+  // notice before the PDF was read at all: a host that challenges automated clients, or refuses
+  // the request any other way short of a 404, degrades it.
+  if (error.data?.reason === 'content_host_blocked') {
+    return 'the content host refused automated access, answering with a bot-check page instead of the PDF, so retrying will not help';
+  }
+  const status = error.data?.status;
+  if (typeof status === 'number' && error.code !== JsonRpcErrorCode.NotFound) {
+    return `the content host answered HTTP ${status}`;
+  }
+  return;
+}
+
+/** A PDF's text with a `--- Page N of M ---` line before each page, or why there is none. */
+type PdfTextOutcome =
+  | { readonly kind: 'text'; readonly text: string }
+  | { readonly kind: 'unavailable'; readonly reason: string };
+
+/**
+ * Fetch a PDF and extract its text — the reading path for a document whose only readable
+ * rendition is a PDF. Everything that bounds the call happens before extraction, which cannot
+ * be stopped once it starts: the fetch reads at most {@link PDF_MAX_BYTES}, the fetch and the
+ * wait for the extraction slot both end {@link EXTRACTION_HEADROOM_MS} short of `deadlineAt`,
+ * and extraction starts only on a live signal. A PDF that cannot be fetched in time, fails
+ * upstream, is refused by the content host (its bot check or any HTTP status but 404), is over
+ * the ceiling, cannot be read, or has no text on any page comes back `unavailable` with the
+ * reason; a 404 (`NotFound`), a
+ * missing extractor (`ConfigurationError`), and the caller's cancellation throw. No OCR.
+ */
+async function readPdfText(url: string, deadlineAt: number, ctx: Context): Promise<PdfTextOutcome> {
+  const outOfTime = { kind: 'unavailable', reason: PDF_OUT_OF_TIME } as const;
+  const fetchMs = deadlineAt - EXTRACTION_HEADROOM_MS - Date.now();
+  if (fetchMs <= 0) return outOfTime;
+  let bytes: Uint8Array;
+  try {
+    ({ bytes } = await getRisService().fetchDocumentBytes(url, ctx, {
+      deadlineMs: fetchMs,
+      maxBytes: PDF_MAX_BYTES,
+    }));
+  } catch (error) {
+    const reason = ctx.signal.aborted ? undefined : pdfFetchFailure(error);
+    if (reason === undefined) throw error;
+    return { kind: 'unavailable', reason };
+  }
+
+  const waitMs = deadlineAt - EXTRACTION_HEADROOM_MS - Date.now();
+  if (!(await acquireExtractionSlot(ctx.signal, waitMs))) return outOfTime;
+  let pages: string[];
+  try {
+    if (ctx.signal.aborted) {
+      throw requestCancelled('The request was cancelled before the PDF text was extracted.');
+    }
+    if (deadlineAt - Date.now() < EXTRACTION_HEADROOM_MS) return outOfTime;
+    const { text } = await pdfParser.extractText(bytes, undefined, ctx);
+    pages = Array.isArray(text) ? text : [text];
+  } catch (error) {
+    if (error instanceof McpError && error.data?.reason === 'pdf_text_extract_failed') {
+      return { kind: 'unavailable', reason: 'the file could not be read as a PDF' };
+    }
+    throw error;
+  } finally {
+    releaseExtractionSlot();
+  }
+
+  if (pages.every((page) => page.trim() === '')) {
+    return {
+      kind: 'unavailable',
+      reason: `none of its ${pages.length} pages carries a text layer (a scanned document), and no OCR is performed`,
+    };
+  }
+  return {
+    kind: 'text',
+    text: pages
+      .map((page, i) => `--- Page ${i + 1} of ${pages.length} ---\n${page.trim()}`)
+      .join('\n\n'),
+  };
+}
+
+/** `base` carrying `text` and its byte size, logged once; `extra` adds the text's provenance. */
+function withText(
+  base: DocumentRendition,
+  text: string,
+  ctx: Context,
+  extra: Pick<DocumentRendition, 'provenanceNotice' | 'textSource'> = {},
+): DocumentRendition {
+  const byteSize = new TextEncoder().encode(text).length;
+  ctx.log.info('Document rendered', {
+    application: base.application,
+    byteSize,
+    format: base.format,
+    ...(extra.textSource !== undefined && { textSource: extra.textSource }),
+  });
+  return { ...base, byteSize, text, ...extra };
+}
+
+/**
+ * Turn {@link readPdfText}'s outcome into a rendition: the text, `textSource: 'pdf'`, and the
+ * provenance notice `pdf` names; or, when there is no text, the `format_unavailable` notice
+ * `pdf` names plus the reason.
+ */
+async function pdfRendition(
+  base: DocumentRendition,
+  pdf: { readonly provenance: string; readonly unavailable: string; readonly url: string },
+  deadlineAt: number,
+  ctx: Context,
+): Promise<DocumentRendition> {
+  const outcome = await readPdfText(pdf.url, deadlineAt, ctx);
+  if (outcome.kind === 'unavailable') {
+    return {
+      ...base,
+      unavailableNotice: `${pdf.unavailable} Its text could not be extracted: ${outcome.reason}.`,
+    };
+  }
+  return withText(base, outcome.text, ctx, {
+    provenanceNotice: pdf.provenance,
+    textSource: 'pdf',
+  });
 }
 
 /**
@@ -752,9 +1061,27 @@ export function selectDocumentSections(
   };
 }
 
-/** Quote a caller-supplied section-name list for a notice. */
+/** Code points of a caller-supplied name a notice quotes; a longer name is cut and ends in `…`. */
+const QUOTED_NAME_MAX = 120;
+
+/**
+ * Quote a caller-supplied section-name list for a notice, each name shortened to its first
+ * {@link QUOTED_NAME_MAX} code points so notices stay short. The names are otherwise raw: the
+ * notice is structuredContent's value too, and the tool's `enrichmentTrailer` escapes it for
+ * content[].
+ */
 function quoteNames(names: readonly string[]): string {
-  return names.map((name) => `"${name}"`).join(', ');
+  const shorten = (name: string): string => {
+    let count = 0;
+    let end = 0;
+    for (const char of name) {
+      if (count === QUOTED_NAME_MAX) return `${name.slice(0, end)}…`;
+      count++;
+      end += char.length;
+    }
+    return name;
+  };
+  return names.map((name) => `"${shorten(name)}"`).join(', ');
 }
 
 /**
@@ -820,6 +1147,19 @@ export function renderOutlineSections(sections: readonly SectionMeta[]): string 
 }
 
 /**
+ * `text` as content[] carries it: markdown converted from html passes through as is; raw
+ * html/xml and text extracted from a PDF, which is plain text, are fenced.
+ */
+export function fencedText(
+  text: string,
+  format: DocumentFormat,
+  textSource: TextSource | undefined,
+): string {
+  if (format !== 'markdown') return markdown().codeBlock(text, format).build();
+  return textSource === 'pdf' ? markdown().codeBlock(text, 'text').build() : text;
+}
+
+/**
  * Resolve, construct URLs for, and (for text formats on text-bearing applications) fetch
  * and convert one RIS document. Throws framework errors (`validationError` for an unknown
  * application or unsafe document number; `notFound`/`serviceUnavailable`/`timeout` from the
@@ -828,6 +1168,14 @@ export function renderOutlineSections(sections: readonly SectionMeta[]): string 
  * `contentName` addresses a companion document inside the same folder instead of the main
  * rendition; the requested `format` still selects the rendition, exactly as it does for a
  * main document.
+ *
+ * `markdown` reads a PDF's text where the PDF is the document's only readable rendition: on a
+ * PDF-only or authentic-PDF-only application, for a companion whose html rendition 404s, and
+ * for an html rendition that converts to image references alone (see
+ * {@link RenditionMarkdown}) — a PDF with no text there keeps the image references, with a
+ * notice saying why. Everything that reads a PDF runs on one
+ * {@link PDF_TEXT_BUDGET_MS} counted from here. A full-text document's html 404 stays a 404 —
+ * a wrong number, never a cue to read its PDF.
  */
 export async function renderDocument(
   applicationCode: string,
@@ -836,6 +1184,7 @@ export async function renderDocument(
   ctx: Context,
   contentName?: string,
 ): Promise<DocumentRendition> {
+  const deadlineAt = Date.now() + PDF_TEXT_BUDGET_MS;
   const app = APPLICATION_BY_CODE.get(applicationCode);
   if (!app) {
     throw validationError(`Unknown RIS application "${applicationCode}".`, {
@@ -854,25 +1203,86 @@ export async function renderDocument(
     ...(urls.authenticPdfUrl !== undefined && { authenticPdfUrl: urls.authenticPdfUrl }),
   } satisfies DocumentRendition;
 
-  // No usable payload for the request: a metadata-only application (no URLs at all, any
-  // format), or a text format against an application with no text rendition.
-  if (app.formats === 'none' || (format !== 'urls_only' && app.formats !== 'full')) {
+  // A metadata-only application has no rendition URLs at all, whatever the format.
+  if (app.formats === 'none') {
     return { ...base, unavailableNotice: formatUnavailableNotice(app, format, urls) };
   }
   // urls_only on a full / authentic-PDF-only / PDF-only application — URLs already in base.
   if (format === 'urls_only') return base;
+  // A PDF is the application's only rendition: markdown reads its text, html and xml have none.
+  if (app.formats !== 'full') {
+    const unavailable = formatUnavailableNotice(app, format, urls);
+    if (format !== 'markdown') return { ...base, unavailableNotice: unavailable };
+    const pdf = service.buildDocumentContentUrl(app.code, documentNumber, 'pdf');
+    const signed = app.formats === 'authentic_pdf_only' ? authenticPdfFrom(pdf) : undefined;
+    return await pdfRendition(
+      base,
+      {
+        provenance:
+          signed !== undefined
+            ? `Text extracted from the signed authentic PDF at authentic_pdf_url (${signed}), the only rendition ${app.code} publishes — that PDF is the legally binding artifact, so cite it, not this text. ${PDF_TEXT_CAVEAT}`
+            : `Text extracted from the PDF at content_urls.pdf (${pdf}), the only rendition ${app.code} publishes. ${PDF_TEXT_CAVEAT}`,
+        unavailable,
+        url: signed ?? pdf,
+      },
+      deadlineAt,
+      ctx,
+    );
+  }
 
   const fetchFormat: RisContentFormat = format === 'xml' ? 'xml' : 'html';
   const url = service.buildDocumentContentUrl(app.code, documentNumber, fetchFormat, contentName);
-  const fetched = await service.fetchDocumentContent(url, ctx);
-  const rendered = format === 'markdown' ? toMarkdown(fetched.text) : fetched.text;
-  const encoded = new TextEncoder().encode(rendered);
-  ctx.log.info('Document rendered', {
-    application: app.code,
-    byteSize: encoded.length,
-    format,
+  let fetched: RisDocumentContent;
+  try {
+    fetched = await service.fetchDocumentContent(url, ctx);
+  } catch (error) {
+    if (
+      format !== 'markdown' ||
+      contentName === undefined ||
+      !(error instanceof McpError) ||
+      error.code !== JsonRpcErrorCode.NotFound
+    ) {
+      throw error;
+    }
+    const pdf = service.buildDocumentContentUrl(app.code, documentNumber, 'pdf', contentName);
+    return await pdfRendition(
+      base,
+      {
+        provenance: `This companion document has no html rendition, so its text was extracted from the PDF at content_urls.pdf (${pdf}). ${PDF_TEXT_CAVEAT}`,
+        unavailable: `This companion document has no html rendition — RIS files it as a PDF only. Fetch the PDF from content_urls.pdf (${pdf}).`,
+        url: pdf,
+      },
+      deadlineAt,
+      ctx,
+    );
+  }
+  if (format !== 'markdown') return withText(base, fetched.text, ctx);
+  const { markdown: converted, pageImages } = toMarkdown(fetched.text, fetched.url);
+  let provenanceNotice: string | undefined;
+  if (pageImages !== undefined) {
+    // RIS filed the document's pages as pictures, so whatever text it has is in its PDF.
+    const pdf = service.buildDocumentContentUrl(app.code, documentNumber, 'pdf', contentName);
+    const images = `${pageImages} page image${pageImages === 1 ? '' : 's'}`;
+    // The html rendition exists, so a PDF that 404s says nothing about the document: keep the
+    // images, as for a PDF with no text, rather than reporting the document missing.
+    const outcome = await readPdfText(pdf, deadlineAt, ctx).catch((error: unknown) => {
+      if (error instanceof McpError && error.code === JsonRpcErrorCode.NotFound) {
+        return { kind: 'unavailable', reason: 'no PDF is published at that URL' } as const;
+      }
+      throw error;
+    });
+    if (outcome.kind === 'text') {
+      return withText(base, outcome.text, ctx, {
+        provenanceNotice: `This document’s html rendition carries only ${images} and no text, so its text was extracted from the PDF at content_urls.pdf (${pdf}). ${PDF_TEXT_CAVEAT}`,
+        textSource: 'pdf',
+      });
+    }
+    provenanceNotice = `This document’s html rendition carries only ${images} and no extractable text, so the image URLs are returned in its place. Its text could not be extracted from the PDF at content_urls.pdf (${pdf}) either: ${outcome.reason}.`;
+  }
+  return withText(base, converted, ctx, {
+    textSource: 'html',
+    ...(provenanceNotice !== undefined && { provenanceNotice }),
   });
-  return { ...base, byteSize: encoded.length, text: rendered };
 }
 
 const ContentUrlsSchema = z
@@ -889,7 +1299,7 @@ const ContentUrlsSchema = z
 export const risGetDocument = tool('ris_get_document', {
   title: 'Get RIS Document',
   description:
-    'Fetch one RIS document’s full text or its rendition URLs, with explicit binding status and the amtssigniert authentic PDF surfaced wherever it exists. Address the document exactly one of two ways: document_number plus application (both copied verbatim from a ris_search_* or ris_lookup_citation result), or a document_url from a result’s content_urls — or, for a draft’s companion documents (Erläuterungen, Textgegenüberstellung, WFA, cover letter, annexes), a ris_search_drafts record’s materials[].url, which is the only route to them. format: markdown (default — the HTML rendition converted to markdown), html (raw HTML rendition), xml (the RIS Nutzdaten XML), or urls_only (no fetch — every rendition URL, including the Authentisch PDF). Format availability varies by application and the tool degrades explicitly, never silently: consolidated law, gazettes, case law, drafts, and most sectoral collections carry full text; district and municipal promulgations and court rules (Bvb, GrA, KmGer) publish only the signed authentic PDF; party-transparency decisions and council minutes (Upts, Mrp) are PDF-only; the 1848–1940 imperial gazettes (BgblAlt) are metadata-only — for these a text-format request returns a format_unavailable notice with the usable URL, not an error. Every result carries binding_status; only authentic (amtssigniert) publications are legally binding. This tool returns content, not fresh metadata — the metadata rides the search/lookup step that produced the document number. When the markdown text overflows the 40,000-byte budget the tool returns an outline (kind: outline) instead of truncating: the document’s §/Artikel/Anlage sections where it carries at least two such headings, otherwise contiguous byte windows named Part 1 of N … Part N of N covering the whole text and listed in document order. Re-call with sections:[…] naming outline entries to retrieve just those; a name matching no entry returns the outline again with a notice rather than the whole document. Windows are cut at line breaks, not at sentence or § boundaries, so one can open mid-sentence — read them in order and pull the neighbour when a passage straddles a cut. Raw html and xml renditions are never sliced: at or under the 40,000-byte budget they return whole; over it the result is kind: link — no text, truncated: true, the full byte_size, and content_urls, whose html or xml entry fetches the whole artifact in one GET. Every HTML rendition opens with a 40–70 KB stylesheet, so html practically always returns kind: link — read with markdown, parse with xml, and fetch content_urls.html for the authentic markup. Markdown drops the screen-reader expansions RIS ships alongside each abbreviated citation, keeping the visible citation form, and prints each Absatz, Ziffer, and litera under its own statutory label — (1a), 2., b) — with no generated list number in front; raw html/xml renditions are returned exactly as published.',
+    'Fetch one RIS document’s full text or its rendition URLs, with explicit binding status and the amtssigniert authentic PDF surfaced wherever it exists. Address the document exactly one of two ways: document_number plus application (both copied verbatim from a ris_search_* or ris_lookup_citation result), or a document_url from a result’s content_urls — or, for a draft’s companion documents (Erläuterungen, Textgegenüberstellung, WFA, cover letter, annexes), a ris_search_drafts record’s materials[].url, which is the only route to them. format: markdown (default — the HTML rendition converted to markdown, or the PDF’s extracted text where a PDF is the only rendition), html (raw HTML rendition), xml (the RIS Nutzdaten XML), or urls_only (no fetch — every rendition URL, including the Authentisch PDF). Format availability varies by application and the tool degrades explicitly, never silently: consolidated law, gazettes, case law, drafts, and most sectoral collections carry full text; district and municipal promulgations and court rules (Bvb, GrA, KmGer) publish only the signed authentic PDF; party-transparency decisions and council minutes (Upts, Mrp) are PDF-only; the 1848–1940 imperial gazettes (BgblAlt) are metadata-only. Where a PDF is the only rendition — those PDF-only and authentic-PDF-only applications, and a draft companion filed with no html twin — markdown returns the text extracted from it (text_source: pdf, a "--- Page N of M ---" line before each page, a notice naming the PDF); for an authentic application the signed PDF stays the binding artifact to cite. html and xml there, every format on BgblAlt, and a PDF whose text cannot be extracted (a scan with no text layer — no OCR is performed — or an oversized, unreadable, or unreachable file) return a format_unavailable notice with the usable URL, not an error. Every result carries binding_status; only authentic (amtssigniert) publications are legally binding. This tool returns content, not fresh metadata — the metadata rides the search/lookup step that produced the document number. When the markdown text overflows the 40,000-byte budget the tool returns an outline (kind: outline) instead of truncating: the document’s §/Artikel/Anlage sections where it carries at least two such headings, otherwise contiguous byte windows named Part 1 of N … Part N of N covering the whole text and listed in document order. Re-call with sections:[…] naming outline entries to retrieve just those; a name matching no entry returns the outline again with a notice rather than the whole document. Windows are cut at line breaks, not at sentence or § boundaries, so one can open mid-sentence — read them in order and pull the neighbour when a passage straddles a cut. Raw html and xml renditions are never sliced: at or under the 40,000-byte budget they return whole; over it the result is kind: link — no text, truncated: true, the full byte_size, and content_urls, whose html or xml entry fetches the whole artifact in one GET. Every HTML rendition opens with a 40–70 KB stylesheet, so html practically always returns kind: link — read with markdown, parse with xml, and fetch content_urls.html for the authentic markup. Markdown drops the screen-reader expansions RIS ships alongside each abbreviated citation, keeping the visible citation form, and prints each Absatz, Ziffer, and litera under its own statutory label — (1a), 2., b) — with no generated list number in front; raw html/xml renditions are returned exactly as published.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     document_number: z
@@ -914,7 +1324,7 @@ export const risGetDocument = tool('ris_get_document', {
       .enum(['markdown', 'html', 'xml', 'urls_only'])
       .default('markdown')
       .describe(
-        'markdown (default — the HTML rendition converted to markdown, and the format for reading), html (raw HTML rendition), xml (RIS Nutzdaten schema), or urls_only (no fetch — all rendition URLs incl. the authentic PDF). html and xml over 40,000 bytes return kind: link with no text — nearly every html rendition does, since each carries a 40–70 KB stylesheet — so fetch content_urls.html or content_urls.xml for the whole artifact.',
+        'markdown (default — the HTML rendition converted to markdown, or the text extracted from the PDF where a PDF is the document’s only rendition; the format for reading), html (raw HTML rendition), xml (RIS Nutzdaten schema), or urls_only (no fetch — all rendition URLs incl. the authentic PDF). html and xml over 40,000 bytes return kind: link with no text — nearly every html rendition does, since each carries a 40–70 KB stylesheet — so fetch content_urls.html or content_urls.xml for the whole artifact.',
       ),
     sections: z
       .array(z.string())
@@ -928,7 +1338,13 @@ export const risGetDocument = tool('ris_get_document', {
       .string()
       .optional()
       .describe(
-        'The document text in the requested format. Absent for urls_only, when the application carries no text rendition (see the notice), for an outline (kind: outline), and for an html or xml rendition over the 40,000-byte budget (kind: link).',
+        'The document text in the requested format. Markdown writes every image as an absolute URL on the content host. For markdown on a document whose only rendition is a PDF, or whose html rendition carries only page images, the text extracted from that PDF, a "--- Page N of M ---" line before each page (text_source: pdf); where that PDF has no text, the page images instead (text_source: html, the notice says so). Absent for urls_only, when no text could be returned (see the notice), for an outline (kind: outline), and for an html or xml rendition over the 40,000-byte budget (kind: link).',
+      ),
+    text_source: z
+      .enum(TEXT_SOURCES)
+      .optional()
+      .describe(
+        'Where the markdown text (or the outline it was cut from) came from: html — converted from the HTML rendition; pdf — extracted from the PDF, the document’s only readable rendition, so line breaks, tables, and footnotes may be out of order (the notice names the PDF). Present on every markdown result that carries text or sections.',
       ),
     format: z
       .enum(['markdown', 'html', 'xml', 'urls_only'])
@@ -980,8 +1396,21 @@ export const risGetDocument = tool('ris_get_document', {
       .string()
       .optional()
       .describe(
-        'Present when the requested text format is unavailable for this application (names why and the usable URL), when the document overflowed to a section outline (names how to retrieve sections), when an html or xml rendition overflowed to a link (names content_urls.<format> and format: markdown), or when a sections:[…] entry matched no section or was ignored (names the unmatched entries).',
+        'Present when the text was extracted from a PDF (names the PDF and what extraction loses, ahead of any other notice below), when an html rendition carries only page images and its PDF has no extractable text (gives the image count, names content_urls.pdf and why, ahead of any other notice below), when the requested text format is unavailable or a PDF’s text could not be extracted (names why and the usable URL, and that a sections:[…] selector was ignored), when the document overflowed to a section outline (names how to retrieve sections), when an html or xml rendition overflowed to a link (names content_urls.<format> and format: markdown), or when a sections:[…] entry matched no section or was ignored (names the unmatched entries).',
       ),
+  },
+  // The framework writes a notice into content[] as authored Markdown, and these quote caller
+  // text: unmatched sections:[…] names and URLs carrying the document_number. Escape the whole
+  // notice, then quote every line as the framework does, so content[] reads back what
+  // structuredContent.notice holds.
+  enrichmentTrailer: {
+    notice: {
+      render: (notice: string) =>
+        escapeMarkdownInline(notice)
+          .split('\n')
+          .map((line) => (line === '' ? '>' : `> ${line}`))
+          .join('\n'),
+    },
   },
   errors: [
     {
@@ -1008,7 +1437,7 @@ export const risGetDocument = tool('ris_get_document', {
     {
       reason: 'upstream_error',
       code: JsonRpcErrorCode.ServiceUnavailable,
-      when: 'The RIS content host was unreachable or returned a server error.',
+      when: 'The RIS content host was unreachable or returned a server error. A PDF read for its text degrades to the format_unavailable notice instead.',
       retryable: true,
       recovery:
         'The RIS content host is temporarily unavailable — retry the fetch after a short delay.',
@@ -1016,7 +1445,7 @@ export const risGetDocument = tool('ris_get_document', {
     {
       reason: 'content_host_blocked',
       code: JsonRpcErrorCode.ConfigurationError,
-      when: 'The configured RIS content host answered with a bot-check page ("Security Check") instead of the document — it refuses automated clients, so every read through it fails the same way.',
+      when: 'The configured RIS content host answered with a bot-check page ("Security Check") instead of the document — it refuses automated clients, so every read through it fails the same way. A PDF read for its text degrades to the format_unavailable notice instead.',
       retryable: false,
       recovery:
         'Retrying will not help: the RIS content host this server is configured with answers automated clients with a bot-check page. Re-call with format: urls_only for the rendition URLs without a fetch, and report it to the server operator: RIS_CONTENT_BASE_URL should be https://ogd.ris.bka.gv.at (the default), the host that serves RIS documents to automated clients; if it already is, that host is challenging the server’s network address.',
@@ -1024,7 +1453,7 @@ export const risGetDocument = tool('ris_get_document', {
     {
       reason: 'upstream_timeout',
       code: JsonRpcErrorCode.Timeout,
-      when: 'The content host did not return the rendition within the fetch deadline — typically a cold render, which it performs on first request before caching the result.',
+      when: 'The content host did not return the rendition within the fetch deadline — typically a cold render, which it performs on first request before caching the result. A PDF read for its text degrades to the format_unavailable notice instead.',
       retryable: true,
       recovery:
         'Retry the identical call once or twice — the host renders a document on first request and caches it, so a later fetch often returns instantly. If it keeps timing out, check document_number against a fresh search result (a wrong number renders a slow 404 that looks identical), then re-call with format: urls_only and fetch content_urls yourself, without this deadline.',
@@ -1085,6 +1514,7 @@ export const risGetDocument = tool('ris_get_document', {
           // never filed rather than a mistyped identifier — one companion in eight is filed
           // as PDF (or PDF and RTF) with no html or xml twin to render, nearly all of them
           // review-draft covering letters, and RIS 404s a rendition it does not list.
+          // markdown has already fallen back to that PDF, so its 404 means both are gone.
           throw ctx.fail(
             'document_not_found',
             err.message,
@@ -1092,7 +1522,10 @@ export const risGetDocument = tool('ris_get_document', {
               ? undefined
               : {
                   recovery: {
-                    hint: `This companion document has no ${format} rendition — about one in eight is filed as a PDF with no text rendition at all, and RIS returns 404 for a rendition it does not publish. Re-call with format: urls_only and fetch content_urls.pdf yourself. If the PDF 404s too, the URL itself is stale — take a fresh one from a ris_search_drafts record's materials.`,
+                    hint:
+                      format === 'markdown'
+                        ? `Neither this companion document's html rendition nor its PDF exists, so the URL itself is stale — take a fresh one from a ris_search_drafts record's materials.`
+                        : `This companion document has no ${format} rendition — about one in eight is filed as a PDF with no text rendition at all, and RIS returns 404 for a rendition it does not publish. Re-call with format: markdown, which reads the text of a companion's PDF when it has no html rendition. If that 404s too, the URL itself is stale — take a fresh one from a ris_search_drafts record's materials.`,
                   },
                 },
           );
@@ -1119,16 +1552,32 @@ export const risGetDocument = tool('ris_get_document', {
       ...(rendition.authenticPdfUrl !== undefined && {
         authentic_pdf_url: rendition.authenticPdfUrl,
       }),
+      ...(rendition.textSource !== undefined && { text_source: rendition.textSource }),
     };
+    const requestedSections = input.sections?.filter((name) => name.trim() !== '') ?? [];
 
     // No text payload — format_unavailable (with its notice) or urls_only. Complete either way.
     if (rendition.text === undefined) {
-      if (rendition.unavailableNotice !== undefined) ctx.enrich.notice(rendition.unavailableNotice);
+      if (rendition.unavailableNotice !== undefined) {
+        ctx.enrich.notice(
+          joinNotices(
+            requestedSections.length > 0
+              ? `sections:[…] was ignored — no text was returned to select from, so ${quoteNames([...new Set(requestedSections)])} could not be resolved.`
+              : undefined,
+            rendition.unavailableNotice,
+          ),
+        );
+      }
       return { ...base, kind: 'full' as const };
     }
 
+    // Text extracted from a PDF says so on every result built from it. `notice` is last-wins,
+    // so every later notice goes through `notify`, which keeps the provenance ahead of it.
+    if (rendition.provenanceNotice !== undefined) ctx.enrich.notice(rendition.provenanceNotice);
+    const notify = (notice: string): void => {
+      ctx.enrich.notice(joinNotices(rendition.provenanceNotice, notice));
+    };
     const { byteSize } = rendition;
-    const requestedSections = input.sections?.filter((name) => name.trim() !== '') ?? [];
 
     // A raw rendition over the budget. Never sliced — its body is typically one line and a
     // slice is not well-formed — so no text returns on either surface; content_urls fetches
@@ -1142,7 +1591,7 @@ export const risGetDocument = tool('ris_get_document', {
         requestedSections.length > 0
           ? `sections:[…] was ignored — raw html and xml are never sliced, so ${quoteNames([...new Set(requestedSections)])} could not be resolved. `
           : '';
-      ctx.enrich.notice(
+      notify(
         `${ignored}The ${format} rendition is ${byteSize} bytes, over the ${OUTLINE_BUDGET_BYTES}-byte budget for inline text, so no text is returned. Fetch the whole artifact in one GET from content_urls.${format} (${rendition.contentUrls[format]}), or re-call ris_get_document with the same addressing and format: "markdown" for readable text, which outlines a long document into retrievable sections.`,
       );
       return { ...base, kind: 'link' as const, truncated: true, byte_size: byteSize };
@@ -1164,7 +1613,7 @@ export const risGetDocument = tool('ris_get_document', {
           // Names candidates from the roster rather than promising an outline on a re-call
           // without sections:[…] — that re-call only outlines a document over the byte
           // budget, and returns the whole text for every document under it.
-          ctx.enrich.notice(
+          notify(
             `Returned only the matched entries — ${quoteNames(selection.unmatched)} named no entry of this document and ${selection.unmatched.length === 1 ? 'was' : 'were'} skipped. This document has ${roster}; copy a name verbatim and re-call ris_get_document with the same addressing — e.g. ${exampleSectionNames(selection.available)}.`,
           );
         }
@@ -1176,7 +1625,7 @@ export const risGetDocument = tool('ris_get_document', {
         };
       }
       if (selection.available.length > 0) {
-        ctx.enrich.notice(
+        notify(
           selection.windowed
             ? `sections:[…] matched nothing — ${quoteNames(selection.unmatched)} named no entry of this document. It is addressed as ${roster}. Copy a name verbatim from sections and re-call ris_get_document with the same addressing — e.g. ${exampleSectionNames(selection.available)}.`
             : `sections:[…] matched nothing — ${quoteNames(selection.unmatched)} named no section of this document, so the outline below is a selector mismatch, not a size overflow. Copy a name verbatim from sections and re-call ris_get_document with the same addressing — e.g. ${exampleSectionNames(selection.available)}.`,
@@ -1193,7 +1642,7 @@ export const risGetDocument = tool('ris_get_document', {
       // under the budget with no §/Artikel/Anlage headings. Both halves are named: a caller
       // told only about headings would retry the same selector on a larger document of the
       // same shape. Say so, then return the document whole below.
-      ctx.enrich.notice(
+      notify(
         `sections:[…] was ignored — this rendition has no addressable entries, so ${quoteNames(selection.unmatched)} could not be resolved. Raw html and xml are never sliced; markdown carries entries when it has §/Artikel/Anlage headings, or once it overflows the ${OUTLINE_BUDGET_BYTES}-byte budget. The whole document follows.`,
       );
     }
@@ -1214,7 +1663,7 @@ export const risGetDocument = tool('ris_get_document', {
         ...(byteSize !== undefined && { byte_size: byteSize }),
       };
     }
-    ctx.enrich.notice(decision.notice);
+    notify(decision.notice);
     return {
       ...base,
       kind: 'outline' as const,
@@ -1232,11 +1681,12 @@ export const risGetDocument = tool('ris_get_document', {
   // Raw html/xml is fenced with a fence longer than any backtick run in it, so the markup
   // reaches the client as literal text — never rendered, never able to close the block. The
   // echoed document number is escaped (the input is a free string, `~` and `_` included) and every URL goes
-  // through markdownLink; `text` is Markdown by contract and passes through as is.
+  // through markdownLink; `text` converted from html is Markdown by contract and passes through
+  // as is, while text extracted from a PDF is plain text and is fenced like the raw formats.
   format: (result) => {
     const lines = [`## ${escapeMarkdownInline(result.document_number)} (${result.application})`];
     lines.push(
-      `**Binding:** ${result.binding_status} | **Format:** ${result.format} | **Kind:** ${result.kind}`,
+      `**Binding:** ${result.binding_status} | **Format:** ${result.format} | **Kind:** ${result.kind}${result.text_source !== undefined ? ` | **Text source:** ${result.text_source}` : ''}`,
     );
     if (result.byte_size !== undefined) {
       const suffix =
@@ -1256,12 +1706,7 @@ export const risGetDocument = tool('ris_get_document', {
     if (urls.length > 0) lines.push(`**Renditions:** ${urls.join(' · ')}`);
     if (result.sections !== undefined) lines.push('', renderOutlineSections(result.sections));
     if (result.text !== undefined) {
-      lines.push(
-        '',
-        result.format === 'markdown'
-          ? result.text
-          : markdown().codeBlock(result.text, result.format).build(),
-      );
+      lines.push('', fencedText(result.text, result.format, result.text_source));
     }
     return [{ type: 'text', text: lines.join('\n') }];
   },

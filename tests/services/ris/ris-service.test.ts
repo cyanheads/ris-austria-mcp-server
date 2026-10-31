@@ -1,7 +1,8 @@
 /**
  * @fileoverview Offline RisService tests: the content-URL SSRF guard, per-application
  * content-URL construction from the path-segment map on the default content host, the
- * HTTP-500 error-envelope translation and the content host's bot-check page (fetch stubbed —
+ * HTTP-500 error-envelope translation, the content host's bot-check page, and the PDF read's
+ * byte ceiling and deadline (fetch stubbed —
  * no network), a request-builder rejection failing before any request is sent, the retry
  * budget a search spends alone or shares with the searches chained after it (fake timers), and
  * the init/accessor contract.
@@ -748,6 +749,190 @@ describe('RisService.fetchDocumentContent — upstream classification and retry 
       (call) => call.msg === 'RIS content fetched',
     );
     expect(record?.data).toEqual({ byteSize: 11, file: 'NOR11013238.html' });
+  });
+});
+
+describe('RisService.fetchDocumentBytes — byte ceiling and one deadline (#97)', () => {
+  const service = new RisService('ris-austria-mcp-server/test');
+  const PDF_URL = `${DEFAULT_CONTENT_HOST}/Dokumente/Mrp/MRP_20261021_67/MRP_20261021_67.pdf`;
+  const PDF = new Uint8Array(
+    readFileSync(
+      new URL('../../fixtures/ris/document-begut-companion-text-layer.pdf', import.meta.url),
+    ),
+  );
+  const LIMITS = { deadlineMs: 38_000, maxBytes: 1_000 };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  /** A 200 whose body streams `chunks` chunks of `chunkBytes` zero bytes, counting each pull. */
+  function streamedResponse(chunkBytes: number, chunks: number, headers?: Record<string, string>) {
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (pulled === chunks) {
+          controller.close();
+          return;
+        }
+        pulled += 1;
+        controller.enqueue(new Uint8Array(chunkBytes));
+      },
+    });
+    return {
+      pulled: () => pulled,
+      response: new Response(body, { status: 200, ...(headers !== undefined && { headers }) }),
+    };
+  }
+
+  it('returns the rendition’s bytes whole under the ceiling, in one request', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response(PDF, { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    const ctx = createMockContext();
+
+    const fetched = await service.fetchDocumentBytes(PDF_URL, ctx, {
+      deadlineMs: 38_000,
+      maxBytes: 16 * 1024 * 1024,
+    });
+
+    expect(fetched.url).toBe(PDF_URL);
+    expect(fetched.bytes).toEqual(PDF);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const record = (ctx.log as MockContextLogger).calls.find(
+      (call) => call.msg === 'RIS content fetched',
+    );
+    expect(record?.data).toEqual({ byteSize: 21_183, file: 'MRP_20261021_67.pdf' });
+  });
+
+  it('fails a body declared over the ceiling before reading any of it, without a retry', async () => {
+    const streamed = streamedResponse(100, 50, { 'content-length': '5000' });
+    const fetchMock = vi.fn(() => Promise.resolve(streamed.response));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const err = await service
+      .fetchDocumentBytes(PDF_URL, createMockContext(), LIMITS)
+      .catch((e: unknown) => e);
+
+    expect(err).toMatchObject({ data: { reason: 'content_too_large', maxBytes: 1_000 } });
+    // Only the stream's own read-ahead runs — none of the 50 chunks is read into a buffer.
+    expect(streamed.pulled()).toBeLessThan(5);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops reading a body that streams past the ceiling at the chunk that crosses it', async () => {
+    // No Content-Length, so the ceiling has to hold while the body streams.
+    const streamed = streamedResponse(100, 1_000);
+    const fetchMock = vi.fn(() => Promise.resolve(streamed.response));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const err = await service
+      .fetchDocumentBytes(PDF_URL, createMockContext(), LIMITS)
+      .catch((e: unknown) => e);
+
+    expect(err).toMatchObject({ data: { reason: 'content_too_large', maxBytes: 1_000 } });
+    // 11 chunks cross 1,000 bytes; the body's own read-ahead may pull a few more, never the rest.
+    expect(streamed.pulled()).toBeLessThan(20);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts a body of exactly the ceiling', async () => {
+    const streamed = streamedResponse(100, 10);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(streamed.response)),
+    );
+
+    const fetched = await service.fetchDocumentBytes(PDF_URL, createMockContext(), LIMITS);
+
+    expect(fetched.bytes.byteLength).toBe(1_000);
+  });
+
+  it('leaves a 404 as NotFound and does not retry it', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(new Response('<html>404</html>', { status: 404 })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const err = await service
+      .fetchDocumentBytes(PDF_URL, createMockContext(), LIMITS)
+      .catch((e: unknown) => e);
+
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.NotFound);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a 5xx once, inside the deadline', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(new Response('<html>Service Unavailable</html>', { status: 503 })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+
+    const pending = service
+      .fetchDocumentBytes(PDF_URL, createMockContext(), LIMITS)
+      .catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(60_000);
+    const err = (await pending) as McpError;
+
+    expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('settles a host that never answers within deadlineMs, across both attempts', async () => {
+    const fetchMock = vi.fn(
+      (_url: unknown, init: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => {
+            reject(init.signal?.reason as Error);
+          });
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+
+    const t0 = Date.now();
+    let settledAt = 0;
+    const pending = service
+      .fetchDocumentBytes(PDF_URL, createMockContext(), { deadlineMs: 30_000, maxBytes: 1_000 })
+      .catch((e: unknown) => {
+        settledAt = Date.now();
+        return e;
+      });
+    await vi.advanceTimersByTimeAsync(120_000);
+    const err = (await pending) as McpError;
+
+    expect(err.code).toBe(JsonRpcErrorCode.Timeout);
+    // The first attempt times out at the per-attempt bound; the second runs on what is left
+    // of the deadline instead of a fresh per-attempt bound.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(settledAt - t0).toBeLessThanOrEqual(30_000);
+  });
+
+  it('classifies a caller abort as RequestCancelled without retrying', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.reject(new DOMException('The operation was aborted.', 'AbortError')),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const err = await service
+      .fetchDocumentBytes(PDF_URL, createMockContext(), LIMITS)
+      .catch((e: unknown) => e);
+
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.RequestCancelled);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a URL outside the content allowlist before any request', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const err = await service
+      .fetchDocumentBytes('https://example.com/Dokumente/x.pdf', createMockContext(), LIMITS)
+      .catch((e: unknown) => e);
+
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
