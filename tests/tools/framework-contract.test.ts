@@ -11,14 +11,15 @@ import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { describe, expect, it } from 'vitest';
 import { risListReference } from '@/mcp-server/tools/definitions/ris-list-reference.tool.js';
 
+import { contentText, readCommonMark } from './_wire.js';
+
 describe('RIS framework tool contract', () => {
   it('renders the reference result on both response surfaces', async () => {
     const result = await runToolContract(risListReference, { topic: 'states' });
     expect(result.isError).not.toBe(true);
     const data = risListReference.output.parse(result.structuredContent);
-    const text = result.content
-      .flatMap((block) => (block.type === 'text' ? [block.text] : []))
-      .join('\n');
+    // content[] escapes the summary's `SucheIn<Land>`, so compare what a CommonMark parse reads.
+    const text = readCommonMark(contentText(result));
     expect(text).toContain(data.summary);
     for (const entry of data.entries) {
       expect(text).toContain(entry.value);

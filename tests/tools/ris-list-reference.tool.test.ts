@@ -4,7 +4,7 @@
  * @module tests/tools/ris-list-reference.tool.test
  */
 
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { describe, expect, it } from 'vitest';
 import { risListReference } from '@/mcp-server/tools/definitions/ris-list-reference.tool.js';
 import {
@@ -12,6 +12,8 @@ import {
   RIS_ISSUING_BODIES,
   RIS_MINISTRIES,
 } from '@/services/ris/reference/index.js';
+
+import { contentText, HOSTILE_TEXT, readCommonMark } from './_wire.js';
 
 const TOPICS = [
   'applications',
@@ -39,6 +41,58 @@ async function run(topic: (typeof TOPICS)[number]) {
   return await risListReference.handler(input, ctx);
 }
 
+type ReferenceResult = Awaited<ReturnType<typeof run>>;
+
+/** The text of the single block format() renders for `result`. */
+function formatText(result: ReferenceResult): string {
+  const blocks = risListReference.format!(result);
+  expect(blocks).toHaveLength(1);
+  return (blocks[0] as { type: 'text'; text: string }).text;
+}
+
+/**
+ * What a CommonMark parse of a topic's content[] reads ({@link readCommonMark}): one heading
+ * naming the topic, the summary, a table with a `Value | Label | <detail key>…` header row and
+ * one row per entry — an absent detail an empty cell, a line break in a cell a space, since a
+ * table row ends at one — then the notes as a bullet list. Every string reads back as written.
+ */
+function expectedReading(result: ReferenceResult): string {
+  const keys = [...new Set(result.entries.flatMap((e) => e.details.map((d) => d.key)))];
+  const row = (tag: 'td' | 'th', cells: readonly string[]) => [
+    '⟨tr_open⟩',
+    ...cells.flatMap((c) => [`⟨${tag}_open⟩`, c.replace(/\r\n?|\n/gu, ' '), `⟨${tag}_close⟩`]),
+    '⟨tr_close⟩',
+  ];
+  return [
+    '⟨heading_open⟩',
+    `ris_list_reference — ${result.topic}`,
+    '⟨heading_close⟩',
+    result.summary,
+    '⟨table_open⟩',
+    '⟨thead_open⟩',
+    ...row('th', ['Value', 'Label', ...keys]),
+    '⟨thead_close⟩',
+    '⟨tbody_open⟩',
+    ...result.entries.flatMap((e) =>
+      row('td', [
+        e.value,
+        e.label,
+        ...keys.map((k) => e.details.find((d) => d.key === k)?.value ?? ''),
+      ]),
+    ),
+    '⟨tbody_close⟩',
+    '⟨table_close⟩',
+    ...(result.notes.length === 0
+      ? []
+      : [
+          '⟨strong⟩Notes:⟨/strong⟩',
+          '⟨bullet_list_open⟩',
+          ...result.notes.flatMap((n) => ['⟨list_item_open⟩', n, '⟨list_item_close⟩']),
+          '⟨bullet_list_close⟩',
+        ]),
+  ].join('\n\n');
+}
+
 describe('risListReference', () => {
   for (const topic of TOPICS) {
     it(`returns non-empty, schema-conformant data for topic "${topic}"`, async () => {
@@ -53,20 +107,15 @@ describe('risListReference', () => {
       }
     });
 
-    it(`format() renders every entry value for topic "${topic}"`, async () => {
-      const result = await run(topic);
-      const blocks = risListReference.format!(result);
-      expect(blocks).toHaveLength(1);
-      const text = (blocks[0] as { type: 'text'; text: string }).text;
-      for (const entry of result.entries) {
-        expect(text).toContain(entry.value);
-        for (const detail of entry.details) {
-          expect(text).toContain(detail.key);
-        }
-      }
-      for (const note of result.notes) {
-        expect(text).toContain(note);
-      }
+    // The static tables carry Markdown-active text (`SucheIn<Land>`, `"<ABBR> Gesamtvertrag"`,
+    // a backticked `Bundesgesetzblatt`), which content[] must read back as written (#94).
+    it(`content[] reads back every string of topic "${topic}"`, async () => {
+      const result = await runToolContract(risListReference, { topic });
+      expect(result.isError).not.toBe(true);
+      const structured = await run(topic);
+      expect(result.structuredContent).toEqual(structured);
+      expect(result.content).toHaveLength(1);
+      expect(readCommonMark(contentText(result))).toBe(expectedReading(structured));
     });
   }
 
@@ -247,13 +296,9 @@ describe('risListReference', () => {
     expect(text).toContain('| one_week | Within the last week | EinerWoche |');
   });
 
-  it('escapes backslashes before pipes so cell text survives markdown rendering', () => {
-    /**
-     * A markdown renderer consumes a backslash standing before ASCII punctuation, so an
-     * unescaped one in the source value is dropped from the rendered cell. Escaping runs
-     * backslashes first: pipes first would re-escape the backslash it had just introduced,
-     * turning the cell's own `\|` delimiter escape into a literal `\|` in the output.
-     */
+  // A renderer consumes a backslash standing before ASCII punctuation and splits a row at an
+  // unescaped pipe, so either in a cell value would drop or shift text (#41).
+  it('reads back backslashes and pipes in cells verbatim', () => {
     const result = {
       topic: 'search_syntax',
       summary: 'Escaping fixture — values carrying backslashes and pipes.',
@@ -267,10 +312,37 @@ describe('risListReference', () => {
       notes: [],
     };
 
-    const text = (risListReference.format!(result)[0] as { type: 'text'; text: string }).text;
+    expect(readCommonMark(formatText(result))).toBe(expectedReading(result));
+  });
 
-    expect(text).toContain(
-      `| ${String.raw`x\\\|y`} | ${String.raw`a\\*b\|c`} | ${String.raw`C:\\dir\|tail`} |`,
-    );
+  it.each(Object.entries(HOSTILE_TEXT))(
+    'reads back %s text in the summary, a note, and every kind of cell',
+    (_shape, text) => {
+      const result = {
+        topic: 'search_syntax',
+        summary: text,
+        entries: [
+          { value: text, label: text, details: [{ key: text, value: text }] },
+          { value: 'plain', label: 'no detail', details: [] },
+        ],
+        notes: [text, 'A second note.'],
+      };
+
+      expect(readCommonMark(formatText(result))).toBe(expectedReading(result));
+    },
+  );
+
+  // A table row ends at any line ending — LF, CRLF, or a lone CR.
+  it('reads a CRLF or a lone CR in a cell as a space', () => {
+    const result = {
+      topic: 'search_syntax',
+      summary: 'Line-ending fixture.',
+      entries: [{ value: 'a\r\nb', label: 'c\rd', details: [{ key: 'e\r\nf', value: 'g\rh\ni' }] }],
+      notes: [],
+    };
+
+    const reading = readCommonMark(formatText(result));
+    expect(reading).toBe(expectedReading(result));
+    expect(reading).toContain('⟨td_open⟩\n\ng h i\n\n⟨td_close⟩');
   });
 });

@@ -7,6 +7,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { escapeMarkdownInline } from '@cyanheads/mcp-ts-core/utils';
 import {
   COURTS_WITHOUT_DECISION_KIND,
   type IssuingBody,
@@ -343,15 +344,12 @@ const TOPIC_BUILDERS: Record<Topic, () => TopicPayload> = {
 };
 
 /**
- * Escape a string for use inside a markdown table cell.
- *
- * Backslashes are doubled before pipes are escaped, so a backslash already in the value
- * survives rendering instead of being consumed as an escape of whatever punctuation follows
- * it. The order is load-bearing: escaping pipes first would re-escape the backslash that
- * escape had just introduced, emitting a literal `\|` where the cell delimiter was meant.
+ * A string as the text of one markdown table cell. A table row ends at any line ending, so
+ * line breaks become spaces first — escaping first would turn each into a hard break and
+ * leave its backslash behind in the cell.
  */
 function cell(text: string): string {
-  return text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+  return escapeMarkdownInline(text.replace(/\r\n?|\n/g, ' '));
 }
 
 export const risListReference = tool('ris_list_reference', {
@@ -408,9 +406,16 @@ export const risListReference = tool('ris_list_reference', {
   },
 
   // format() populates content[] — the markdown twin of structuredContent. Both surfaces
-  // must carry the same data: every entry, every detail pair, every note.
+  // must carry the same data: every entry, every detail pair, every note. The static tables
+  // carry Markdown-active text (`SucheIn<Land>`, backticked names), so every string is
+  // escaped; the heading holds only the topic enum.
   format: (result) => {
-    const lines: string[] = [`# ris_list_reference — ${result.topic}`, '', result.summary, ''];
+    const lines: string[] = [
+      `# ris_list_reference — ${result.topic}`,
+      '',
+      escapeMarkdownInline(result.summary),
+      '',
+    ];
     const detailKeys: string[] = [];
     for (const entry of result.entries) {
       for (const d of entry.details) {
@@ -428,7 +433,7 @@ export const risListReference = tool('ris_list_reference', {
     }
     if (result.notes.length > 0) {
       lines.push('', '**Notes:**');
-      for (const note of result.notes) lines.push(`- ${note}`);
+      for (const note of result.notes) lines.push(`- ${escapeMarkdownInline(note)}`);
     }
     return [{ type: 'text', text: lines.join('\n') }];
   },
