@@ -122,7 +122,7 @@ export function servePageSize(requested: number | undefined): ServedPage {
   const pageSize: ServedPageSize = requested <= 10 ? 10 : 20;
   if (pageSize === requested) return { pageSize };
   return {
-    notice: `page_size ${requested} served as ${pageSize} — RIS pages hold 10 or 20 documents, so page steps through pages of ${pageSize}.`,
+    notice: `page_size ${requested} served as ${pageSize} — this server serves pages of 10 or 20 documents, so page steps through pages of ${pageSize}.`,
     pageSize,
   };
 }
@@ -137,6 +137,33 @@ export function joinNotices(...notices: readonly (string | undefined)[]): string
 export function joinNotices(...notices: readonly (string | undefined)[]): string | undefined {
   const present = notices.filter((notice) => notice !== undefined);
   return present.length > 0 ? present.join(' ') : undefined;
+}
+
+/** One date window a tool takes: its `_from` field and value, then its `_to` field and value. */
+export type DateWindow = readonly [
+  fromField: string,
+  from: string | undefined,
+  toField: string,
+  to: string | undefined,
+];
+
+/**
+ * The notice for every window whose `_from` is later than its `_to`, or undefined when none is.
+ * A reversed window holds no dates, so the tools answer it with an empty page instead of a RIS
+ * request — RIS answers most reversed windows with an empty page a caller cannot tell from a
+ * real zero-hit, and on Erlaesse with every decree that has no entry-into-force date. Both
+ * bounds are `isoDateString` values, so string order is date order; equal bounds are a one-day
+ * window, and a one-sided window is open, never reversed. The values are validated dates and
+ * the fields are literals, so the notice needs no Markdown escaping.
+ */
+export function reversedWindowNotice(windows: readonly DateWindow[]): string | undefined {
+  const reversed = windows.flatMap(([fromField, from, toField, to]) =>
+    from !== undefined && to !== undefined && from > to ? [{ from, fromField, to, toField }] : [],
+  );
+  if (reversed.length === 0) return undefined;
+  const pairs = reversed.map((w) => `${w.fromField} ${w.from} is after ${w.toField} ${w.to}`);
+  const swaps = reversed.map((w) => `${w.fromField} ${w.to}, ${w.toField} ${w.from}`);
+  return `${pairs.join('; ')} — a reversed window holds no dates, so nothing matches and RIS was not queried. Retry with the bounds swapped: ${swaps.join('; ')}.`;
 }
 
 /**

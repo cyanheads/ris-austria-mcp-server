@@ -31,6 +31,7 @@ import {
   joinNotices,
   pageSizeParam,
   renditionLinks,
+  reversedWindowNotice,
   servePageSize,
 } from './_shared.js';
 
@@ -72,7 +73,7 @@ const MaterialSchema = z
     url: z
       .string()
       .describe(
-        'One rendition URL for this companion — its HTML rendition, or its PDF where RIS files no HTML one (roughly one companion in eight, nearly all of them review-draft covering letters). Pass it to ris_get_document as document_url: the extension is discarded there and format selects what comes back (markdown, html, or the RIS Nutzdaten xml of this companion, plus the companion’s own rendition URLs under urls_only), so this one URL reaches every text rendition the companion has. A PDF-only companion has none, and the URL is a direct download. The filename is opaque and per-record, so no document number reaches it.',
+        'One rendition URL for this companion — its HTML rendition, or its PDF where RIS files no HTML one (roughly one companion in eight, nearly all of them review-draft covering letters). Pass it to ris_get_document as document_url: the extension is discarded there and format selects what comes back (markdown, html, or the RIS Nutzdaten xml of this companion, plus the companion’s own rendition URLs under urls_only), so this one URL reaches every text rendition the companion has. A PDF-only companion has none, and format: markdown there returns the text extracted from its PDF. The filename is opaque and per-record, so no document number reaches it.',
       ),
   })
   .describe('One companion document filed alongside the draft.');
@@ -162,7 +163,7 @@ function pickContentUrls(urls: RisKeyedUrls): DraftRecord['content_urls'] {
  * The fallback is not a guard against an impossible state. 2,829 of the 23,483 companions
  * across the full live Begut + RegV corpus (12.0%) carry no HTML rendition — 2,820 Begut
  * covering letters and 9 RegV treaty texts — and RIS 404s a rendition it does not list, so
- * those are PDF downloads with no text rendition to render.
+ * those have no text rendition; `ris_get_document` reads their text from the PDF instead.
  */
 function pickMaterials(hit: RisHit): DraftRecord['materials'] {
   return hit.contentReferences.flatMap((reference) => {
@@ -276,7 +277,7 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       .string()
       .optional()
       .describe(
-        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call.',
+        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call. A reversed window (decided_from later than decided_to) is answered without a RIS request: 0 documents, and the swapped bounds to retry with in place of the guidance.',
       ),
   },
   errors: [
@@ -347,6 +348,16 @@ export const risSearchDrafts = tool('ris_search_drafts', {
       );
     }
     const served = servePageSize(input.page_size);
+
+    // A reversed window holds no dates — answer it here, since RIS's empty page for it reads as
+    // a real zero-hit.
+    const reversed = reversedWindowNotice([['decided_from', decidedFrom, 'decided_to', decidedTo]]);
+    if (reversed !== undefined) {
+      ctx.enrich.total(0);
+      ctx.enrich({ page: input.page ?? 1, pageSize: served.pageSize ?? 20 });
+      ctx.enrich.notice(joinNotices(served.notice, reversed));
+      return { results: [] };
+    }
 
     const params: DraftsSearchParams = {
       stage,

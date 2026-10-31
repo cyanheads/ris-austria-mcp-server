@@ -40,6 +40,7 @@ import {
   localRejectionRecovery,
   pageSizeParam,
   renditionLinks,
+  reversedWindowNotice,
   rewriteUnsupportedParam,
   servePageSize,
   type UnsupportedParam,
@@ -425,7 +426,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       .string()
       .optional()
       .describe(
-        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call.',
+        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call. A reversed window (decided_from later than decided_to) is answered without a RIS request: 0 documents, and the swapped bounds to retry with in place of the guidance.',
       ),
   },
   errors: [
@@ -574,6 +575,16 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       issuingBody = match;
     }
     const served = servePageSize(input.page_size);
+
+    // A reversed window holds no dates — answer it here, since RIS's empty page for it reads as
+    // a real zero-hit.
+    const reversed = reversedWindowNotice([['decided_from', decidedFrom, 'decided_to', decidedTo]]);
+    if (reversed !== undefined) {
+      ctx.enrich.total(0);
+      ctx.enrich({ page: input.page ?? 1, pageSize: served.pageSize ?? 20 });
+      ctx.enrich.notice(joinNotices(served.notice, reversed));
+      return { results: [] };
+    }
 
     const params: CaseLawSearchParams = {
       court,

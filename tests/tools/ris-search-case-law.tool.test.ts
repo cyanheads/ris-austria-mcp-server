@@ -178,6 +178,19 @@ describe('risSearchCaseLaw — local guards (no service call)', () => {
       expect(contentText(result)).not.toMatch(/page/iu);
     },
   );
+
+  it('rejects a reversed decided window under normenliste as court_filter_mismatch, not as a reversed window (#92)', async () => {
+    const ctx = createMockContext({ errors: risSearchCaseLaw.errors });
+    const input = risSearchCaseLaw.input.parse({
+      court: 'normenliste',
+      decided_from: '2025-06-30',
+      decided_to: '2025-01-01',
+    });
+    const err = await captureError(risSearchCaseLaw.handler(input, ctx));
+    expect(err.data).toMatchObject({ reason: 'court_filter_mismatch' });
+    expect(err.message).toContain('decided_from');
+    expect(searchCaseLaw).not.toHaveBeenCalled();
+  });
 });
 
 describe('risSearchCaseLaw — issuing_body against the dsk/pvak enumerations (#61)', () => {

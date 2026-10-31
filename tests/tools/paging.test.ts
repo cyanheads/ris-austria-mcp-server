@@ -1,6 +1,6 @@
 /**
  * @fileoverview Paging across the six paginated tools. page_size takes any whole number 1–100
- * and is served at one of the two RIS page sizes the tools send — 10 for a request up to 10, 20
+ * and is served at one of the two page sizes this server sends RIS — 10 for a request up to 10, 20
  * above it — with a notice when the served size differs from the request (#70); 0, negatives,
  * fractions, and anything above 100 are rejected before any RIS call. `page` / `pageSize` /
  * `totalCount` / `truncated` stay exact at both served sizes (#40): a full page, rows beyond it,
@@ -10,12 +10,15 @@
  * `runToolContract`, so both `structuredContent` and `content[]` are asserted. The RIS service
  * module is mocked with pages built from real fixtures run through the real normalizer; the wire
  * cases route the mock to a real `RisService` behind a strict fetch fake, so they assert the RIS
- * URL each request actually builds.
+ * URL each request actually builds. A reversed date window on any of the six — every
+ * `_from`/`_to` pair, swept from the advertised schemas — is answered without a RIS request:
+ * an empty page whose enrichment still echoes the requested page and served size (#92).
  * @module tests/tools/paging.test
  */
 
 import { readFileSync } from 'node:fs';
 
+import { z } from '@cyanheads/mcp-ts-core';
 import {
   createFetchMock,
   type FetchMockHarness,
@@ -23,6 +26,7 @@ import {
 } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { isoDateString } from '@/mcp-server/tools/definitions/_shared.js';
 import { risSearchAnnouncements } from '@/mcp-server/tools/definitions/ris-search-announcements.tool.js';
 import { risSearchCaseLaw } from '@/mcp-server/tools/definitions/ris-search-case-law.tool.js';
 import { risSearchDrafts } from '@/mcp-server/tools/definitions/ris-search-drafts.tool.js';
@@ -164,7 +168,7 @@ interface PagedResult {
 
 /** The notice a request served at another size carries, written out in full. */
 function servedNotice(requested: number, served: number): string {
-  return `page_size ${requested} served as ${served} — RIS pages hold 10 or 20 documents, so page steps through pages of ${served}.`;
+  return `page_size ${requested} served as ${served} — this server serves pages of 10 or 20 documents, so page steps through pages of ${served}.`;
 }
 
 /**
@@ -411,4 +415,196 @@ describe('ris_search_gazette — Vbl short-circuit echoes the served page size (
     expect(contentText(result).split('\n')).toContain(`**pageSize:** ${served}`);
     expectNotice(result, notice);
   });
+});
+
+/** The `pattern` every `isoDateString` parameter advertises — what the window sweep matches on. */
+const ISO_DATE_PATTERN = (
+  z.toJSONSchema(z.object({ when: isoDateString }), { io: 'input' }) as unknown as {
+    properties: { when: { pattern: string } };
+  }
+).properties.when.pattern;
+
+/**
+ * Every date window on the six paginated tools: an input that reaches it, the `_from`/`_to`
+ * fields, a later and an earlier date to reverse them with, and the enrichment beyond
+ * page/pageSize/totalCount the tool still owes. The gazette, ministerial_decrees, and
+ * track_changes rows are the reported reproductions. The first test below derives the same
+ * pairs from the advertised schemas, so a window added later has to land here.
+ */
+const WINDOWS = [
+  {
+    base: { title: 'DSG' },
+    definition: risSearchLegislation,
+    earlier: '2026-01-01',
+    enrichment: {},
+    from: 'entered_force_from',
+    later: '2026-06-30',
+    to: 'entered_force_to',
+  },
+  {
+    base: { title: 'DSG' },
+    definition: risSearchLegislation,
+    earlier: '2026-01-01',
+    enrichment: {},
+    from: 'left_force_from',
+    later: '2026-06-30',
+    to: 'left_force_to',
+  },
+  {
+    base: { court: 'vfgh' },
+    definition: risSearchCaseLaw,
+    earlier: '2025-01-01',
+    enrichment: {},
+    from: 'decided_from',
+    later: '2025-06-30',
+    to: 'decided_to',
+  },
+  {
+    base: { scope: 'federal' },
+    definition: risSearchGazette,
+    earlier: '1990-01-01',
+    enrichment: { servedApplication: 'BgblPdf' },
+    from: 'published_from',
+    later: '1990-06-01',
+    to: 'published_to',
+  },
+  {
+    base: { stage: 'government_bills' },
+    definition: risSearchDrafts,
+    earlier: '2025-01-01',
+    enrichment: {},
+    from: 'decided_from',
+    later: '2025-12-31',
+    to: 'decided_to',
+  },
+  {
+    base: { collection: 'social_insurance' },
+    definition: risSearchAnnouncements,
+    earlier: '2026-01-01',
+    enrichment: {},
+    from: 'published_from',
+    later: '2026-06-30',
+    to: 'published_to',
+  },
+  {
+    base: { collection: 'ministerial_decrees' },
+    definition: risSearchAnnouncements,
+    earlier: '2026-01-01',
+    enrichment: {},
+    from: 'entered_force_from',
+    later: '2026-06-30',
+    to: 'entered_force_to',
+  },
+  {
+    base: { application: 'BrKons' },
+    definition: risTrackChanges,
+    earlier: '2026-10-27',
+    enrichment: { application: 'BrKons' },
+    from: 'changed_from',
+    later: '2026-10-28',
+    to: 'changed_to',
+  },
+] as const;
+
+/** The reversed-window notice for one pair, written out in full. */
+function reversedNotice(from: string, later: string, to: string, earlier: string): string {
+  return `${from} ${later} is after ${to} ${earlier} — a reversed window holds no dates, so nothing matches and RIS was not queried. Retry with the bounds swapped: ${from} ${earlier}, ${to} ${later}.`;
+}
+
+/** The service-param name a snake_case input field is sent as. */
+function builderParam(field: string): string {
+  return field.replace(/_([a-z])/gu, (_match, letter: string) => letter.toUpperCase());
+}
+
+describe('date windows — a reversed _from/_to pair is answered without RIS (#92)', () => {
+  it('covers every _from/_to date pair on the six paginated tools, derived from the advertised schemas', () => {
+    const advertised = PAGINATED.flatMap(({ definition }) => {
+      const schema = z.toJSONSchema(definition.input, { io: 'input' }) as {
+        properties?: Record<string, { pattern?: string }>;
+      };
+      const dates = new Set(
+        Object.entries(schema.properties ?? {})
+          .filter(([, node]) => node.pattern === ISO_DATE_PATTERN)
+          .map(([name]) => name),
+      );
+      return [...dates]
+        .filter((name) => name.endsWith('_from') && dates.has(name.replace(/_from$/u, '_to')))
+        .map((name) => `${definition.name}.${name}`);
+    });
+    const swept = WINDOWS.map(({ definition, from }) => `${definition.name}.${from}`);
+
+    expect(advertised.toSorted()).toEqual(swept.toSorted());
+    expect(swept).toHaveLength(8);
+  });
+
+  describe.each(WINDOWS)(
+    '$definition.name $from > $to',
+    ({ base, definition, earlier, enrichment, from, later, to }) => {
+      const paged = PAGINATED.find(
+        (entry) => entry.definition.name === definition.name,
+      ) as (typeof PAGINATED)[number];
+      const reversed = reversedNotice(from, later, to, earlier);
+
+      it.each([
+        ['no paging input', {}, 1, 20, reversed],
+        [
+          'page 3, page_size 50',
+          { page: 3, page_size: 50 },
+          3,
+          20,
+          `${servedNotice(50, 20)} ${reversed}`,
+        ],
+        ['page_size 5', { page_size: 5 }, 1, 10, `${servedNotice(5, 10)} ${reversed}`],
+      ] as const)(
+        '%s: an empty page on both surfaces, enrichment echoed, no RIS request',
+        async (_label, paging, page, pageSize, notice) => {
+          const result = await runToolContract(definition, {
+            ...base,
+            ...paging,
+            [from]: later,
+            [to]: earlier,
+          } as never);
+
+          expect(result.isError).not.toBe(true);
+          expect(paged.method).not.toHaveBeenCalled();
+          expect(result.structuredContent).toMatchObject({
+            ...enrichment,
+            page,
+            pageSize,
+            results: [],
+            totalCount: 0,
+          });
+          expect(result.structuredContent).not.toHaveProperty('truncated');
+          const lines = contentText(result).split('\n');
+          expect(lines).toContain('**0 total**');
+          expect(lines).toContain(`**page:** ${page}`);
+          expect(lines).toContain(`**pageSize:** ${pageSize}`);
+          for (const [key, value] of Object.entries(enrichment)) {
+            expect(lines).toContain(`**${key}:** \`${value}\``);
+          }
+          expectNotice(result, notice);
+        },
+      );
+
+      it('equal bounds — a one-day window — still reach RIS', async () => {
+        paged.method.mockResolvedValue(paged.page(1, 1, 1, 20));
+        const result = await runToolContract(definition, {
+          ...base,
+          [from]: later,
+          [to]: later,
+        } as never);
+
+        expect(result.isError).not.toBe(true);
+        expect(paged.method).toHaveBeenCalledTimes(1);
+        expect(paged.method.mock.calls[0]![0]).toMatchObject({
+          [builderParam(from)]: later,
+          [builderParam(to)]: later,
+        });
+        expect(result.structuredContent).toMatchObject({ totalCount: 1 });
+        expect((result.structuredContent as unknown as PagedResult).notice ?? '').not.toContain(
+          'reversed window',
+        );
+      });
+    },
+  );
 });

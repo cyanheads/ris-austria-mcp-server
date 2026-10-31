@@ -10,9 +10,10 @@
  * when the size differs. Every state-valued parameter folds a German, capitalized, umlauted, or English
  * state name to its code while advertising the same JSON Schema as before (#58). The
  * search-failure mapper gives a local rejection a recovery naming the field to correct, never
- * the page-first advice RIS's own errors need (#59). Fully offline: only input schemas,
- * schema-level rejections, the error mapper, and the page-size and notice helpers are
- * exercised, no handler and no service.
+ * the page-first advice RIS's own errors need (#59). A date window whose `_from` is later than
+ * its `_to` gets one notice naming every reversed pair and its swap (#92). Fully offline: only
+ * input schemas, schema-level rejections, the error mapper, and the page-size and notice helpers
+ * are exercised, no handler and no service.
  * @module tests/tools/_shared.test
  */
 
@@ -26,6 +27,7 @@ import {
   failSearchError,
   isoDateString,
   joinNotices,
+  reversedWindowNotice,
   servePageSize,
 } from '@/mcp-server/tools/definitions/_shared.js';
 import { risGetDocument } from '@/mcp-server/tools/definitions/ris-get-document.tool.js';
@@ -487,7 +489,7 @@ describe('servePageSize — the one requested → served mapping (#70)', () => {
     [100, 20],
   ])('serves %d as %d, with the notice naming both', (requested, served) => {
     expect(servePageSize(requested)).toStrictEqual({
-      notice: `page_size ${requested} served as ${served} — RIS pages hold 10 or 20 documents, so page steps through pages of ${served}.`,
+      notice: `page_size ${requested} served as ${served} — this server serves pages of 10 or 20 documents, so page steps through pages of ${served}.`,
       pageSize: served,
     });
   });
@@ -501,6 +503,63 @@ describe('joinNotices — one notice string, in order (#70)', () => {
     [['Served as 20.', 'Zero hits.'], 'Served as 20. Zero hits.'],
   ] as const)('%j → %j', (notices, joined) => {
     expect(joinNotices(...notices)).toBe(joined);
+  });
+});
+
+describe('reversedWindowNotice — a window whose _from is later than its _to (#92)', () => {
+  it.each([
+    [undefined, undefined, 'no bound'],
+    ['2026-10-28', undefined, 'only changed_from — open-ended'],
+    [undefined, '2026-10-27', 'only changed_to — open-ended'],
+    ['2026-10-28', '2026-10-28', 'equal bounds — a one-day window'],
+    ['2026-10-27', '2026-10-28', 'ordered bounds'],
+    ['1999-12-31', '2000-01-01', 'ordered across a year boundary'],
+  ] as const)('%s → %s (%s) is not reversed', (from, to, _label) => {
+    expect(reversedWindowNotice([['changed_from', from, 'changed_to', to]])).toBeUndefined();
+  });
+
+  it('names both fields and their values, says the window is reversed, and gives the swap', () => {
+    expect(reversedWindowNotice([['changed_from', '2026-10-28', 'changed_to', '2026-10-27']])).toBe(
+      'changed_from 2026-10-28 is after changed_to 2026-10-27 — a reversed window holds no dates, so nothing matches and RIS was not queried. Retry with the bounds swapped: changed_from 2026-10-27, changed_to 2026-10-28.',
+    );
+  });
+
+  it.each([
+    ['2000-01-01', '1999-12-31', 'across a year boundary'],
+    ['2026-02-01', '2026-01-31', 'across a month boundary'],
+    ['2026-10-10', '2026-10-09', 'across a day-digit carry'],
+  ])('%s → %s (%s) is reversed', (from, to) => {
+    expect(reversedWindowNotice([['decided_from', from, 'decided_to', to]])).toBe(
+      `decided_from ${from} is after decided_to ${to} — a reversed window holds no dates, so nothing matches and RIS was not queried. Retry with the bounds swapped: decided_from ${to}, decided_to ${from}.`,
+    );
+  });
+
+  it('names every reversed pair in one notice, in the order given', () => {
+    expect(
+      reversedWindowNotice([
+        ['entered_force_from', '2026-06-30', 'entered_force_to', '2026-01-01'],
+        ['left_force_from', '2025-12-31', 'left_force_to', '2025-07-01'],
+      ]),
+    ).toBe(
+      'entered_force_from 2026-06-30 is after entered_force_to 2026-01-01; left_force_from 2025-12-31 is after left_force_to 2025-07-01 — a reversed window holds no dates, so nothing matches and RIS was not queried. Retry with the bounds swapped: entered_force_from 2026-01-01, entered_force_to 2026-06-30; left_force_from 2025-07-01, left_force_to 2025-12-31.',
+    );
+  });
+
+  it('names only the reversed pair when the other one is ordered or one-sided', () => {
+    const notice =
+      'published_from 2026-03-01 is after published_to 2026-02-01 — a reversed window holds no dates, so nothing matches and RIS was not queried. Retry with the bounds swapped: published_from 2026-02-01, published_to 2026-03-01.';
+    expect(
+      reversedWindowNotice([
+        ['published_from', '2026-03-01', 'published_to', '2026-02-01'],
+        ['entered_force_from', '2026-01-01', 'entered_force_to', '2026-06-30'],
+      ]),
+    ).toBe(notice);
+    expect(
+      reversedWindowNotice([
+        ['entered_force_from', '2026-07-01', 'entered_force_to', undefined],
+        ['published_from', '2026-03-01', 'published_to', '2026-02-01'],
+      ]),
+    ).toBe(notice);
   });
 });
 

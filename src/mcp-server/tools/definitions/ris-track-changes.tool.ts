@@ -27,6 +27,7 @@ import {
   joinNotices,
   pageSizeParam,
   renditionLinks,
+  reversedWindowNotice,
   servePageSize,
 } from './_shared.js';
 
@@ -238,16 +239,16 @@ export const risTrackChanges = tool('ris_track_changes', {
     changedFrom: z
       .string()
       .optional()
-      .describe('The changed_from bound the server applied (echo), when set.'),
+      .describe('The changed_from bound as requested (echo), when set.'),
     changedTo: z
       .string()
       .optional()
-      .describe('The changed_to bound the server applied (echo), when set.'),
+      .describe('The changed_to bound as requested (echo), when set.'),
     notice: z
       .string()
       .optional()
       .describe(
-        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call.',
+        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call. A reversed window (changed_from later than changed_to) is answered without a RIS request: 0 changes, and the swapped bounds to retry with in place of the guidance.',
       ),
   },
   errors: [
@@ -284,6 +285,22 @@ export const risTrackChanges = tool('ris_track_changes', {
     // application is a Zod enum of the reference codes, so the lookup always resolves.
     const bindingStatus = (APPLICATION_BY_CODE.get(input.application) as RisApplication).binding;
     const served = servePageSize(input.page_size);
+
+    // A reversed window holds no dates — answer it here, since RIS's empty page for it reads as
+    // a real zero-hit.
+    const reversed = reversedWindowNotice([['changed_from', changedFrom, 'changed_to', changedTo]]);
+    if (reversed !== undefined) {
+      ctx.enrich.total(0);
+      ctx.enrich({
+        application: input.application,
+        page: input.page ?? 1,
+        pageSize: served.pageSize ?? 20,
+        ...(changedFrom !== undefined && { changedFrom }),
+        ...(changedTo !== undefined && { changedTo }),
+      });
+      ctx.enrich.notice(joinNotices(served.notice, reversed));
+      return { results: [] };
+    }
 
     const params: TrackChangesParams = {
       application: input.application,

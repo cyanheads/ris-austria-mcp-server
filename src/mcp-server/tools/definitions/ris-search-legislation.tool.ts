@@ -31,6 +31,7 @@ import {
   joinNotices,
   pageSizeParam,
   renditionLinks,
+  reversedWindowNotice,
   servePageSize,
 } from './_shared.js';
 
@@ -236,6 +237,43 @@ export function toRecord(
   return base;
 }
 
+/**
+ * The two undated sides of a force window. RIS reads a missing Inkrafttretensdatum as the
+ * earliest date and a missing Ausserkrafttretensdatum as the latest, so a window left open
+ * toward that side — `entered_force_to` alone, `left_force_from` alone — keeps every version
+ * with no date there (#98); the counterpart bound excludes them.
+ */
+const OPEN_SIDES = {
+  end: {
+    bound: 'left_force_to',
+    date: 'end date',
+    field: 'in_force_until',
+    set: 'left_force_from',
+    verb: 'left',
+  },
+  entry: {
+    bound: 'entered_force_from',
+    date: 'entry-into-force date',
+    field: 'in_force_from',
+    set: 'entered_force_to',
+    verb: 'entered',
+  },
+} as const;
+
+/**
+ * Disclose the rows on the page with no date on a window's open side. Requests, totals, and
+ * paging stay as RIS served them — dropping rows would break `page` and `totalCount`.
+ * Undefined when every row carries the date.
+ */
+function openSideNotice(
+  results: readonly LegislationRecord[],
+  side: (typeof OPEN_SIDES)[keyof typeof OPEN_SIDES],
+): string | undefined {
+  const undated = results.filter((r) => r[side.field] === undefined).length;
+  if (undated === 0) return;
+  return `${undated} of ${results.length} on this page ${undated === 1 ? 'has' : 'have'} no ${side.field} — without ${side.bound}, RIS returns all versions with no recorded ${side.date} for ${side.set}, so totalCount counts them too. Add ${side.bound} to keep only versions that ${side.verb} force in the window.`;
+}
+
 export const risSearchLegislation = tool('ris_search_legislation', {
   title: 'Search Austrian Legislation',
   description:
@@ -284,11 +322,13 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       ),
     entered_force_to: isoDateString
       .optional()
-      .describe('Provisions that entered force on/before this date (YYYY-MM-DD).'),
+      .describe(
+        'Provisions that entered force on/before this date (YYYY-MM-DD). Without entered_force_from, RIS also returns versions with no recorded entry-into-force date, which carry no in_force_from; set both bounds to exclude them.',
+      ),
     left_force_from: isoDateString
       .optional()
       .describe(
-        'Provisions that left force on/after this date (YYYY-MM-DD) — repeal tracking. Same exclusivity as entered_force_from.',
+        'Provisions that left force on/after this date (YYYY-MM-DD) — repeal tracking. Same exclusivity as entered_force_from. Without left_force_to, RIS also returns versions with no recorded end date, which carry no in_force_until; set both bounds to exclude them.',
       ),
     left_force_to: isoDateString
       .optional()
@@ -361,7 +401,7 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       .string()
       .optional()
       .describe(
-        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call.',
+        'The served page size when it differs from page_size; then, under a force window open on one side (entered_force_to without entered_force_from, left_force_from without left_force_to), how many rows on this page have no date on that side and the bound that excludes them; then zero-hit guidance — the likely cause and the concrete next call. A reversed force window (entered_force_from later than entered_force_to, or left_force_from later than left_force_to) is answered without a RIS request: 0 documents, and the swapped bounds to retry with in place of the guidance.',
       ),
   },
   errors: [
@@ -492,6 +532,19 @@ export const risSearchLegislation = tool('ris_search_legislation', {
         : (explicitAsOf ?? todayInAustria());
     const served = servePageSize(input.page_size);
 
+    // A reversed window holds no dates — answer it here, since RIS's empty page for it reads as
+    // a real zero-hit.
+    const reversed = reversedWindowNotice([
+      ['entered_force_from', enteredForceFrom, 'entered_force_to', enteredForceTo],
+      ['left_force_from', leftForceFrom, 'left_force_to', leftForceTo],
+    ]);
+    if (reversed !== undefined) {
+      ctx.enrich.total(0);
+      ctx.enrich({ page: input.page ?? 1, pageSize: served.pageSize ?? 20 });
+      ctx.enrich.notice(joinNotices(served.notice, reversed));
+      return { results: [] };
+    }
+
     const params: LegislationSearchParams = {
       application,
       ...(query !== undefined && { query }),
@@ -570,10 +623,20 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       }
       zeroHit = fragments.join(' ');
     }
-    const notice = joinNotices(served.notice, zeroHit);
+    const results = result.hits.map((hit) => toRecord(hit, application));
+    const notice = joinNotices(
+      served.notice,
+      enteredForceTo !== undefined && enteredForceFrom === undefined
+        ? openSideNotice(results, OPEN_SIDES.entry)
+        : undefined,
+      leftForceFrom !== undefined && leftForceTo === undefined
+        ? openSideNotice(results, OPEN_SIDES.end)
+        : undefined,
+      zeroHit,
+    );
     if (notice !== undefined) ctx.enrich.notice(notice);
 
-    return { results: result.hits.map((hit) => toRecord(hit, application)) };
+    return { results };
   },
 
   // format() populates content[] — the markdown twin of structuredContent. Every output

@@ -184,6 +184,21 @@ describe('risTrackChanges — enrichment: totals, paging, applied window', () =>
     expect(enrichment.changedFrom).toBeUndefined();
     expect(enrichment.changedTo).toBeUndefined();
   });
+
+  it('echoes a reversed changed_from/changed_to window it answers without a RIS request', async () => {
+    const ctx = createMockContext({ errors: risTrackChanges.errors });
+    const input = risTrackChanges.input.parse({
+      application: 'BrKons',
+      changed_from: '2026-10-28',
+      changed_to: '2026-10-27',
+    });
+    await risTrackChanges.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(trackChanges).not.toHaveBeenCalled();
+    expect(enrichment.totalCount).toBe(0);
+    expect(enrichment.changedFrom).toBe('2026-10-28');
+    expect(enrichment.changedTo).toBe('2026-10-27');
+  });
 });
 
 describe('risTrackChanges — zero-hit notice', () => {

@@ -159,6 +159,44 @@ describe('risSearchLegislation — local guards (no service call)', () => {
   });
 });
 
+describe('risSearchLegislation — reversed force windows (#92)', () => {
+  it('names both reversed force windows in one notice, without a RIS request', async () => {
+    const result = await runToolContract(risSearchLegislation, {
+      title: 'DSG',
+      entered_force_from: '2026-06-30',
+      entered_force_to: '2026-01-01',
+      left_force_from: '2025-12-31',
+      left_force_to: '2025-07-01',
+    });
+    const notice =
+      'entered_force_from 2026-06-30 is after entered_force_to 2026-01-01; left_force_from 2025-12-31 is after left_force_to 2025-07-01 — a reversed window holds no dates, so nothing matches and RIS was not queried. Retry with the bounds swapped: entered_force_from 2026-01-01, entered_force_to 2026-06-30; left_force_from 2025-07-01, left_force_to 2025-12-31.';
+
+    expect(result.isError).not.toBe(true);
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(result.structuredContent).toMatchObject({
+      notice,
+      page: 1,
+      pageSize: 20,
+      results: [],
+      totalCount: 0,
+    });
+    expect(contentText(result).split('\n')).toContain(`> ${notice}`);
+  });
+
+  it('still rejects a reversed window beside in_force_as_of as scope_filter_mismatch', async () => {
+    const ctx = createMockContext({ errors: risSearchLegislation.errors });
+    const input = risSearchLegislation.input.parse({
+      entered_force_from: '2026-06-30',
+      entered_force_to: '2026-01-01',
+      in_force_as_of: '2026-03-01',
+    });
+    const err = await captureError(risSearchLegislation.handler(input, ctx));
+    expect(err.data).toMatchObject({ reason: 'scope_filter_mismatch' });
+    expect(err.message).toContain('in_force_as_of');
+    expect(searchLegislation).not.toHaveBeenCalled();
+  });
+});
+
 describe('risSearchLegislation — in_force_as_of defaulting', () => {
   const zeroHitsResult = parseSearchResponse(fixture('search-zero-hits.json'));
 
@@ -339,6 +377,156 @@ describe('risSearchLegislation — zero-hit notices', () => {
     await risSearchLegislation.handler(input, ctx);
     const notice = getEnrichment(ctx).notice as string;
     expect(notice).not.toContain('Only versions in force on');
+  });
+});
+
+// RIS reads a missing Ausserkrafttretensdatum as the latest date and a missing
+// Inkrafttretensdatum as the earliest, so a window open toward that side keeps every such
+// version. The page is served as RIS sends it; the notice counts those rows and names the bound
+// that closes the window.
+describe('risSearchLegislation — undated versions under a one-sided force window (#98)', () => {
+  /** search-brkons-multi.json: three versions, one of them with no Ausserkrafttretensdatum. */
+  const LEFT_OPEN =
+    '1 of 3 on this page has no in_force_until — without left_force_to, RIS returns all versions with no recorded end date for left_force_from, so totalCount counts them too. Add left_force_to to keep only versions that left force in the window.';
+  /** The same three versions with their Inkrafttretensdatum removed. */
+  const ENTERED_OPEN =
+    '3 of 3 on this page have no in_force_from — without entered_force_from, RIS returns all versions with no recorded entry-into-force date for entered_force_to, so totalCount counts them too. Add entered_force_from to keep only versions that entered force in the window.';
+
+  /** Run one call over the wire; return the records and the enrichment fields. */
+  async function callWire(input: Record<string, unknown>) {
+    const result = await runToolContract(risSearchLegislation, input as never);
+    expect(result.isError).not.toBe(true);
+    const { results } = risSearchLegislation.output.parse(result.structuredContent);
+    return { result, results, structured: result.structuredContent as Record<string, unknown> };
+  }
+
+  /** The notice reaches content[] as one block-quoted trailer line a client reads as plain text. */
+  function expectNoticeLine(
+    result: Awaited<ReturnType<typeof runToolContract>>,
+    notice: string,
+  ): void {
+    const lines = contentText(result).split('\n');
+    expect(lines.filter((line) => line === `> ${notice}`)).toHaveLength(1);
+    expect(readCommonMark(`> ${notice}`)).toBe(
+      `⟨blockquote_open⟩\n\n${notice}\n\n⟨blockquote_close⟩`,
+    );
+  }
+
+  /** search-brkons-multi.json with every version's Inkrafttretensdatum removed. */
+  function undatedEntryPage(): RisSearchResult {
+    const raw = fixture('search-brkons-multi.json') as {
+      OgdSearchResult: {
+        OgdDocumentResults: {
+          OgdDocumentReference: {
+            Data: { Metadaten: { Bundesrecht: { BrKons: { Inkrafttretensdatum?: string } } } };
+          }[];
+        };
+      };
+    };
+    for (const doc of raw.OgdSearchResult.OgdDocumentResults.OgdDocumentReference) {
+      delete doc.Data.Metadaten.Bundesrecht.BrKons.Inkrafttretensdatum;
+    }
+    return parseSearchResponse(raw);
+  }
+
+  it('counts the versions with no in_force_until under left_force_from alone, on both surfaces', async () => {
+    searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-multi.json')));
+    const { result, results, structured } = await callWire({ left_force_from: '2026-01-01' });
+    expect(structured.notice).toBe(LEFT_OPEN);
+    expectNoticeLine(result, LEFT_OPEN);
+    // Served as RIS sent it: every row, the request, and the paging untouched.
+    expect(results.map((r) => r.document_number)).toEqual([
+      'NOR11013238',
+      'NOR12158924',
+      'NOR40148597',
+    ]);
+    expect(searchLegislation.mock.calls[0]![0]).toEqual({
+      application: 'BrKons',
+      leftForceFrom: '2026-01-01',
+    });
+    expect(structured).toMatchObject({
+      page: 1,
+      pageSize: 10,
+      totalCount: 439471,
+      truncated: true,
+    });
+  });
+
+  it('counts the versions with no in_force_from under entered_force_to alone, on both surfaces', async () => {
+    searchLegislation.mockResolvedValue(undatedEntryPage());
+    const { result, results, structured } = await callWire({ entered_force_to: '1800-01-01' });
+    expect(structured.notice).toBe(ENTERED_OPEN);
+    expectNoticeLine(result, ENTERED_OPEN);
+    expect(results).toHaveLength(3);
+    expect(searchLegislation.mock.calls[0]![0]).toEqual({
+      application: 'BrKons',
+      enteredForceTo: '1800-01-01',
+    });
+    expect(structured).toMatchObject({ page: 1, pageSize: 10, totalCount: 439471 });
+  });
+
+  it('discloses the same rule under a state scope, sending the state search unchanged', async () => {
+    searchLegislation.mockResolvedValue(
+      parseSearchResponse(fixture('search-lrkons-abkuerzung.json')),
+    );
+    const { result, results, structured } = await callWire({
+      left_force_from: '2026-01-01',
+      scope: 'wien',
+    });
+    const notice =
+      '4 of 4 on this page have no in_force_until — without left_force_to, RIS returns all versions with no recorded end date for left_force_from, so totalCount counts them too. Add left_force_to to keep only versions that left force in the window.';
+    expect(structured.notice).toBe(notice);
+    expectNoticeLine(result, notice);
+    expect(results).toHaveLength(4);
+    expect(searchLegislation.mock.calls[0]![0]).toEqual({
+      application: 'LrKons',
+      leftForceFrom: '2026-01-01',
+      state: 'wien',
+    });
+    expect(structured).toMatchObject({ page: 1, pageSize: 20, totalCount: 4 });
+  });
+
+  it.each([
+    ['a two-sided repeal window', { left_force_from: '2026-01-01', left_force_to: '2026-12-31' }],
+    ['left_force_to alone', { left_force_to: '2026-12-31' }],
+  ])('adds no notice under %s, though rows lack in_force_until', async (_label, input) => {
+    searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-multi.json')));
+    const { results, structured } = await callWire(input);
+    expect(results.filter((r) => r.in_force_until === undefined)).toHaveLength(1);
+    expect(structured).not.toHaveProperty('notice');
+  });
+
+  it.each([
+    [
+      'a two-sided entry window',
+      { entered_force_from: '1700-01-01', entered_force_to: '1800-01-01' },
+    ],
+    ['entered_force_from alone', { entered_force_from: '1800-01-01' }],
+  ])('adds no notice under %s, though rows lack in_force_from', async (_label, input) => {
+    searchLegislation.mockResolvedValue(undatedEntryPage());
+    const { results, structured } = await callWire(input);
+    expect(results.filter((r) => r.in_force_from === undefined)).toHaveLength(3);
+    expect(structured).not.toHaveProperty('notice');
+  });
+
+  it('states both rules when the window is open on both undated sides', async () => {
+    searchLegislation.mockResolvedValue(undatedEntryPage());
+    const { result, structured } = await callWire({
+      entered_force_to: '2026-12-31',
+      left_force_from: '2026-01-01',
+    });
+    const notice = `${ENTERED_OPEN} ${LEFT_OPEN}`;
+    expect(structured.notice).toBe(notice);
+    expectNoticeLine(result, notice);
+  });
+
+  it('leads with the page-size sentence, in one notice', async () => {
+    searchLegislation.mockResolvedValue(parseSearchResponse(fixture('search-brkons-multi.json')));
+    const { result, structured } = await callWire({ left_force_from: '2026-01-01', page_size: 50 });
+    const notice = structured.notice as string;
+    expect(notice.startsWith('page_size 50 served as 20 — ')).toBe(true);
+    expect(notice.endsWith(` ${LEFT_OPEN}`)).toBe(true);
+    expectNoticeLine(result, notice);
   });
 });
 

@@ -92,6 +92,19 @@ describe('risSearchDrafts — local guards (no service call)', () => {
     expect(err.message).not.toContain('decided_from applies');
     expect(searchDrafts).not.toHaveBeenCalled();
   });
+
+  it('rejects a reversed decided window under stage: review_drafts as stage_filter_mismatch, not as a reversed window (#92)', async () => {
+    const result = await runToolContract(risSearchDrafts, {
+      stage: 'review_drafts',
+      decided_from: '2025-12-31',
+      decided_to: '2025-01-01',
+    });
+    expect(result.isError).toBe(true);
+    const { error } = result.structuredContent as { error: { data?: Record<string, unknown> } };
+    expect(error.data).toMatchObject({ reason: 'stage_filter_mismatch' });
+    expect(contentText(result)).not.toContain('reversed window');
+    expect(searchDrafts).not.toHaveBeenCalled();
+  });
 });
 
 describe('risSearchDrafts — zero-hit notices', () => {
@@ -349,8 +362,9 @@ describe('risSearchDrafts — record mapping and format() parity', () => {
   // Not a hypothetical: 2,829 of the 23,483 companions across the full live Begut + RegV
   // corpus (12.0%) carry no HTML rendition, nearly all of them Begut covering letters filed
   // as PDF or PDF/RTF. The record still has to carry a URL for them — RIS 404s a rendition it
-  // does not list, so the PDF is a download rather than a ris_get_document text handle, but
-  // dropping the companion would lose the only reference to it the caller ever gets.
+  // does not list, so the PDF is the one that resolves, and ris_get_document's markdown format
+  // reads its text; dropping the companion would lose the only reference to it the caller ever
+  // gets.
   it('falls back to the PDF when a companion carries no HTML URL', async () => {
     const payload = structuredClone(fixture('search-begut.json')) as {
       OgdSearchResult: {

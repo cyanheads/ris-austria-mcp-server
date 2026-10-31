@@ -139,6 +139,21 @@ describe('risSearchAnnouncements — local guards (no service call)', () => {
     expect(err.message).toContain("issuer is not a valid filter for collection 'trade_exam_rules'");
     expect(searchAnnouncements).not.toHaveBeenCalled();
   });
+
+  it('rejects a reversed published window on ministerial_decrees as collection_filter_mismatch, not as a reversed window (#92)', async () => {
+    const ctx = createMockContext({ errors: risSearchAnnouncements.errors });
+    const input = risSearchAnnouncements.input.parse({
+      collection: 'ministerial_decrees',
+      published_from: '2026-06-30',
+      published_to: '2026-01-01',
+    });
+    const err = await captureError(risSearchAnnouncements.handler(input, ctx));
+    expect(err.data).toMatchObject({ reason: 'collection_filter_mismatch' });
+    expect(err.message).toContain(
+      "published_from is not a valid filter for collection 'ministerial_decrees'",
+    );
+    expect(searchAnnouncements).not.toHaveBeenCalled();
+  });
 });
 
 describe('risSearchAnnouncements — binding label per collection', () => {
@@ -208,6 +223,143 @@ describe('risSearchAnnouncements — zero-hit notices', () => {
     const notice = getEnrichment(ctx).notice as string;
     expect(notice).toContain('0 documents in court_rules.');
     expect(notice).toContain('KmGer currently carries LVwG Tirol and Vorarlberg rules only.');
+  });
+});
+
+// RIS keeps every document with no recorded Inkrafttretensdatum under FassungVom and under
+// either Inkrafttretensdatum bound, whatever the date; the page is served as RIS sends it
+// and the notice discloses the rule with the page's count of such rows.
+describe('risSearchAnnouncements — undated documents under an in-force filter (#96)', () => {
+  /** search-erlaesse.json holds five decrees, three of them with no Inkrafttretensdatum. */
+  const DECREES_UNDATED =
+    '3 of 5 on this page have no in_force_from — RIS returns all documents with no recorded entry-into-force date under in_force_as_of, entered_force_from, or entered_force_to, whatever the date, so totalCount counts them too.';
+
+  /** Run one call over the wire; return the records and the enrichment fields. */
+  async function callWire(input: Record<string, unknown>) {
+    const result = await runToolContract(risSearchAnnouncements, input as never);
+    expect(result.isError).not.toBe(true);
+    const { results } = risSearchAnnouncements.output.parse(result.structuredContent);
+    return { result, results, structured: result.structuredContent as Record<string, unknown> };
+  }
+
+  /** The notice reaches content[] as one block-quoted trailer line a client reads as plain text. */
+  function expectNoticeLine(
+    result: Awaited<ReturnType<typeof runToolContract>>,
+    notice: string,
+  ): void {
+    const lines = contentText(result).split('\n');
+    expect(lines.filter((line) => line === `> ${notice}`)).toHaveLength(1);
+    expect(readCommonMark(`> ${notice}`)).toBe(
+      `⟨blockquote_open⟩\n\n${notice}\n\n⟨blockquote_close⟩`,
+    );
+  }
+
+  /** The three-notice veterinary page with the first `undated` notices' Inkrafttretensdatum removed. */
+  function undatedVeterinaryPage(undated: number) {
+    const raw = fixture('search-avn.json') as {
+      OgdSearchResult: {
+        OgdDocumentResults: {
+          OgdDocumentReference: {
+            Data: { Metadaten: { Sonstige: { Avn: { Inkrafttretensdatum?: string } } } };
+          }[];
+        };
+      };
+    };
+    for (const doc of raw.OgdSearchResult.OgdDocumentResults.OgdDocumentReference.slice(
+      0,
+      undated,
+    )) {
+      delete doc.Data.Metadaten.Sonstige.Avn.Inkrafttretensdatum;
+    }
+    return parseSearchResponse(raw);
+  }
+
+  it('counts the decrees with no in_force_from under an entered-force window, on both surfaces', async () => {
+    searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-erlaesse.json')));
+    const { result, results, structured } = await callWire({
+      collection: 'ministerial_decrees',
+      entered_force_from: '2026-07-01',
+      entered_force_to: '2026-07-01',
+    });
+    expect(structured.notice).toBe(DECREES_UNDATED);
+    expectNoticeLine(result, DECREES_UNDATED);
+    // Served as RIS sent it: every row, the request, and the paging untouched.
+    expect(results).toHaveLength(5);
+    expect(results.filter((r) => r.in_force_from === undefined)).toHaveLength(3);
+    expect(searchAnnouncements.mock.calls[0]![0]).toEqual({
+      collection: 'ministerial_decrees',
+      enteredForceFrom: '2026-07-01',
+      enteredForceTo: '2026-07-01',
+    });
+    expect(structured).toMatchObject({ page: 1, pageSize: 100, totalCount: 1628, truncated: true });
+  });
+
+  it('counts undated veterinary notices under in_force_as_of — the rule follows the rows, not the collection', async () => {
+    searchAnnouncements.mockResolvedValue(undatedVeterinaryPage(3));
+    const { result, results, structured } = await callWire({
+      collection: 'veterinary',
+      in_force_as_of: '1900-01-01',
+    });
+    const notice =
+      '3 of 3 on this page have no in_force_from — RIS returns all documents with no recorded entry-into-force date under in_force_as_of, entered_force_from, or entered_force_to, whatever the date, so totalCount counts them too.';
+    expect(structured.notice).toBe(notice);
+    expectNoticeLine(result, notice);
+    expect(results.map((r) => r.document_number)).toEqual([
+      'AVN_20261009_AVN_2026_23',
+      'AVN_20260807_AVN_2026_19',
+      'AVN_20260805_AVN_2026_17',
+    ]);
+    expect(searchAnnouncements.mock.calls[0]![0]).toEqual({
+      collection: 'veterinary',
+      inForceAsOf: '1900-01-01',
+    });
+    expect(structured).toMatchObject({ page: 1, pageSize: 100, totalCount: 710 });
+  });
+
+  it('counts a single undated notice among dated ones', async () => {
+    searchAnnouncements.mockResolvedValue(undatedVeterinaryPage(1));
+    const { structured } = await callWire({
+      collection: 'veterinary',
+      in_force_as_of: '2026-10-30',
+    });
+    expect(structured.notice).toBe(
+      '1 of 3 on this page has no in_force_from — RIS returns all documents with no recorded entry-into-force date under in_force_as_of, entered_force_from, or entered_force_to, whatever the date, so totalCount counts them too.',
+    );
+  });
+
+  it('adds no notice to a decree page without an in-force filter, though it holds undated rows', async () => {
+    searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-erlaesse.json')));
+    const { results, structured } = await callWire({ collection: 'ministerial_decrees' });
+    expect(results.filter((r) => r.in_force_from === undefined)).toHaveLength(3);
+    expect(structured).not.toHaveProperty('notice');
+  });
+
+  it('adds no notice when every row under an in-force filter carries in_force_from', async () => {
+    searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-pruefgewo.json')));
+    const { results, structured } = await callWire({
+      collection: 'trade_exam_rules',
+      in_force_as_of: '2026-10-30',
+    });
+    expect(results.every((r) => r.in_force_from !== undefined)).toBe(true);
+    expect(structured).not.toHaveProperty('notice');
+  });
+
+  it('leads with the page-size sentence, in one notice', async () => {
+    searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-erlaesse.json')));
+    const { result, structured } = await callWire({
+      collection: 'ministerial_decrees',
+      in_force_as_of: '2026-07-01',
+      page_size: 50,
+    });
+    const notice = structured.notice as string;
+    expect(notice.startsWith('page_size 50 served as 20 — ')).toBe(true);
+    expect(notice.endsWith(` ${DECREES_UNDATED}`)).toBe(true);
+    expectNoticeLine(result, notice);
+    expect(searchAnnouncements.mock.calls[0]![0]).toEqual({
+      collection: 'ministerial_decrees',
+      inForceAsOf: '2026-07-01',
+      pageSize: 20,
+    });
   });
 });
 

@@ -35,6 +35,7 @@ import {
   joinNotices,
   pageSizeParam,
   renditionLinks,
+  reversedWindowNotice,
   rewriteUnsupportedParam,
   servePageSize,
   type UnsupportedParam,
@@ -609,7 +610,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
       .string()
       .optional()
       .describe(
-        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call.',
+        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call. A reversed window (published_from later than published_to) is answered without a RIS request: 0 entries, and the swapped bounds to retry with in place of the guidance.',
       ),
   },
   errors: [
@@ -737,21 +738,23 @@ export const risSearchGazette = tool('ris_search_gazette', {
 
     const served = servePageSize(input.page_size);
 
-    // Vbl (Verordnungsblätter) resolves Tirol only upstream; a non-Tirol request would 500.
-    // Short-circuit to a zero-hit notice instead of a retryable upstream_error.
-    if (application === 'Vbl' && !VBL_COVERED.has(scope)) {
+    // Two calls are answered here with an empty page instead of a RIS request. Vbl
+    // (Verordnungsblätter) resolves Tirol only upstream, where a non-Tirol request would 500
+    // rather than return a zero-hit. A reversed window holds no dates, and RIS's empty page for
+    // it reads as a real zero-hit; it overlaps at most one era tier, so routing above never
+    // rejects it as cross-tier.
+    const localAnswer =
+      application === 'Vbl' && !VBL_COVERED.has(scope)
+        ? "0 gazette entries matched. Verordnungsblätter in RIS currently cover Tirol (2022+) — other states' ordinance gazettes are not yet published here."
+        : reversedWindowNotice([['published_from', publishedFrom, 'published_to', publishedTo]]);
+    if (localAnswer !== undefined) {
       ctx.enrich.total(0);
       ctx.enrich({
         page: input.page ?? 1,
         pageSize: served.pageSize ?? 20,
         servedApplication: application,
       });
-      ctx.enrich.notice(
-        joinNotices(
-          served.notice,
-          "0 gazette entries matched. Verordnungsblätter in RIS currently cover Tirol (2022+) — other states' ordinance gazettes are not yet published here.",
-        ),
-      );
+      ctx.enrich.notice(joinNotices(served.notice, localAnswer));
       return { results: [] };
     }
 

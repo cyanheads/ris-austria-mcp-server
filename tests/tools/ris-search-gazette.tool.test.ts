@@ -179,6 +179,21 @@ describe('risSearchGazette — Vbl non-Tirol short-circuit', () => {
     expect(searchGazette).toHaveBeenCalledOnce();
     expect(getEnrichment(ctx).servedApplication).toBe('Vbl');
   });
+
+  it('keeps the coverage notice ahead of a reversed window (#92)', async () => {
+    const ctx = createMockContext({ errors: risSearchGazette.errors });
+    const input = risSearchGazette.input.parse({
+      scope: 'wien',
+      series: 'ordinance_gazette',
+      published_from: '2026-06-30',
+      published_to: '2026-01-01',
+    });
+    expect(await risSearchGazette.handler(input, ctx)).toEqual({ results: [] });
+    expect(searchGazette).not.toHaveBeenCalled();
+    expect(getEnrichment(ctx).notice).toBe(
+      "0 gazette entries matched. Verordnungsblätter in RIS currently cover Tirol (2022+) — other states' ordinance gazettes are not yet published here.",
+    );
+  });
 });
 
 describe('risSearchGazette — federal era-tier routing (servedApplication)', () => {
@@ -477,6 +492,31 @@ describe('risSearchGazette — cross-tier federal date ranges', () => {
     await risSearchGazette.handler(input, ctx);
     expect(getEnrichment(ctx).servedApplication).toBe('LgblAuth');
     expect(searchGazette).toHaveBeenCalledOnce();
+  });
+
+  it('answers a reversed interval whose bounds sit in different tiers as reversed, not cross-tier (#92)', async () => {
+    const result = await runToolContract(risSearchGazette, {
+      scope: 'federal',
+      published_from: '2010-01-01',
+      published_to: '1990-01-01',
+    });
+    const notice =
+      'published_from 2010-01-01 is after published_to 1990-01-01 — a reversed window holds no dates, so nothing matches and RIS was not queried. Retry with the bounds swapped: published_from 1990-01-01, published_to 2010-01-01.';
+
+    expect(result.isError).not.toBe(true);
+    expect(searchGazette).not.toHaveBeenCalled();
+    expect(result.structuredContent).toMatchObject({
+      notice,
+      page: 1,
+      pageSize: 20,
+      results: [],
+      servedApplication: 'BgblAuth',
+      totalCount: 0,
+    });
+    const text = contentText(result);
+    expect(text.split('\n')).toContain(`> ${notice}`);
+    expect(text).not.toContain('Range served by');
+    expect(text).not.toContain('era tier');
   });
 });
 

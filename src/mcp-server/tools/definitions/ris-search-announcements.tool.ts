@@ -34,6 +34,7 @@ import {
   joinNotices,
   pageSizeParam,
   renditionLinks,
+  reversedWindowNotice,
   rewriteUnsupportedParam,
   servePageSize,
   type UnsupportedParam,
@@ -321,17 +322,17 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
     in_force_as_of: isoDateString
       .optional()
       .describe(
-        'Version in force on this date (YYYY-MM-DD) — veterinary, court_rules, trade_exam_rules, health_structure_plans, ministerial_decrees (the consolidated-ish collections).',
+        'Version in force on this date (YYYY-MM-DD) — veterinary, court_rules, trade_exam_rules, health_structure_plans, ministerial_decrees (the consolidated-ish collections). RIS also returns documents with no recorded entry-into-force date, for any date; they carry no in_force_from.',
       ),
     entered_force_from: isoDateString
       .optional()
       .describe(
-        'Provisions that entered force on/after this date (YYYY-MM-DD) — ministerial_decrees only.',
+        'Provisions that entered force on/after this date (YYYY-MM-DD) — ministerial_decrees only. RIS also returns decrees with no recorded entry-into-force date, for any date; they carry no in_force_from.',
       ),
     entered_force_to: isoDateString
       .optional()
       .describe(
-        'Provisions that entered force on/before this date (YYYY-MM-DD) — ministerial_decrees only.',
+        'Provisions that entered force on/before this date (YYYY-MM-DD) — ministerial_decrees only. RIS also returns decrees with no recorded entry-into-force date, for any date; they carry no in_force_from.',
       ),
     issuer: filterText
       .optional()
@@ -413,7 +414,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       .string()
       .optional()
       .describe(
-        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call.',
+        'The served page size when it differs from page_size; then, under an in-force filter, how many rows on this page have no in_force_from (RIS returns undated documents for any date); then zero-hit guidance — the likely cause and the concrete next call. A reversed window (published_from later than published_to, or entered_force_from later than entered_force_to) is answered without a RIS request: 0 documents, and the swapped bounds to retry with in place of the guidance.',
       ),
   },
   errors: [
@@ -520,6 +521,20 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
     }
     const served = servePageSize(input.page_size);
 
+    // A reversed window holds no dates — answer it here, since RIS's empty page for it reads as
+    // a real zero-hit (and Erlaesse answers a reversed entered-force window with every undated
+    // decree).
+    const reversed = reversedWindowNotice([
+      ['published_from', publishedFrom, 'published_to', publishedTo],
+      ['entered_force_from', enteredForceFrom, 'entered_force_to', enteredForceTo],
+    ]);
+    if (reversed !== undefined) {
+      ctx.enrich.total(0);
+      ctx.enrich({ page: input.page ?? 1, pageSize: served.pageSize ?? 20 });
+      ctx.enrich.notice(joinNotices(served.notice, reversed));
+      return { results: [] };
+    }
+
     const params: AnnouncementsSearchParams = {
       collection,
       ...(query !== undefined && { query }),
@@ -587,10 +602,20 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       }
       zeroHit = fragments.join(' ');
     }
-    const notice = joinNotices(served.notice, zeroHit);
+    const results = result.hits.map((hit) => toRecord(hit, collection));
+    // RIS keeps every document with no recorded Inkrafttretensdatum under FassungVom and under
+    // either Inkrafttretensdatum bound, whatever the date (#96). Dropping those rows here would
+    // break page and totalCount, so the page is served as RIS sent it and the share disclosed.
+    const undatedRows = results.filter((r) => r.in_force_from === undefined).length;
+    const undated =
+      undatedRows > 0 &&
+      [inForceAsOf, enteredForceFrom, enteredForceTo].some((date) => date !== undefined)
+        ? `${undatedRows} of ${results.length} on this page ${undatedRows === 1 ? 'has' : 'have'} no in_force_from — RIS returns all documents with no recorded entry-into-force date under in_force_as_of, entered_force_from, or entered_force_to, whatever the date, so totalCount counts them too.`
+        : undefined;
+    const notice = joinNotices(served.notice, undated, zeroHit);
     if (notice !== undefined) ctx.enrich.notice(notice);
 
-    return { results: result.hits.map((hit) => toRecord(hit, collection)) };
+    return { results };
   },
 
   // format() populates content[] — the markdown twin of structuredContent. Every output
