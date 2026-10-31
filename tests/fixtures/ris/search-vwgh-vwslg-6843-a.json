@@ -1,0 +1,156 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "20",
+        "#text": "2"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JWR_1964002194_19660120X01",
+                "Applikation": "Vwgh",
+                "Organ": "Verwaltungsgerichtshof (VwGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2001-10-24",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1964002194_19660120X01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "2194/64"
+                },
+                "Normen": {
+                  "item": "StVO 1960 §5 Abs2;"
+                },
+                "Entscheidungsdatum": "1966-01-20",
+                "Schlagworte": "Alkotest Voraussetzung",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:1966:1964002194.X01",
+                "Vwgh": {
+                  "Rechtssatznummer": "1",
+                  "Entscheidungsart": "Erkenntnis",
+                  "DokumentnummerTyp": "X",
+                  "Stammrechtssatznummer": "JWR_1965000019_19650316X02",
+                  "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                  "Indizes": {
+                    "item": "90/01 Straßenverkehrsordnung"
+                  },
+                  "Sammlungsnummer": "VwSlg 6843 A/1964",
+                  "HinweisAufStammrechtssatz": "GRS wie 0019/65 E 16. März 1965 RS 2",
+                  "RechtssatzketteUrl": "https://ogd.ris.bka.gv.at/VwghRechtssatzkette.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1964002194_19660120X01"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1964002194_19660120X01",
+                "EntscheidungstextUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_1964002194_19660120X00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1964002194_19660120X01/JWR_1964002194_19660120X01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1964002194_19660120X01/JWR_1964002194_19660120X01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1964002194_19660120X01/JWR_1964002194_19660120X01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1964002194_19660120X01/JWR_1964002194_19660120X01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JWR_1964002194_19660120X02",
+                "Applikation": "Vwgh",
+                "Organ": "Verwaltungsgerichtshof (VwGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2001-10-24",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1964002194_19660120X02"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "2194/64"
+                },
+                "Normen": {
+                  "item": "StVO 1960 §5 Abs2;"
+                },
+                "Entscheidungsdatum": "1966-01-20",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:1966:1964002194.X02",
+                "Vwgh": {
+                  "Rechtssatznummer": "2",
+                  "Entscheidungsart": "Erkenntnis",
+                  "DokumentnummerTyp": "X",
+                  "Stammrechtssatznummer": "JWR_1964002194_19660120X02",
+                  "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                  "Indizes": {
+                    "item": "90/01 Straßenverkehrsordnung"
+                  },
+                  "Sammlungsnummer": "VwSlg 6843 A/1964",
+                  "Beachte": "Siehe:\r\n85/18/0376 E 28. Februar 1986 RS 1",
+                  "RechtssatzketteUrl": "https://ogd.ris.bka.gv.at/VwghRechtssatzkette.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1964002194_19660120X02"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1964002194_19660120X02",
+                "EntscheidungstextUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_1964002194_19660120X00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1964002194_19660120X02/JWR_1964002194_19660120X02.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1964002194_19660120X02/JWR_1964002194_19660120X02.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1964002194_19660120X02/JWR_1964002194_19660120X02.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1964002194_19660120X02/JWR_1964002194_19660120X02.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

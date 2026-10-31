@@ -63,9 +63,9 @@ export const RIS_CITATION_FORMATS = [
   {
     kind: 'collection_number',
     description:
-      'An official collection citation of the VfGH or VwGH. A VwSlg cite carries a part letter — A for the administrative series, F for the finance series — and the two reuse numbers, so a cite given without it names a decision in each.',
+      'An official collection citation of the VfGH or VwGH, with the year after the slash. A VwSlg cite carries a part letter — A for the administrative series, F for the finance series — and the two reuse numbers, so a cite given without it names a decision in each. VfSlg numbering restarted in 1921, so a number from the 1919–1920 volumes given without its year names a 1921 decision too.',
     examples: ['VfSlg 19.632/2012', 'VwSlg 18.000 A/2010', 'VwSlg 8000 F/2005'],
     resolvesVia:
-      'Vfgh/Vwgh via the Sammlungsnummer filter, whose accepted value differs by court: Vfgh (and Uvs) store the bare number and match it dotted or undotted, while Vwgh stores the full labelled undotted cite ("VwSlg 18000 A/2010") and matches nothing on a bare or dotted number.',
+      'Vfgh/Vwgh via the Sammlungsnummer filter, whose accepted value differs by court: Vfgh (and Uvs) store the bare number and match it dotted or undotted, while Vwgh stores the full labelled undotted cite ("VwSlg 18000 A/2010") and matches nothing on a bare or dotted number. The cited year is checked on the hits, not sent: a hit agrees when the cited year is its decision year or, on Vwgh, the year its Sammlungsnummer carries (RIS labels some old decisions with their Geschäftszahl year, "VwSlg 6843 A/1964" decided 1966), a two-digit year comparing on its last two digits. A Vfgh Rechtssatz listing several numbers ("17330 - 17898") is dated by its first number’s decision and confirms only that one; with no hit dated to the cited decision the year goes unchecked. A number that matched only other years returns found: false naming each cite it does match, and a cite naming more than one decision — a VwSlg cite without its part letter, or a VfSlg number from the 1919–1920 volumes without its year (VfSlg numbering restarted in 1921) — returns found: false naming each.',
   },
 ] as const satisfies readonly CitationFormat[];

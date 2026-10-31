@@ -678,6 +678,11 @@ interface CollectionParse {
    * which is what leaves the filter's wildcard spanning both VwGH series.
    */
   readonly partLetter?: string;
+  /**
+   * The year after the slash, digits as cited ("2012", "10"). Never sent: it is checked against
+   * the hits the filter returns (`hitsOfCitedYear`). Absent when the citation carried none.
+   */
+  readonly year?: string;
 }
 
 /**
@@ -695,17 +700,28 @@ interface CollectionParse {
  * numbers — `VwSlg 8000 *` spans both, `VwSlg 8000 A*` picks one. A citation that cited no
  * part letter therefore carries `partLetter: undefined`, and the route checks what its
  * wildcard actually matched before calling the citation resolved.
+ *
+ * The year stays out of the filter: VfGH stores none, and VwGH labels some old decisions with
+ * another year than they were decided in ("VwSlg 6843 A/1964", decided 1966), so a filter
+ * carrying either year would lose a decision that resolves under the other.
  */
 function parseCollection(input: string): CollectionParse | null {
   const m = /^\s*(vf|vw)slg\b\s*(.*)$/i.exec(input);
   if (!m) return null;
   const [, prefix, rest] = m;
   if (prefix === undefined || rest === undefined) return null;
-  const numMatch = /(\d[\d.]*\d|\d)\s*([A-Za-z])?/.exec(rest);
+  const numMatch = /(\d[\d.]*\d|\d)\s*([A-Za-z])?\s*(?:\/\s*(\d+))?/.exec(rest);
   const number = numMatch?.[1];
   if (number === undefined) return null;
+  const year = numMatch?.[3];
   if (prefix.toLowerCase() === 'vf') {
-    return { court: 'vfgh', filter: number, label: 'VfSlg', number };
+    return {
+      court: 'vfgh',
+      filter: number,
+      label: 'VfSlg',
+      number,
+      ...(year !== undefined && { year }),
+    };
   }
   const partLetter = numMatch?.[2]?.toUpperCase();
   const undotted = number.replace(/\./g, '');
@@ -715,6 +731,7 @@ function parseCollection(input: string): CollectionParse | null {
     label: 'VwSlg',
     number,
     ...(partLetter !== undefined && { partLetter }),
+    ...(year !== undefined && { year }),
   };
 }
 
@@ -1533,13 +1550,38 @@ function collectionGuidance(parsed: CollectionParse): string {
 }
 
 /**
- * Guidance for a VwSlg citation that named more than one decision. With no part letter cited
- * the filter's wildcard spans both VwGH series, and they reuse numbers — so the match is not
- * one decision plus alternatives but several distinct cites, and returning the first would
- * answer a decision the caller did not cite.
+ * Guidance for a collection citation that named more than one decision. A VwSlg cite with no
+ * part letter leaves the filter's wildcard spanning both VwGH series, which reuse numbers; a
+ * VfSlg number cited without its year can name a 1919–1920 decision and a 1921 one, since
+ * numbering restarted in 1921. Either way the match is not one decision plus alternatives but
+ * several distinct cites, and returning the first would answer a decision the caller did not
+ * cite.
  */
 function collectionAmbiguityGuidance(parsed: CollectionParse, matched: readonly string[]): string {
-  return `${parsed.label} ${parsed.number} names more than one decision — Sammlungsnummer "${parsed.filter}" matched ${matched.join(' and ')}. VwGH runs two collection series that reuse numbers (A administrative, F finance), so the part letter is what picks one — retry with the full cite. All matches: ris_search_case_law court: vwgh, collection_number: ${JSON.stringify(parsed.filter)}.`;
+  const picks =
+    parsed.court === 'vwgh'
+      ? 'VwGH runs two collection series that reuse numbers (A administrative, F finance), so the part letter is what picks one'
+      : 'VfSlg numbering restarted in 1921, so a number from the 1919–1920 volumes names a later decision too, and the year is what picks one';
+  return `${parsed.label} ${parsed.number} names more than one decision — Sammlungsnummer "${parsed.filter}" matched ${joinCites(matched)}. ${picks} — retry with the full cite. All matches: ris_search_case_law court: ${parsed.court}, collection_number: ${JSON.stringify(parsed.filter)}.`;
+}
+
+/**
+ * Guidance for a collection number that matched, but no decision of the year cited. The number
+ * is right and the year is the mismatch, so the retry names each cite the number does match.
+ */
+function collectionYearGuidance(parsed: CollectionParse, cites: readonly string[]): string {
+  const { court, filter, label, number, partLetter, year } = parsed;
+  const cited = `${label} ${number}${partLetter === undefined ? '' : ` ${partLetter}`}${year === undefined ? '' : `/${year}`}`;
+  const each = cites.length === 1 ? '' : 'each ';
+  const dated =
+    court === 'vwgh'
+      ? `${each}dated another year by both its decision date and its Sammlungsnummer`
+      : `${each}decided in another year (VfSlg volumes run by decision year)`;
+  const retry =
+    cites.length === 1
+      ? `if ${cites[0]} is the decision meant, retry with that cite`
+      : 'retry with the cite of the decision meant';
+  return `No decision for ${cited} — Sammlungsnummer "${filter}" matched ${joinCites(cites)}, ${dated}. Verify the year against the cite; ${retry}. All matches: ris_search_case_law court: ${court}, collection_number: ${JSON.stringify(filter)}.`;
 }
 
 /**
@@ -1557,13 +1599,72 @@ function alternativesRecipe(
   return ` ${alternatives} more matched — list them with ${searchTool} ${inputs.join(', ')}.`;
 }
 
-/** Distinct `Sammlungsnummer` values across one case-law result page, in hit order. */
-function distinctCollectionNumbers(hits: readonly RisHit[]): string[] {
+/** The number a stored `Sammlungsnummer` leads with, thousands dots inside. */
+const STORED_COLLECTION_NUMBER = /\d[\d.]*\d|\d/;
+/** The year after the slash of a stored VwGH label ("VwSlg 18000 A/2010", "VwSlg 1809/50"). */
+const LABEL_YEAR = /\/\s*(\d+)/;
+
+/**
+ * What one hit says about the cited decision: the cite it names and the years it is dated by.
+ * A hit speaks for the cited decision only when its `Sammlungsnummer` leads with the cited
+ * number — a VfGH Rechtssatz listing several ("17330 - 17898") carries the decision date of
+ * its first number's decision (2004-10-13, while 17.898 was decided 2006) and confirms only
+ * that one. VfSlg volumes run by decision year, so a VfGH hit is dated by its decision year and
+ * named as the number plus that year. A VwGH hit is also dated by the year its stored label
+ * carries, which RIS sometimes sets to the Geschäftszahl year ("VwSlg 6843 A/1964", decided
+ * 1966) or misprints ("VwSlg 2524 A/19852"), so a cite under either year resolves; it is named
+ * by that label.
+ */
+function citedDecision(
+  parsed: CollectionParse,
+  { metadata }: RisHit,
+): { cite: string; years: string[] } | undefined {
+  if (metadata.controller !== 'Judikatur' || metadata.collectionNumber === undefined) return;
+  const stored = metadata.collectionNumber;
+  const lead = STORED_COLLECTION_NUMBER.exec(stored)?.[0];
+  if (lead?.replace(/\./g, '') !== parsed.number.replace(/\./g, '')) return;
+  const decided = /^\d{4}/.exec(metadata.decisionDate ?? '')?.[0];
+  if (parsed.court === 'vfgh') {
+    return decided === undefined
+      ? undefined
+      : { cite: `VfSlg ${parsed.number}/${decided}`, years: [decided] };
+  }
+  const years = [decided, LABEL_YEAR.exec(stored)?.[1]].filter(
+    (year): year is string => year !== undefined,
+  );
+  return years.length === 0 ? undefined : { cite: stored, years };
+}
+
+/** A cited year against a hit's; a two-digit year on either side compares on its last two digits. */
+function sameYear(cited: string, year: string): boolean {
+  return cited.length === 2 || year.length === 2
+    ? cited.slice(-2) === year.slice(-2)
+    : cited === year;
+}
+
+/**
+ * The hits a cited year keeps: those dated to the cited decision in that year. Every hit when
+ * the cite carries no year, or when no hit is dated to the cited decision — the year then goes
+ * unchecked, so a number RIS holds only inside another number's Rechtssatz still resolves as
+ * before. Empty means the number matched, but only decisions of other years.
+ */
+function hitsOfCitedYear(parsed: CollectionParse, hits: readonly RisHit[]): readonly RisHit[] {
+  const { year } = parsed;
+  if (year === undefined) return hits;
+  const dated = hits.flatMap((hit) => {
+    const decision = citedDecision(parsed, hit);
+    return decision === undefined ? [] : [{ hit, years: decision.years }];
+  });
+  if (dated.length === 0) return hits;
+  return dated.filter(({ years }) => years.some((y) => sameYear(year, y))).map(({ hit }) => hit);
+}
+
+/** Distinct cites one case-law result page names for the cited number, in hit order. */
+function distinctCites(parsed: CollectionParse, hits: readonly RisHit[]): string[] {
   const seen = new Set<string>();
-  for (const { metadata } of hits) {
-    if (metadata.controller === 'Judikatur' && metadata.collectionNumber !== undefined) {
-      seen.add(metadata.collectionNumber);
-    }
+  for (const hit of hits) {
+    const decision = citedDecision(parsed, hit);
+    if (decision !== undefined) seen.add(decision.cite);
   }
   return [...seen];
 }
@@ -1663,7 +1764,7 @@ function todayInAustria(): string {
 export const risLookupCitation = tool('ris_lookup_citation', {
   title: 'Resolve Austrian Legal Citation',
   description:
-    'Resolve a single Austrian legal citation to its canonical RIS document deterministically — no keyword search. Four routes are auto-detected from the citation shape (or forced with kind): a norm citation — section-first ("§ 6 DSG", "Art 10 B-VG"), abbreviation-first ("DSG §1", "EMRK Art8", the shape ris_search_case_law returns in norms_cited; a comma-joined entry like "DSG §1, §24", or one joining full norms with ". " like "ZPO §179. ZPO §275 Abs2", resolves its first provision and names the rest), or a bare abbreviation like "ABGB" or "1. COVID-19-JuBG", with sub-provisions (Abs, Z, lit, "(1)"), the version a law is cited in ("ABGB idF 2. ErwSchG §254", "ABGB aF §140"), and a terminal ";" dropped, and a long title read by its short form after the dash ("StaatsanwaltschaftsG - StAG §35") — resolves through consolidated federal law, or a Bundesland with a state hint, as in force today or on in_force_as_of, while an EU act RIS does not consolidate (DSGVO, the Charter, EuGVVO, the EC Treaty as EG, EGV, or EG-Vertrag), or an EU act cited by its number ("RL 2006/123/EG", "VO (EG) 178/2002"), returns found: false pointing to EUR-Lex without a search; a gazette citation ("BGBl. I Nr. 165/1999", year-first "BGBl I 2018/24", pre-2004 "BGBl. Nr. 194/1961", imperial "RGBl. Nr. 189/1902", "StGBl. Nr. 1/1945", or "LGBl. Nr. 61/2026" with a state hint) routes to the right federal era tier by year — the 1945 Staatsgesetzblatt sits in the 1945–2003 tier beside the BGBl. — or to a state Landesgesetzblatt — falling back to that Bundesland’s pre-e-Recht series when the citation predates its switch; a case number ("Ro 2026/03/0016", "G 287/2022", "14Os49/26a", "2025-0.934.677", "W256 …") is matched to its court — a leading VfGH, VwGH, OGH, BVwG, or DSB names it ("VfGH G 13/2025"), court skips detection, and ambiguous formats probe up to two courts; an ECLI ("ECLI:AT:VFGH:2026:G13.2025") resolves to the decision that carries it; a collection number ("VfSlg 19.632/2012", "VwSlg 18.000 A/2010") resolves through the VfGH/VwGH collection — a VwSlg cite given without its part letter can name one decision in each of the two VwGH series, and comes back as ambiguous with both cites named rather than resolved to one of them. Matches are ranked before one is picked: a norm resolves to the hit whose abbreviation is the cited one, then the cited one plus a year ("EStG" → EStG 1988), then the cited one without a year RIS’s abbreviation omits, when the law’s short title carries it ("AlVG 1977" → AlVG), the exact §/Artikel label ahead of a prefixed one ("§ 1" before "Art. 2 § 1"), and a cite whose year matches nothing ("VwGVG 2014 §28") is searched once more without it, taking only the law filed under the cited abbreviation without that year and first promulgated no later than it ("VwGVG 2014" → VwGVG, not "AVG 1950" → the AVG of 1991), for a year no later than in_force_as_of’s; a case number resolves to the decision text, then to a Rechtssatz that decision leads; a gazette cite resolves only to an entry of the gazette it names (StGBl. and BGBl. share numbers in 1945, as the older gazettes do in their changeover years); and a "BGBl. Nr." cite without its part that matches more than one of parts I/II/III (from 1997 they reuse numbers) comes back as ambiguous with each part named. Returns the single best-matching document in the same shape as the corresponding search tool, with alternatives_count when more than one matched. A citation that cannot be classified or resolved returns found: false with next-step guidance — it never throws for a miss; only an upstream RIS outage is an error. For keyword rather than citation lookup, use ris_search_legislation or ris_search_case_law.',
+    'Resolve a single Austrian legal citation to its canonical RIS document deterministically — no keyword search. Four routes are auto-detected from the citation shape (or forced with kind): a norm citation — section-first ("§ 6 DSG", "Art 10 B-VG"), abbreviation-first ("DSG §1", "EMRK Art8", the shape ris_search_case_law returns in norms_cited; a comma-joined entry like "DSG §1, §24", or one joining full norms with ". " like "ZPO §179. ZPO §275 Abs2", resolves its first provision and names the rest), or a bare abbreviation like "ABGB" or "1. COVID-19-JuBG", with sub-provisions (Abs, Z, lit, "(1)"), the version a law is cited in ("ABGB idF 2. ErwSchG §254", "ABGB aF §140"), and a terminal ";" dropped, and a long title read by its short form after the dash ("StaatsanwaltschaftsG - StAG §35") — resolves through consolidated federal law, or a Bundesland with a state hint, as in force today or on in_force_as_of, while an EU act RIS does not consolidate (DSGVO, the Charter, EuGVVO, the EC Treaty as EG, EGV, or EG-Vertrag), or an EU act cited by its number ("RL 2006/123/EG", "VO (EG) 178/2002"), returns found: false pointing to EUR-Lex without a search; a gazette citation ("BGBl. I Nr. 165/1999", year-first "BGBl I 2018/24", pre-2004 "BGBl. Nr. 194/1961", imperial "RGBl. Nr. 189/1902", "StGBl. Nr. 1/1945", or "LGBl. Nr. 61/2026" with a state hint) routes to the right federal era tier by year — the 1945 Staatsgesetzblatt sits in the 1945–2003 tier beside the BGBl. — or to a state Landesgesetzblatt — falling back to that Bundesland’s pre-e-Recht series when the citation predates its switch; a case number ("Ro 2026/03/0016", "G 287/2022", "14Os49/26a", "2025-0.934.677", "W256 …") is matched to its court — a leading VfGH, VwGH, OGH, BVwG, or DSB names it ("VfGH G 13/2025"), court skips detection, and ambiguous formats probe up to two courts; an ECLI ("ECLI:AT:VFGH:2026:G13.2025") resolves to the decision that carries it; a collection number ("VfSlg 19.632/2012", "VwSlg 18.000 A/2010") resolves through the VfGH/VwGH collection to a decision of the year cited, matched against its decision year or, on VwGH, also the year its Sammlungsnummer carries (a two-digit year compares on its last two digits); a number that matched only other years comes back as found: false naming each cite it does match, and a cite naming more than one decision — a VwSlg cite without its part letter (the A and F series reuse numbers), or a VfSlg number from the 1919–1920 volumes without its year (VfSlg numbering restarted in 1921) — comes back as ambiguous with each cite named rather than resolved to one of them. Matches are ranked before one is picked: a norm resolves to the hit whose abbreviation is the cited one, then the cited one plus a year ("EStG" → EStG 1988), then the cited one without a year RIS’s abbreviation omits, when the law’s short title carries it ("AlVG 1977" → AlVG), the exact §/Artikel label ahead of a prefixed one ("§ 1" before "Art. 2 § 1"), and a cite whose year matches nothing ("VwGVG 2014 §28") is searched once more without it, taking only the law filed under the cited abbreviation without that year and first promulgated no later than it ("VwGVG 2014" → VwGVG, not "AVG 1950" → the AVG of 1991), for a year no later than in_force_as_of’s; a case number resolves to the decision text, then to a Rechtssatz that decision leads; a gazette cite resolves only to an entry of the gazette it names (StGBl. and BGBl. share numbers in 1945, as the older gazettes do in their changeover years); and a "BGBl. Nr." cite without its part that matches more than one of parts I/II/III (from 1997 they reuse numbers) comes back as ambiguous with each part named. Returns the single best-matching document in the same shape as the corresponding search tool, with alternatives_count when more than one matched. A citation that cannot be classified or resolved returns found: false with next-step guidance — it never throws for a miss; only an upstream RIS outage is an error. For keyword rather than citation lookup, use ris_search_legislation or ris_search_case_law.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     citation: z
@@ -1797,8 +1898,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
           budget,
         ),
       );
-      const hit = result ? pickRanked(result.hits, caseLawRank(undefined)) : undefined;
-      if (!result || hit === undefined) {
+      if (!result || result.hits.length === 0) {
         return {
           found: false,
           kind: 'collection_number',
@@ -1806,13 +1906,29 @@ export const risLookupCitation = tool('ris_lookup_citation', {
         };
       }
       /*
-       * A VwSlg cite carrying no part letter leaves the wildcard spanning both series, which
-       * reuse numbers — "VwSlg 8000" is VwSlg 8000 A/1971 in one and VwSlg 8000 F/2005 in the
-       * other. Returning the first would present a decision the caller never cited as the
-       * resolution, so a span that actually shows up in the results is reported as such.
+       * The cited year narrows the page before the ambiguity check and the pick: one number can
+       * name decisions of several years — VfSlg 8 a 1919 decision and a 1921 one, VwSlg 8000
+       * an A/1971 and an F/2005 — and a number that matched only other years is a miss naming
+       * those cites, never a wrong-year hit. The page is the one request's; no year is sent.
        */
-      if (parsed.court === 'vwgh' && parsed.partLetter === undefined) {
-        const matched = distinctCollectionNumbers(result.hits);
+      const eligible = hitsOfCitedYear(parsed, result.hits);
+      const hit = pickRanked(eligible, caseLawRank(undefined));
+      if (hit === undefined) {
+        return {
+          found: false,
+          kind: 'collection_number',
+          guidance: collectionYearGuidance(parsed, distinctCites(parsed, result.hits)),
+        };
+      }
+      /*
+       * A cite that leaves more than one decision standing names none of them: a VwSlg cite
+       * carrying no part letter leaves the wildcard spanning both series, which reuse numbers,
+       * and a VfSlg number cited without its year can name a 1919–1920 decision and a 1921 one.
+       * Returning the first would present a decision the caller never cited as the resolution,
+       * so a span that actually shows up in the results is reported as such.
+       */
+      if (parsed.court === 'vfgh' || parsed.partLetter === undefined) {
+        const matched = distinctCites(parsed, eligible);
         if (matched.length > 1) {
           return {
             found: false,

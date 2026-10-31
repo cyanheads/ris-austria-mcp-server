@@ -1,0 +1,185 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "20",
+        "#text": "2"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFT_09939075_06A00011_00",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_09939075_06A00011_00"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Text",
+                "Geschaeftszahl": {
+                  "item": "A11/06"
+                },
+                "Normen": {
+                  "item": [
+                    "B-VG Art137 / sonstige zulässige Klagen",
+                    "B-VG Art137 / sonstige Klagen",
+                    "AlVG §33, §36",
+                    "NotstandshilfeV §6",
+                    "Richtlinie 79/7/EWG des Rates vom 19.12.78 zur schrittweisen Verwirklichung des Grundsatzes der Gleichbehandlung von Männern und Frauen im Bereich der sozialen Sicherheit (Gleichbehandlungsrichtlinie bzw Gleichbehandlungs-Richtlinie)"
+                  ]
+                },
+                "Entscheidungsdatum": "2006-09-25",
+                "Schlagworte": "Arbeitslosenversicherung, EU-Recht Richtlinie, Gleichheit Frau-Mann,\r\nVfGH / Klagen, Staatshaftung, EU-Recht Vorabentscheidung",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:2006:A11.2006",
+                "Vfgh": {
+                  "Entscheidungsart": "Erkenntnis",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": [
+                      "62    Arbeitsmarktverwaltung",
+                      "62/01 Arbeitsmarktverwaltung"
+                    ]
+                  },
+                  "Sammlungsnummer": "17898",
+                  "Leitsatz": "Abweisung einer Staatshaftungsklage wegen Verlustes der\r\nNotstandshilfe aufgrund Anrechnung des Partnereinkommens; kein\r\nqualifizierter Verstoß gegen Gemeinschaftsrecht, insbesondere nicht\r\ngegen die Gleichbehandlungsrichtlinie; keine Vorlagepflicht des\r\nVerwaltungsgerichtshofes infolge vertretbarer Rechtsauffassung"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/VfghEntscheidung.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_09939075_06A00011_00&IncludeSelf=True",
+                "RechtssaetzeUrl": "https://ogd.ris.bka.gv.at/VfghEntscheidung.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_09939075_06A00011_00&IncludeSelf=False"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_09939075_06A00011_00/JFT_09939075_06A00011_00.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_09939075_06A00011_00/JFT_09939075_06A00011_00.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_09939075_06A00011_00/JFT_09939075_06A00011_00.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_09939075_06A00011_00/JFT_09939075_06A00011_00.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFR_09958987_04A00005_01",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_09958987_04A00005_01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "A5/04 - A11/06"
+                },
+                "Normen": {
+                  "item": [
+                    "B-VG Art137 / sonstige zulässige Klagen",
+                    "B-VG Art137 / sonstige Klagen",
+                    "AlVG §33, §36",
+                    "NotstandshilfeV §6",
+                    "Richtlinie 79/7/EWG des Rates vom 19.12.78 zur schrittweisen Verwirklichung des Grundsatzes der Gleichbehandlung von Männern und Frauen im Bereich der sozialen Sicherheit (Gleichbehandlungsrichtlinie bzw Gleichbehandlungs-Richtlinie)"
+                  ]
+                },
+                "Entscheidungsdatum": "2004-10-13",
+                "Schlagworte": "Arbeitslosenversicherung, EU-Recht Richtlinie, Gleichheit Frau-Mann,\r\nVfGH / Klagen, Staatshaftung, EU-Recht Vorabentscheidung",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:2004:A5.2004",
+                "Vfgh": {
+                  "Entscheidungsart": "Erkenntnis",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": [
+                      "62    Arbeitsmarktverwaltung",
+                      "62/01 Arbeitsmarktverwaltung"
+                    ]
+                  },
+                  "Sammlungsnummer": "17330 - 17898",
+                  "Leitsatz": "Abweisung einer Staatshaftungsklage wegen Verlustes der\r\nNotstandshilfe aufgrund Anrechnung des Partnereinkommens; kein\r\nqualifizierter Verstoß gegen Gemeinschaftsrecht, insbesondere nicht\r\ngegen die Gleichbehandlungsrichtlinie; keine Vorlagepflicht des\r\nVerwaltungsgerichtshofes infolge vertretbarer Rechtsauffassung",
+                  "Entscheidungstexte": {
+                    "item": [
+                      {
+                        "Geschaeftszahl": "A 5/04",
+                        "Dokumenttyp": "Text",
+                        "Gericht": "VfGH",
+                        "Entscheidungsdatum": "2004-10-13",
+                        "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_09958987_04A00005_00",
+                        "Dokumentnummer": "JFT_09958987_04A00005_00",
+                        "Entscheidungsart": "Erkenntnis"
+                      },
+                      {
+                        "Geschaeftszahl": "A 11/06",
+                        "Dokumenttyp": "Text",
+                        "Gericht": "VfGH",
+                        "Entscheidungsdatum": "2006-09-25",
+                        "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_09939075_06A00011_00",
+                        "Dokumentnummer": "JFT_09939075_06A00011_00",
+                        "Entscheidungsart": "Erkenntnis"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_09958987_04A00005_01/JFR_09958987_04A00005_01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_09958987_04A00005_01/JFR_09958987_04A00005_01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_09958987_04A00005_01/JFR_09958987_04A00005_01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_09958987_04A00005_01/JFR_09958987_04A00005_01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

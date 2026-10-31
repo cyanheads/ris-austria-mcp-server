@@ -1,0 +1,309 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "20",
+        "#text": "4"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFT_19210428_21B00002_00",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2018-04-05",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19210428_21B00002_00"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Text",
+                "Geschaeftszahl": {
+                  "item": "B2/21"
+                },
+                "Normen": {
+                  "item": [
+                    "Staatsvertrag von St. Germain (Erklärung) Art80, StV St. Germain Art80",
+                    "Vollzugsanweisung §8"
+                  ]
+                },
+                "Entscheidungsdatum": "1921-04-28",
+                "Schlagworte": "Staatsbürgerschaft",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:1921:B2.1921",
+                "Vfgh": {
+                  "Entscheidungsart": "Undefined",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": "Keine Angabe"
+                  },
+                  "Sammlungsnummer": "11",
+                  "Beachte": "Metadaten: DVD Recht compact, Verlag Österreich, Wien 2014 - Judikaturquelle (PDF): Sammlung der Erkenntnisse [und wichtigsten Beschlüsse] des Verfassungsgerichtshofes NF 1–32 (1920–1932/33, 1945/46–1967) / Erkenntnisse und Beschlusse des Verfassungsgerichtshofes NF 33–44 (1968–1979)"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/VfghEntscheidung.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19210428_21B00002_00&IncludeSelf=True",
+                "RechtssaetzeUrl": "https://ogd.ris.bka.gv.at/VfghEntscheidung.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19210428_21B00002_00&IncludeSelf=False"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19210428_21B00002_00/JFT_19210428_21B00002_00.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19210428_21B00002_00/JFT_19210428_21B00002_00.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19210428_21B00002_00/JFT_19210428_21B00002_00.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19210428_21B00002_00/JFT_19210428_21B00002_00.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFR_19210428_21B00002_01",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2018-04-05",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_19210428_21B00002_01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "B2/21"
+                },
+                "Normen": {
+                  "item": [
+                    "Staatsvertrag von St. Germain (Erklärung) Art80, StV St. Germain Art80",
+                    "Vollzugsanweisung §8"
+                  ]
+                },
+                "Entscheidungsdatum": "1921-04-28",
+                "Schlagworte": "Staatsbürgerschaft",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:1921:B2.1921",
+                "Vfgh": {
+                  "Entscheidungsart": "Undefined",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": "Keine Angabe"
+                  },
+                  "Sammlungsnummer": "11",
+                  "Beachte": "Metadatenquelle: DVD Recht compact, Verlag Österreich, Wien 2014",
+                  "Entscheidungstexte": {
+                    "item": {
+                      "Geschaeftszahl": "B2/21",
+                      "Dokumenttyp": "Text",
+                      "Gericht": "VfGH",
+                      "Entscheidungsdatum": "1921-04-28",
+                      "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19210428_21B00002_00",
+                      "Dokumentnummer": "JFT_19210428_21B00002_00",
+                      "Entscheidungsart": "Undefined"
+                    }
+                  }
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19210428_21B00002_01/JFR_19210428_21B00002_01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19210428_21B00002_01/JFR_19210428_21B00002_01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19210428_21B00002_01/JFR_19210428_21B00002_01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19210428_21B00002_01/JFR_19210428_21B00002_01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFT_19190508_19Z00121_00",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2018-04-06",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19190508_19Z00121_00"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Text",
+                "Geschaeftszahl": {
+                  "item": "Z121/19"
+                },
+                "Normen": {
+                  "item": "Keine Angabe"
+                },
+                "Entscheidungsdatum": "1919-05-08",
+                "Schlagworte": "Republik österreich Rechtsnachfolger der Monarchie",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:1919:Z121.1919",
+                "Vfgh": {
+                  "Entscheidungsart": "Undefined",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": "Keine Angabe"
+                  },
+                  "Sammlungsnummer": "11",
+                  "Beachte": "Metadaten: DVD Recht compact, Verlag Österreich, Wien 2014 - Judikaturquelle (PDF): Sammlung der Erkenntnisse [und wichtigsten Beschlüsse] des Verfassungsgerichtshofes NF 1–32 (1920–1932/33, 1945/46–1967) / Erkenntnisse und Beschlusse des Verfassungsgerichtshofes NF 33–44 (1968–1979)"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/VfghEntscheidung.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19190508_19Z00121_00&IncludeSelf=True",
+                "RechtssaetzeUrl": "https://ogd.ris.bka.gv.at/VfghEntscheidung.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19190508_19Z00121_00&IncludeSelf=False"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19190508_19Z00121_00/JFT_19190508_19Z00121_00.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19190508_19Z00121_00/JFT_19190508_19Z00121_00.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19190508_19Z00121_00/JFT_19190508_19Z00121_00.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19190508_19Z00121_00/JFT_19190508_19Z00121_00.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFR_19190508_19Z00121_01",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2018-04-06",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_19190508_19Z00121_01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "Z121/19"
+                },
+                "Normen": {
+                  "item": "Keine Angabe"
+                },
+                "Entscheidungsdatum": "1919-05-08",
+                "Schlagworte": "Republik österreich Rechtsnachfolger der Monarchie",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:1919:Z121.1919",
+                "Vfgh": {
+                  "Entscheidungsart": "Undefined",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": "Keine Angabe"
+                  },
+                  "Sammlungsnummer": "11",
+                  "Beachte": "Metadatenquelle: DVD Recht compact, Verlag Österreich, Wien 2014",
+                  "Entscheidungstexte": {
+                    "item": {
+                      "Geschaeftszahl": "Z121/19",
+                      "Dokumenttyp": "Text",
+                      "Gericht": "VfGH",
+                      "Entscheidungsdatum": "1919-05-08",
+                      "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19190508_19Z00121_00",
+                      "Dokumentnummer": "JFT_19190508_19Z00121_00",
+                      "Entscheidungsart": "Undefined"
+                    }
+                  }
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19190508_19Z00121_01/JFR_19190508_19Z00121_01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19190508_19Z00121_01/JFR_19190508_19Z00121_01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19190508_19Z00121_01/JFR_19190508_19Z00121_01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19190508_19Z00121_01/JFR_19190508_19Z00121_01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,303 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "20",
+        "#text": "4"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFT_19211019_21B00028_00",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2018-04-05",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19211019_21B00028_00"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Text",
+                "Geschaeftszahl": {
+                  "item": "B28/21"
+                },
+                "Normen": {
+                  "item": "Keine Angabe"
+                },
+                "Entscheidungsdatum": "1921-10-19",
+                "Schlagworte": "Wahlen Allgemeine Vertretungskörper Gemeinden Niederösterreich",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:1921:B28.1921",
+                "Vfgh": {
+                  "Entscheidungsart": "Undefined",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": "Keine Angabe"
+                  },
+                  "Sammlungsnummer": "60",
+                  "Beachte": "Metadaten: DVD Recht compact, Verlag Österreich, Wien 2014 - Judikaturquelle (PDF): Sammlung der Erkenntnisse [und wichtigsten Beschlüsse] des Verfassungsgerichtshofes NF 1–32 (1920–1932/33, 1945/46–1967) / Erkenntnisse und Beschlusse des Verfassungsgerichtshofes NF 33–44 (1968–1979)"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/VfghEntscheidung.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19211019_21B00028_00&IncludeSelf=True",
+                "RechtssaetzeUrl": "https://ogd.ris.bka.gv.at/VfghEntscheidung.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19211019_21B00028_00&IncludeSelf=False"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19211019_21B00028_00/JFT_19211019_21B00028_00.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19211019_21B00028_00/JFT_19211019_21B00028_00.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19211019_21B00028_00/JFT_19211019_21B00028_00.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19211019_21B00028_00/JFT_19211019_21B00028_00.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFR_19211019_21B00028_01",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2018-04-05",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_19211019_21B00028_01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "B28/21"
+                },
+                "Normen": {
+                  "item": "Keine Angabe"
+                },
+                "Entscheidungsdatum": "1921-10-19",
+                "Schlagworte": "Wahlen Allgemeine Vertretungskörper Gemeinden Niederösterreich",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:1921:B28.1921",
+                "Vfgh": {
+                  "Entscheidungsart": "Undefined",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": "Keine Angabe"
+                  },
+                  "Sammlungsnummer": "60",
+                  "Beachte": "Metadatenquelle: DVD Recht compact, Verlag Österreich, Wien 2014",
+                  "Entscheidungstexte": {
+                    "item": {
+                      "Geschaeftszahl": "B28/21",
+                      "Dokumenttyp": "Text",
+                      "Gericht": "VfGH",
+                      "Entscheidungsdatum": "1921-10-19",
+                      "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19211019_21B00028_00",
+                      "Dokumentnummer": "JFT_19211019_21B00028_00",
+                      "Entscheidungsart": "Undefined"
+                    }
+                  }
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19211019_21B00028_01/JFR_19211019_21B00028_01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19211019_21B00028_01/JFR_19211019_21B00028_01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19211019_21B00028_01/JFR_19211019_21B00028_01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19211019_21B00028_01/JFR_19211019_21B00028_01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFT_19201012_20B00015_00",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2018-04-06",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19201012_20B00015_00"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Text",
+                "Geschaeftszahl": {
+                  "item": "B15/20"
+                },
+                "Normen": {
+                  "item": "Keine Angabe"
+                },
+                "Entscheidungsdatum": "1920-10-12",
+                "Schlagworte": "Staatsverträge Staatsvertrag St. Germain Heranziehung des authentischen fremdsprachigen Textes zur Auslegung",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:1920:B15.1920",
+                "Vfgh": {
+                  "Entscheidungsart": "Undefined",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": "Keine Angabe"
+                  },
+                  "Sammlungsnummer": "60",
+                  "Beachte": "Metadaten: DVD Recht compact, Verlag Österreich, Wien 2014 - Judikaturquelle (PDF): Sammlung der Erkenntnisse [und wichtigsten Beschlüsse] des Verfassungsgerichtshofes NF 1–32 (1920–1932/33, 1945/46–1967) / Erkenntnisse und Beschlusse des Verfassungsgerichtshofes NF 33–44 (1968–1979)"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/VfghEntscheidung.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19201012_20B00015_00&IncludeSelf=True",
+                "RechtssaetzeUrl": "https://ogd.ris.bka.gv.at/VfghEntscheidung.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19201012_20B00015_00&IncludeSelf=False"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19201012_20B00015_00/JFT_19201012_20B00015_00.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19201012_20B00015_00/JFT_19201012_20B00015_00.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19201012_20B00015_00/JFT_19201012_20B00015_00.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFT_19201012_20B00015_00/JFT_19201012_20B00015_00.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JFR_19201012_20B00015_01",
+                "Applikation": "Vfgh",
+                "Organ": "Verfassungsgerichtshof (VfGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2018-04-06",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_19201012_20B00015_01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "B15/20"
+                },
+                "Normen": {
+                  "item": "Keine Angabe"
+                },
+                "Entscheidungsdatum": "1920-10-12",
+                "Schlagworte": "Staatsverträge Staatsvertrag St. Germain Heranziehung des authentischen fremdsprachigen Textes zur Auslegung",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VFGH:1920:B15.1920",
+                "Vfgh": {
+                  "Entscheidungsart": "Undefined",
+                  "Gericht": "Verfassungsgerichtshof (VfGH)",
+                  "Indizes": {
+                    "item": "Keine Angabe"
+                  },
+                  "Sammlungsnummer": "60",
+                  "Beachte": "Metadatenquelle: DVD Recht compact, Verlag Österreich, Wien 2014",
+                  "Entscheidungstexte": {
+                    "item": {
+                      "Geschaeftszahl": "B15/20",
+                      "Dokumenttyp": "Text",
+                      "Gericht": "VfGH",
+                      "Entscheidungsdatum": "1920-10-12",
+                      "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_19201012_20B00015_00",
+                      "Dokumentnummer": "JFT_19201012_20B00015_00",
+                      "Entscheidungsart": "Undefined"
+                    }
+                  }
+                }
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19201012_20B00015_01/JFR_19201012_20B00015_01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19201012_20B00015_01/JFR_19201012_20B00015_01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19201012_20B00015_01/JFR_19201012_20B00015_01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vfgh/JFR_19201012_20B00015_01/JFR_19201012_20B00015_01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

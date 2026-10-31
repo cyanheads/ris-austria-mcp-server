@@ -1,0 +1,327 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "20",
+        "#text": "4"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JWT_2010020196_20101126X00",
+                "Applikation": "Vwgh",
+                "Organ": "Verwaltungsgerichtshof (VwGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2010-12-29",
+                "Geaendert": "2015-01-09",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_2010020196_20101126X00"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Text",
+                "Geschaeftszahl": {
+                  "item": "2010/02/0196"
+                },
+                "Normen": {
+                  "item": [
+                    "TierhaltungsV 01te 2005;",
+                    "TierhaltungsV 02te 2005;",
+                    "TierschutzG 2005 §13 Abs2;",
+                    "TierschutzG 2005 §24 Abs1;",
+                    "TierschutzG 2005 §25 Abs3;",
+                    "TierschutzG 2005 §38 Abs3;",
+                    "TierschutzG 2005 §44 Abs4;",
+                    "TierschutzG 2005;",
+                    "VwRallg;"
+                  ]
+                },
+                "Entscheidungsdatum": "2010-11-26",
+                "Schlagworte": "Anzuwendendes Recht Maßgebende Rechtslage VwRallg2",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:2010:2010020196.X00",
+                "Vwgh": {
+                  "Entscheidungsart": "Erkenntnis",
+                  "DokumentnummerTyp": "X",
+                  "Stammrechtssatznummer": "JWT_2010020196_20101126X00",
+                  "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                  "Indizes": {
+                    "item": [
+                      "001  Verwaltungsrecht allgemein;",
+                      "86/01 Veterinärrecht allgemein;"
+                    ]
+                  },
+                  "Sammlungsnummer": "VwSlg 18000 A/2010"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_2010020196_20101126X00",
+                "RechtssaetzeUrl": "https://ogd.ris.bka.gv.at/JudikaturRechtssaetze.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_2010020196_20101126X00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWT_2010020196_20101126X00/JWT_2010020196_20101126X00.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWT_2010020196_20101126X00/JWT_2010020196_20101126X00.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWT_2010020196_20101126X00/JWT_2010020196_20101126X00.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWT_2010020196_20101126X00/JWT_2010020196_20101126X00.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JWR_2010020196_20101126X01",
+                "Applikation": "Vwgh",
+                "Organ": "Verwaltungsgerichtshof (VwGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2010-12-29",
+                "Geaendert": "2015-01-09",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_2010020196_20101126X01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "2010/02/0196"
+                },
+                "Normen": {
+                  "item": "TierschutzG 2005 §44 Abs4;"
+                },
+                "Entscheidungsdatum": "2010-11-26",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:2010:2010020196.X01",
+                "Vwgh": {
+                  "Rechtssatznummer": "1",
+                  "Entscheidungsart": "Erkenntnis",
+                  "DokumentnummerTyp": "X",
+                  "Stammrechtssatznummer": "JWR_2008020176_20100423X01",
+                  "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                  "Indizes": {
+                    "item": "86/01 Veterinärrecht allgemein"
+                  },
+                  "Sammlungsnummer": "VwSlg 18000 A/2010",
+                  "HinweisAufStammrechtssatz": "GRS wie 2008/02/0176 E 23. April 2010 RS 1",
+                  "RechtssatzketteUrl": "https://ogd.ris.bka.gv.at/VwghRechtssatzkette.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_2010020196_20101126X01"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_2010020196_20101126X01",
+                "EntscheidungstextUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_2010020196_20101126X00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_2010020196_20101126X01/JWR_2010020196_20101126X01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_2010020196_20101126X01/JWR_2010020196_20101126X01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_2010020196_20101126X01/JWR_2010020196_20101126X01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_2010020196_20101126X01/JWR_2010020196_20101126X01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JWR_2010020196_20101126X02",
+                "Applikation": "Vwgh",
+                "Organ": "Verwaltungsgerichtshof (VwGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2010-12-29",
+                "Geaendert": "2015-01-09",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_2010020196_20101126X02"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "2010/02/0196"
+                },
+                "Normen": {
+                  "item": [
+                    "TierhaltungsV 01te 2005;",
+                    "TierhaltungsV 02te 2005;",
+                    "TierschutzG 2005 §13 Abs2;",
+                    "TierschutzG 2005 §24 Abs1;",
+                    "TierschutzG 2005 §25 Abs3;",
+                    "TierschutzG 2005 §38 Abs3;"
+                  ]
+                },
+                "Entscheidungsdatum": "2010-11-26",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:2010:2010020196.X02",
+                "Vwgh": {
+                  "Rechtssatznummer": "2",
+                  "Entscheidungsart": "Erkenntnis",
+                  "DokumentnummerTyp": "X",
+                  "Stammrechtssatznummer": "JWR_2010020196_20101126X02",
+                  "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                  "Indizes": {
+                    "item": "86/01 Veterinärrecht allgemein"
+                  },
+                  "Sammlungsnummer": "VwSlg 18000 A/2010",
+                  "RechtssatzketteUrl": "https://ogd.ris.bka.gv.at/VwghRechtssatzkette.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_2010020196_20101126X02"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_2010020196_20101126X02",
+                "EntscheidungstextUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_2010020196_20101126X00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_2010020196_20101126X02/JWR_2010020196_20101126X02.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_2010020196_20101126X02/JWR_2010020196_20101126X02.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_2010020196_20101126X02/JWR_2010020196_20101126X02.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_2010020196_20101126X02/JWR_2010020196_20101126X02.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JWR_2010020196_20101126X03",
+                "Applikation": "Vwgh",
+                "Organ": "Verwaltungsgerichtshof (VwGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2010-12-29",
+                "Geaendert": "2015-01-09",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_2010020196_20101126X03"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "2010/02/0196"
+                },
+                "Normen": {
+                  "item": [
+                    "TierhaltungsV 01te 2005;",
+                    "TierhaltungsV 02te 2005;",
+                    "TierschutzG 2005 §44 Abs4;",
+                    "TierschutzG 2005;",
+                    "VwRallg;"
+                  ]
+                },
+                "Entscheidungsdatum": "2010-11-26",
+                "Schlagworte": "Anzuwendendes Recht Maßgebende Rechtslage VwRallg2",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:2010:2010020196.X03",
+                "Vwgh": {
+                  "Rechtssatznummer": "3",
+                  "Entscheidungsart": "Erkenntnis",
+                  "DokumentnummerTyp": "X",
+                  "Stammrechtssatznummer": "JWR_2010020196_20101126X03",
+                  "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                  "Indizes": {
+                    "item": [
+                      "001  Verwaltungsrecht allgemein",
+                      "86/01 Veterinärrecht allgemein"
+                    ]
+                  },
+                  "Sammlungsnummer": "VwSlg 18000 A/2010",
+                  "RechtssatzketteUrl": "https://ogd.ris.bka.gv.at/VwghRechtssatzkette.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_2010020196_20101126X03"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_2010020196_20101126X03",
+                "EntscheidungstextUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_2010020196_20101126X00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_2010020196_20101126X03/JWR_2010020196_20101126X03.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_2010020196_20101126X03/JWR_2010020196_20101126X03.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_2010020196_20101126X03/JWR_2010020196_20101126X03.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_2010020196_20101126X03/JWR_2010020196_20101126X03.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

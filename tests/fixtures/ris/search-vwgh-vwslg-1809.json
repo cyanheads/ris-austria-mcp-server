@@ -1,0 +1,91 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "20",
+        "#text": "1"
+      },
+      "OgdDocumentReference": {
+        "Data": {
+          "Metadaten": {
+            "Technisch": {
+              "ID": "JWR_1958000347_19580409X01",
+              "Applikation": "Vwgh",
+              "Organ": "Verwaltungsgerichtshof (VwGH)",
+              "ImportTimestamp": {
+                "@xsi:nil": "true",
+                "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+              }
+            },
+            "Allgemein": {
+              "Veroeffentlicht": "2002-04-26",
+              "Geaendert": "2019-04-01",
+              "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1958000347_19580409X01"
+            },
+            "Judikatur": {
+              "Dokumenttyp": "Rechtssatz",
+              "Geschaeftszahl": {
+                "item": "0347/58"
+              },
+              "Normen": {
+                "item": [
+                  "GdO OÖ 1948 §35 Abs2 litm;",
+                  "GdO OÖ 1948 §54;",
+                  "VwGG §34 Abs1;"
+                ]
+              },
+              "Entscheidungsdatum": "1958-04-09",
+              "Schlagworte": "Mangel der Berechtigung zur Erhebung der Beschwerde mangelnde \r\nsubjektive Rechtsverletzung Besondere Rechtsgebiete Gemeinderecht \r\nund Straßenwesen\r\nMangel der Berechtigung zur Erhebung der Beschwerde mangelnde \r\nsubjektive Rechtsverletzung Mangel der Rechtsfähigkeit und \r\nHandlungsfähigkeit sowie der Ermächtigung des Einschreiters",
+              "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:1958:1958000347.X01",
+              "Vwgh": {
+                "Rechtssatznummer": "1",
+                "Entscheidungsart": "Beschluss",
+                "DokumentnummerTyp": "X",
+                "Stammrechtssatznummer": "JWR_1958000347_19580409X01",
+                "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                "Indizes": {
+                  "item": [
+                    "L10014 Gemeindeordnung Gemeindeaufsicht Gemeindehaushalt",
+                    "Oberösterreich",
+                    "10/07 Verwaltungsgerichtshof"
+                  ]
+                },
+                "Sammlungsnummer": "VwSlg 1809 F/1958",
+                "RechtssatzketteUrl": "https://ogd.ris.bka.gv.at/VwghRechtssatzkette.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1958000347_19580409X01"
+              },
+              "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1958000347_19580409X01",
+              "EntscheidungstextUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_1958000347_19580409X00"
+            }
+          },
+          "Dokumentliste": {
+            "ContentReference": {
+              "ContentType": "MainDocument",
+              "Name": "Hauptdokument",
+              "Urls": {
+                "ContentUrl": [
+                  {
+                    "DataType": "Xml",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1958000347_19580409X01/JWR_1958000347_19580409X01.xml"
+                  },
+                  {
+                    "DataType": "Html",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1958000347_19580409X01/JWR_1958000347_19580409X01.html"
+                  },
+                  {
+                    "DataType": "Rtf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1958000347_19580409X01/JWR_1958000347_19580409X01.rtf"
+                  },
+                  {
+                    "DataType": "Pdf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1958000347_19580409X01/JWR_1958000347_19580409X01.pdf"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

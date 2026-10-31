@@ -1,0 +1,155 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "20",
+        "#text": "2"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JWR_1951002862_19520505X01",
+                "Applikation": "Vwgh",
+                "Organ": "Verwaltungsgerichtshof (VwGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2004-07-22",
+                "Geaendert": "2010-05-20",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1951002862_19520505X01"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "2862/51"
+                },
+                "Normen": {
+                  "item": "VwGG §34 Abs1;"
+                },
+                "Entscheidungsdatum": "1952-05-05",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:1952:1951002862.X01",
+                "Vwgh": {
+                  "Rechtssatznummer": "1",
+                  "Entscheidungsart": "Beschluss",
+                  "DokumentnummerTyp": "X",
+                  "Stammrechtssatznummer": "JWR_1951002862_19520505X01",
+                  "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                  "Indizes": {
+                    "item": "10/07 Verwaltungsgerichtshof"
+                  },
+                  "Sammlungsnummer": "VwSlg 2524 A/19852",
+                  "RechtssatzketteUrl": "https://ogd.ris.bka.gv.at/VwghRechtssatzkette.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1951002862_19520505X01"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1951002862_19520505X01",
+                "EntscheidungstextUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_1951002862_19520505X00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1951002862_19520505X01/JWR_1951002862_19520505X01.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1951002862_19520505X01/JWR_1951002862_19520505X01.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1951002862_19520505X01/JWR_1951002862_19520505X01.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1951002862_19520505X01/JWR_1951002862_19520505X01.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "JWR_1951002862_19520505X02",
+                "Applikation": "Vwgh",
+                "Organ": "Verwaltungsgerichtshof (VwGH)",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Veroeffentlicht": "2004-07-22",
+                "Geaendert": "2010-05-20",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1951002862_19520505X02"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "2862/51"
+                },
+                "Normen": {
+                  "item": "StadtbauO Salzburg 1886 §7 idF 1932/29;"
+                },
+                "Entscheidungsdatum": "1952-05-05",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:VWGH:1952:1951002862.X02",
+                "Vwgh": {
+                  "Rechtssatznummer": "2",
+                  "Entscheidungsart": "Beschluss",
+                  "DokumentnummerTyp": "X",
+                  "Stammrechtssatznummer": "JWR_1951002862_19520505X02",
+                  "Gericht": "Verwaltungsgerichtshof (VwGH)",
+                  "Indizes": {
+                    "item": "L82005 Bauordnung Salzburg"
+                  },
+                  "Sammlungsnummer": "VwSlg 2524 A/19852",
+                  "RechtssatzketteUrl": "https://ogd.ris.bka.gv.at/VwghRechtssatzkette.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1951002862_19520505X02"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vwgh&Dokumentnummer=JWR_1951002862_19520505X02",
+                "EntscheidungstextUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vwgh&Dokumentnummer=JWT_1951002862_19520505X00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1951002862_19520505X02/JWR_1951002862_19520505X02.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1951002862_19520505X02/JWR_1951002862_19520505X02.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1951002862_19520505X02/JWR_1951002862_19520505X02.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Vwgh/JWR_1951002862_19520505X02/JWR_1951002862_19520505X02.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

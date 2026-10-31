@@ -1302,6 +1302,241 @@ describe('risLookupCitation — a VwSlg number without its part letter names two
   });
 });
 
+describe('risLookupCitation — a collection cite’s year picks the decision it names (#90, #100)', () => {
+  /*
+   * Every fixture is the live page the collection route's one request returns (captured
+   * 2026-10-30). A hit agrees with a cited year when that is its decision year or, on VwGH, the
+   * year its stored Sammlungsnummer carries — RIS labels some old decisions with their
+   * Geschäftszahl year ("VwSlg 6843 A/1964", decided 1966-01-20) or a typo ("VwSlg 2524
+   * A/19852", decided 1952). VfSlg numbering restarted in 1921, so VfSlg 8, 11, 35, and 60
+   * each name a 1919–1920 decision and a 1921 one.
+   */
+  const VFSLG_8 = 'search-vfgh-vfslg-8-both.json';
+  const VFSLG_17898 = 'search-vfgh-vfslg-17898-both.json';
+  const VFSLG_19632 = 'search-vfgh-vfslg-19632-both.json';
+  const VWSLG_8000 = 'search-vwgh-collection-span.json';
+  const VWSLG_18000_A = 'search-vwgh-vwslg-18000-a.json';
+
+  it.each([
+    ['VfSlg 8/1919', VFSLG_8, 'JFT_19190506_19Z00125_00', 'Z125/19'],
+    // A two-digit year compares on its last two digits.
+    ['VfSlg 8/19', VFSLG_8, 'JFT_19190506_19Z00125_00', 'Z125/19'],
+    ['VwSlg 8000/1971', VWSLG_8000, 'JWR_1970000289_19710326X01', '0289/70'],
+  ])(
+    '%s resolves to the decision of the year cited in %s — %s (%s)',
+    async (citation, name, documentNumber, caseNumber) => {
+      const result = await resolveAgainst(searchCaseLaw, name, { citation });
+      expect(result.found).toBe(true);
+      expect(documentNumberOf(result)).toBe(documentNumber);
+      expect((result.record as { case_numbers: string[] }).case_numbers).toEqual([caseNumber]);
+    },
+  );
+
+  it.each([
+    // The regression gate: every cite that resolves correctly today keeps resolving to the same document.
+    ['VfSlg 19.632/2012', VFSLG_19632, 'JFT_09879686_11U00466_2_00'],
+    ['VfSlg 19.632', VFSLG_19632, 'JFT_09879686_11U00466_2_00'],
+    ['VfSlg 19.632/12', VFSLG_19632, 'JFT_09879686_11U00466_2_00'],
+    ['VwSlg 18.000 A/2010', VWSLG_18000_A, 'JWT_2010020196_20101126X00'],
+    ['VwSlg 18.000 A', VWSLG_18000_A, 'JWT_2010020196_20101126X00'],
+    ['VwSlg 18000 A/10', VWSLG_18000_A, 'JWT_2010020196_20101126X00'],
+    // Mislabelled rows resolve under the decision year and under RIS's own label alike.
+    ['VwSlg 6843 A/1966', 'search-vwgh-vwslg-6843-a.json', 'JWR_1964002194_19660120X01'],
+    ['VwSlg 6843 A/1964', 'search-vwgh-vwslg-6843-a.json', 'JWR_1964002194_19660120X01'],
+    ['VwSlg 2524 A/1952', 'search-vwgh-vwslg-2524-a.json', 'JWR_1951002862_19520505X01'],
+    ['VwSlg 2524 A/19852', 'search-vwgh-vwslg-2524-a.json', 'JWR_1951002862_19520505X01'],
+    ['VfSlg 8/1921', VFSLG_8, 'JFT_19210426_21E00001_00'],
+    ['VfSlg 17.898/2006', VFSLG_17898, 'JFT_09939075_06A00011_00'],
+  ])('%s keeps resolving against %s to %s', async (citation, name, documentNumber) => {
+    const result = await resolveAgainst(searchCaseLaw, name, { citation });
+    expect(result.found).toBe(true);
+    expect(documentNumberOf(result)).toBe(documentNumber);
+  });
+
+  it('keeps counting the filter’s matches in alternatives_count and the recipe once the year narrowed the pick', async () => {
+    const result = await resolveAgainst(searchCaseLaw, VFSLG_8, { citation: 'VfSlg 8/1919' });
+    expect(documentNumberOf(result)).toBe('JFT_19190506_19Z00125_00');
+    expect(result.alternatives_count).toBe(3);
+    expect(result.resolution_note).toBe(
+      'Resolved via ris_search_case_law (Vfgh) — Sammlungsnummer "8". 3 more matched — list them with ris_search_case_law court: vfgh, collection_number: "8".',
+    );
+  });
+
+  it.each([
+    [
+      'VfSlg 19.632/2020',
+      VFSLG_19632,
+      'No decision for VfSlg 19.632/2020 — Sammlungsnummer "19.632" matched VfSlg 19.632/2012, decided in another year (VfSlg volumes run by decision year). Verify the year against the cite; if VfSlg 19.632/2012 is the decision meant, retry with that cite. All matches: ris_search_case_law court: vfgh, collection_number: "19.632".',
+    ],
+    [
+      'VwSlg 18.000 A/2020',
+      VWSLG_18000_A,
+      'No decision for VwSlg 18.000 A/2020 — Sammlungsnummer "VwSlg 18000 A*" matched VwSlg 18000 A/2010, dated another year by both its decision date and its Sammlungsnummer. Verify the year against the cite; if VwSlg 18000 A/2010 is the decision meant, retry with that cite. All matches: ris_search_case_law court: vwgh, collection_number: "VwSlg 18000 A*".',
+    ],
+    [
+      'VwSlg 8000/1980',
+      VWSLG_8000,
+      'No decision for VwSlg 8000/1980 — Sammlungsnummer "VwSlg 8000 *" matched VwSlg 8000 F/2005 and VwSlg 8000 A/1971, each dated another year by both its decision date and its Sammlungsnummer. Verify the year against the cite; retry with the cite of the decision meant. All matches: ris_search_case_law court: vwgh, collection_number: "VwSlg 8000 *".',
+    ],
+    [
+      // The letterless row stored as "VwSlg 1809/50" is beyond the "VwSlg 1809 *" filter; the year keeps 1958 from passing for it.
+      'VwSlg 1809/50',
+      'search-vwgh-vwslg-1809.json',
+      'No decision for VwSlg 1809/50 — Sammlungsnummer "VwSlg 1809 *" matched VwSlg 1809 F/1958, dated another year by both its decision date and its Sammlungsnummer. Verify the year against the cite; if VwSlg 1809 F/1958 is the decision meant, retry with that cite. All matches: ris_search_case_law court: vwgh, collection_number: "VwSlg 1809 *".',
+    ],
+    [
+      // The "17330 - 17898" Rechtssatz is dated 2004-10-13, 17.330's decision — it confirms only that number.
+      'VfSlg 17.898/2004',
+      VFSLG_17898,
+      'No decision for VfSlg 17.898/2004 — Sammlungsnummer "17.898" matched VfSlg 17.898/2006, decided in another year (VfSlg volumes run by decision year). Verify the year against the cite; if VfSlg 17.898/2006 is the decision meant, retry with that cite. All matches: ris_search_case_law court: vfgh, collection_number: "17.898".',
+    ],
+    [
+      'VfSlg 8/1925',
+      VFSLG_8,
+      'No decision for VfSlg 8/1925 — Sammlungsnummer "8" matched VfSlg 8/1921 and VfSlg 8/1919, each decided in another year (VfSlg volumes run by decision year). Verify the year against the cite; retry with the cite of the decision meant. All matches: ris_search_case_law court: vfgh, collection_number: "8".',
+    ],
+  ])(
+    '%s matched only other years — found: false naming each cite the number does match',
+    async (citation, name, guidance) => {
+      const result = await resolveAgainst(searchCaseLaw, name, { citation });
+      expect(searchCaseLaw).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({ found: false, kind: 'collection_number', guidance });
+    },
+  );
+
+  it('leaves the year unchecked when no hit is dated to the cited decision', async () => {
+    // Only the "17330 - 17898" Rechtssatz: it is dated by 17.330's decision, so it says nothing about 17.898's year.
+    const base = page(VFSLG_17898);
+    const multiNumber = base.hits.filter(
+      (hit) =>
+        hit.metadata.controller === 'Judikatur' &&
+        hit.metadata.collectionNumber === '17330 - 17898',
+    );
+    expect(multiNumber).toHaveLength(1);
+    for (const citation of ['VfSlg 17.898/2004', 'VfSlg 17.898/2006', 'VfSlg 17.898/1990']) {
+      searchCaseLaw.mockResolvedValue({ ...base, hits: multiNumber });
+      const result = await risLookupCitation.handler(
+        risLookupCitation.input.parse({ citation }),
+        createMockContext({ errors: risLookupCitation.errors }),
+      );
+      expect(result.found, citation).toBe(true);
+      expect(documentNumberOf(result), citation).toBe('JFR_09958987_04A00005_01');
+    }
+  });
+
+  it.each([
+    ['8', VFSLG_8, '1921', '1919'],
+    ['11', 'search-vfgh-vfslg-11-both.json', '1921', '1919'],
+    ['35', 'search-vfgh-vfslg-35-both.json', '1921', '1919'],
+    ['60', 'search-vfgh-vfslg-60-both.json', '1921', '1920'],
+  ])(
+    'VfSlg %s without its year names two decisions — found: false naming both dated cites',
+    async (number, name, later, earlier) => {
+      const result = await resolveAgainst(searchCaseLaw, name, { citation: `VfSlg ${number}` });
+      expect(searchCaseLaw).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({
+        found: false,
+        kind: 'collection_number',
+        guidance: `VfSlg ${number} names more than one decision — Sammlungsnummer "${number}" matched VfSlg ${number}/${later} and VfSlg ${number}/${earlier}. VfSlg numbering restarted in 1921, so a number from the 1919–1920 volumes names a later decision too, and the year is what picks one — retry with the full cite. All matches: ris_search_case_law court: vfgh, collection_number: "${number}".`,
+      });
+    },
+  );
+
+  it('sends exactly one RIS request for every case, through the real service', async () => {
+    const actual = await vi.importActual<typeof import('@/services/ris/ris-service.js')>(
+      '@/services/ris/ris-service.js',
+    );
+    const realService = new actual.RisService('ris-austria-mcp-server/test');
+    searchCaseLaw.mockImplementation((...args: Parameters<typeof realService.searchCaseLaw>) =>
+      realService.searchCaseLaw(...args),
+    );
+    const CASES: ReadonlyArray<[string, string]> = [
+      ['VfSlg 19.632/2020', VFSLG_19632],
+      ['VfSlg 19.632/2012', VFSLG_19632],
+      ['VfSlg 19.632', VFSLG_19632],
+      ['VwSlg 18.000 A/2020', VWSLG_18000_A],
+      ['VwSlg 18.000 A/2010', VWSLG_18000_A],
+      ['VwSlg 18.000 A', VWSLG_18000_A],
+      ['VwSlg 18000 A/10', VWSLG_18000_A],
+      ['VfSlg 8/1919', VFSLG_8],
+      ['VfSlg 8/1921', VFSLG_8],
+      ['VfSlg 8', VFSLG_8],
+      ['VfSlg 11', 'search-vfgh-vfslg-11-both.json'],
+      ['VfSlg 35', 'search-vfgh-vfslg-35-both.json'],
+      ['VfSlg 60', 'search-vfgh-vfslg-60-both.json'],
+      ['VwSlg 8000/1971', VWSLG_8000],
+      ['VwSlg 8000/1980', VWSLG_8000],
+      ['VwSlg 8000', VWSLG_8000],
+      ['VwSlg 1809/50', 'search-vwgh-vwslg-1809.json'],
+      ['VfSlg 17.898/2006', VFSLG_17898],
+      ['VfSlg 17.898/2004', VFSLG_17898],
+      ['VwSlg 6843 A/1966', 'search-vwgh-vwslg-6843-a.json'],
+      ['VwSlg 6843 A/1964', 'search-vwgh-vwslg-6843-a.json'],
+      ['VwSlg 2524 A/1952', 'search-vwgh-vwslg-2524-a.json'],
+    ];
+    try {
+      for (const [citation, name] of CASES) {
+        const fetchMock = vi.fn((_url: unknown) =>
+          Promise.resolve(new Response(JSON.stringify(fixture(name)))),
+        );
+        vi.stubGlobal('fetch', fetchMock);
+        await risLookupCitation.handler(
+          risLookupCitation.input.parse({ citation }),
+          createMockContext({ errors: risLookupCitation.errors }),
+        );
+        expect(fetchMock, citation).toHaveBeenCalledTimes(1);
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([
+    ['VfSlg 19.632/2020', VFSLG_19632],
+    ['VwSlg 18.000 A/2020', VWSLG_18000_A],
+    ['VfSlg 8', VFSLG_8],
+  ])(
+    'renders the %s guidance in content[] as structuredContent carries it',
+    async (citation, name) => {
+      searchCaseLaw.mockResolvedValue(page(name));
+      const result = await runToolContract(risLookupCitation, { citation });
+      const { found, guidance } = result.structuredContent as { found: boolean; guidance: string };
+      expect(found).toBe(false);
+      expect(guidance).toContain(citation);
+      expect(readCommonMark(contentText(result))).toBe(
+        `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: collection_number\n\n${guidance}`,
+      );
+    },
+  );
+
+  it('renders a stored Sammlungsnummer carrying Markdown verbatim in the year-mismatch guidance', async () => {
+    const base = page('search-vwgh-vwslg-1809.json');
+    const stored = `VwSlg 1809 F/1958 ${HOSTILE_TEXT.inline} | \\\n${HOSTILE_TEXT.listOpener}`;
+    searchCaseLaw.mockResolvedValue({
+      ...base,
+      hits: base.hits.map((hit) => ({
+        ...hit,
+        metadata: { ...hit.metadata, collectionNumber: stored } as RisHit['metadata'],
+      })),
+    });
+    const result = await runToolContract(risLookupCitation, { citation: 'VwSlg 1809/50' });
+    const { guidance } = result.structuredContent as { guidance: string };
+    expect(guidance).toContain(`matched ${stored}, dated another year`);
+    expect(readCommonMark(contentText(result))).toBe(
+      `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: collection_number\n\n${guidance}`,
+    );
+  });
+
+  it('states the year check and the yearless VfSlg ambiguity in the description and citation_formats', () => {
+    const collection = RIS_CITATION_FORMATS.find((format) => format.kind === 'collection_number');
+    for (const surface of [risLookupCitation.description, collection?.resolvesVia ?? '']) {
+      expect(surface).toContain('the year its Sammlungsnummer carries');
+      expect(surface).toContain('two-digit year');
+      expect(surface).toContain('VfSlg numbering restarted in 1921');
+    }
+  });
+});
+
 /** A real capture, normalized — the page the mocked service hands the tool. */
 function page(name: string) {
   return parseSearchResponse(fixture(name));
@@ -3213,6 +3448,28 @@ describe('risLookupCitation — a "list them" recipe reproduces the search that 
     );
     await expectRecipeReproduces(result.guidance);
   });
+
+  it.each([
+    // A yearless VfSlg number naming two decisions, and a cited year no match carries (#90, #100).
+    ['VfSlg 8', 'search-vfgh-vfslg-8-both.json', 'court: vfgh, collection_number: "8"'],
+    [
+      'VfSlg 19.632/2020',
+      'search-vfgh-vfslg-19632-both.json',
+      'court: vfgh, collection_number: "19.632"',
+    ],
+    [
+      'VwSlg 18.000 A/2020',
+      'search-vwgh-vwslg-18000-a.json',
+      'court: vwgh, collection_number: "VwSlg 18000 A*"',
+    ],
+  ])(
+    'the collection miss for %s names the collection_number filter it matched with',
+    async (citation, name, recipe) => {
+      const result = await resolveAgainst(searchCaseLaw, name, { citation });
+      expect(result.guidance).toContain(`All matches: ris_search_case_law ${recipe}.`);
+      await expectRecipeReproduces(result.guidance);
+    },
+  );
 
   it('the partless BGBl. collision names the number it matched with', async () => {
     const result = await resolveAgainst(searchGazette, 'search-bgblauth-50-2025.json', {
