@@ -1601,7 +1601,7 @@ function alternativesRecipe(
 
 /** The number a stored `Sammlungsnummer` leads with, thousands dots inside. */
 const STORED_COLLECTION_NUMBER = /\d[\d.]*\d|\d/;
-/** The year after the slash of a stored VwGH label ("VwSlg 18000 A/2010", "VwSlg 1809/50"). */
+/** The year after the slash of a stored VwGH label ("VwSlg 18000 A/2010", "VwSlg 1809 F/1958"). */
 const LABEL_YEAR = /\/\s*(\d+)/;
 
 /**
