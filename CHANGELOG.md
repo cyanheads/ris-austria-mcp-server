@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.6.1](changelog/0.6.x/0.6.1.md) — 2026-10-30
+
+ris_get_document reads the text of PDF-only documents and image-only renditions, ris_lookup_citation checks a VfSlg/VwSlg cite's year, and the six search tools answer reversed date windows locally and disclose undated rows.
+
 ## [0.6.0](changelog/0.6.x/0.6.0.md) — 2026-10-28
 
 Publishes the ris-austria-guide Agent Skill over MCP as skill://ris-austria-guide/SKILL.md, adds the Agent Plugins root manifests, and moves to mcp-ts-core 0.13.18, whose HTTP transport no longer retains memory per request.

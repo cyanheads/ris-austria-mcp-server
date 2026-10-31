@@ -1,6 +1,6 @@
 # ris-austria-mcp-server - Directory Structure
 
-Generated on: 2026-10-28 07:51:32
+Generated on: 2026-10-31 00:59:33
 
 ```text
 ris-austria-mcp-server/
@@ -193,11 +193,15 @@ ris-austria-mcp-server/
 │   │   └── server-config.test.ts
 │   ├── fixtures/
 │   │   └── ris/
+│   │       ├── document-avsv-images.html
+│   │       ├── document-begut-companion-text-layer.pdf
 │   │       ├── document-begut-nutzdaten.xml
 │   │       ├── document-bgblauth-ordinals.html
 │   │       ├── document-brkons-absatz-lists.html
 │   │       ├── document-brkons-sr-only.html
+│   │       ├── document-no-text-layer.pdf
 │   │       ├── document-regv-artikel-sections.html
+│   │       ├── document-regv-image-only-companion.html
 │   │       ├── error-500-fulltext-landesrecht.json
 │   │       ├── error-500-fulltext-wildcard.json
 │   │       ├── error-500-page-overflow.json
@@ -287,10 +291,19 @@ ris-austria-mcp-server/
 │   │       ├── search-vbl.json
 │   │       ├── search-vfgh-g13-2025-both.json
 │   │       ├── search-vfgh-gz-joined.json
+│   │       ├── search-vfgh-vfslg-11-both.json
+│   │       ├── search-vfgh-vfslg-17898-both.json
 │   │       ├── search-vfgh-vfslg-19632-both.json
+│   │       ├── search-vfgh-vfslg-35-both.json
+│   │       ├── search-vfgh-vfslg-60-both.json
+│   │       ├── search-vfgh-vfslg-8-both.json
 │   │       ├── search-vfgh.json
 │   │       ├── search-vwgh-collection-span.json
 │   │       ├── search-vwgh-ra-2025-07-0289-both.json
+│   │       ├── search-vwgh-vwslg-18000-a.json
+│   │       ├── search-vwgh-vwslg-1809.json
+│   │       ├── search-vwgh-vwslg-2524-a.json
+│   │       ├── search-vwgh-vwslg-6843-a.json
 │   │       └── search-zero-hits.json
 │   ├── resources/
 │   │   └── ris-document.resource.test.ts
