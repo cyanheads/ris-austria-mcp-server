@@ -621,10 +621,9 @@ const PDF_MAX_BYTES = 16 * 1024 * 1024;
 const PDF_TEXT_BUDGET_MS = 48_000;
 
 /**
- * Budget an extraction needs left before it may start. Extraction runs to completion once it
- * starts, so it is bounded before it begins: the PDF fetch and the wait for the extraction slot
- * both end this far short of the budget, and extraction starts only on a live caller signal
- * with at least this much left.
+ * Budget an extraction needs left before it may start: the PDF fetch and the wait for the
+ * extraction slot both end this far short of the budget, and extraction starts only on a live
+ * caller signal with at least this much left.
  */
 const EXTRACTION_HEADROOM_MS = 10_000;
 
@@ -723,14 +722,13 @@ type PdfTextOutcome =
 
 /**
  * Fetch a PDF and extract its text — the reading path for a document whose only readable
- * rendition is a PDF. Everything that bounds the call happens before extraction, which cannot
- * be stopped once it starts: the fetch reads at most {@link PDF_MAX_BYTES}, the fetch and the
- * wait for the extraction slot both end {@link EXTRACTION_HEADROOM_MS} short of `deadlineAt`,
- * and extraction starts only on a live signal. A PDF that cannot be fetched in time, fails
- * upstream, is refused by the content host (its bot check or any HTTP status but 404), is over
- * the ceiling, cannot be read, or has no text on any page comes back `unavailable` with the
- * reason; a 404 (`NotFound`), a
- * missing extractor (`ConfigurationError`), and the caller's cancellation throw. No OCR.
+ * rendition is a PDF. Everything that bounds the call is checked before extraction starts: the
+ * fetch reads at most {@link PDF_MAX_BYTES}, the fetch and the wait for the extraction slot both
+ * end {@link EXTRACTION_HEADROOM_MS} short of `deadlineAt`, and extraction starts only on a live
+ * signal. A PDF that cannot be fetched in time, fails upstream, is refused by the content host
+ * (its bot check or any HTTP status but 404), is over the ceiling, cannot be read, or has no text
+ * on any page comes back `unavailable` with the reason; a 404 (`NotFound`), a missing extractor
+ * (`ConfigurationError`), and the caller's cancellation throw. No OCR.
  */
 async function readPdfText(url: string, deadlineAt: number, ctx: Context): Promise<PdfTextOutcome> {
   const outOfTime = { kind: 'unavailable', reason: PDF_OUT_OF_TIME } as const;
