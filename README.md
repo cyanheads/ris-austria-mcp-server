@@ -111,7 +111,8 @@ The resource mirrors `ris_get_document`, so tool-only clients lose nothing.
 ### `ris_get_document` <sub>tool</sub>
 
 - Address by `document_number` + `application`, or by a `document_url` from `content_urls` or a draft's `materials[].url`; `format` is `markdown` (default), `html`, `xml`, or `urls_only`
-- Every result carries `binding_status` and `authentic_pdf_url` where one exists. Applications with no text rendition (district and municipal promulgations, court rules, council minutes, 1848–1940 gazettes) return a notice with the usable URL instead of failing
+- Every result carries `binding_status` and `authentic_pdf_url` where one exists. Where a PDF is the only rendition (district and municipal promulgations, court rules, party-transparency decisions, council minutes, and draft companions filed without HTML), `markdown` returns the text extracted from it: plain text with a `--- Page N of M ---` line before each page, `text_source: pdf`, and a notice naming the PDF. A scanned PDF with no text layer, one over 16 MiB, or one that cannot be fetched in time returns a notice with the usable URL instead of failing, as do `html` and `xml` there and the 1848–1940 gazettes, which have no PDF to read
+- Markdown writes image references as absolute URLs on the content host. A rendition that is nothing but page images reads its PDF's text, and keeps the image URLs with a notice when the PDF has none
 - Markdown over 40,000 bytes returns `kind: outline`; re-call with `sections` to fetch entries. `html` and `xml` over 40,000 bytes return `kind: link` with `byte_size` and `content_urls`, so read with `markdown`
 
 ---
@@ -134,7 +135,7 @@ The resource mirrors `ris_get_document`, so tool-only clients lose nothing.
 ### `ris://document/{application}/{documentNumber}` <sub>resource</sub>
 
 - `text/markdown` of one document, addressed by `application` + `documentNumber` from a search or lookup result; same content as `ris_get_document` with `format: markdown`
-- Applications with no text rendition return a note pointing at the PDF or scan; oversized text returns the outline, so use the tool to fetch an entry
+- Applications that publish only a PDF return its extracted text in a fenced block with a note naming the PDF; the 1848–1940 gazettes and a PDF with no extractable text return a note pointing at the PDF or scan. Oversized text returns the outline, so use the tool to fetch an entry
 
 ## Features
 

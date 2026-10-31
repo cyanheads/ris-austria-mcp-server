@@ -108,8 +108,9 @@ export const risDocumentResource = resource('ris://document/{application}/{docum
 });
 ```
 
-The real handler maps `renderDocument` failures onto the resource's four-entry error contract and
-degrades oversized documents to the same section outline as `ris_get_document`.
+The real handler maps `renderDocument` failures onto the resource's four-entry error contract,
+fences text extracted from a PDF, and degrades oversized documents to the same section outline as
+`ris_get_document`.
 
 ### Server config
 

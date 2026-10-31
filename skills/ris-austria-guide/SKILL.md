@@ -4,7 +4,7 @@ description: Austrian legal research with the ris_* tools — from a citation to
 license: Apache-2.0
 metadata:
   author: cyanheads
-  version: "1.0"
+  version: "1.1"
 ---
 
 ## Scope
@@ -41,6 +41,7 @@ A federal gazette entry from before 2004 (`BgblPdf`) is `historical_record`. RIS
 - **RIS's change date is not a legal amendment.** `ris_track_changes` lists every record RIS re-touched. One or two days in `BrKons` can return over a hundred rows, mostly versions of laws that left force years ago. For "what changed in the law", use the `entered_force_from/to` window on `ris_search_legislation`. Use the change feed for mirrors and sync.
 - **On a Rechtssatz, `decision_date` is the date of the newest decision linked to it,** not the date the rule was first stated. `case_numbers[0]` and the date inside `document_number` (`JJR_19590311_…`) give the origin.
 - **Resolve an RS number by full text.** `ris_lookup_citation` cannot classify `RS0022961`. `ris_search_case_law` with `court: justiz` and `query: "RS0022961"` returns that Rechtssatz plus the decision texts that cite it. If you know the year the rule was first stated, the Rechtssatz ECLI resolves through `ris_lookup_citation`.
+- **Read PDF-only documents through `ris_get_document`, not by fetching the PDF.** Council minutes, party-transparency decisions, district and municipal promulgations, court rules, and draft covering letters come back as extracted text with `text_source: pdf`. The `--- Page N of M ---` lines are the tool's markers, not document text, and extraction can scramble tables and footnotes. Check any figure, date, or quotation you rely on against the PDF the notice names, and for an `authentic` application cite that signed PDF, not the extraction.
 
 ## Workflows
 
