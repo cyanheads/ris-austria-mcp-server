@@ -1,0 +1,68 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "1"
+      },
+      "OgdDocumentReference": {
+        "Data": {
+          "Metadaten": {
+            "Technisch": {
+              "ID": "BGBLA_2026_II_317",
+              "Applikation": "BgblAuth",
+              "Organ": "BMJ (Bundesministerium für Justiz)",
+              "Einbringer": "BMJ (Bundesministerium für Justiz)",
+              "ImportTimestamp": {
+                "@xsi:nil": "true",
+                "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+              }
+            },
+            "Allgemein": {
+              "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/bgbl/II/2026/317/20261103"
+            },
+            "Bundesrecht": {
+              "Kurztitel": "Vergabebekanntmachungsverordnung",
+              "Titel": "Verordnung der Bundesministerin für Justiz, mit der die Anforderungen an und die Bereitstellung von Metadaten, Kerndatenquellen und Standardformularen festgelegt werden (Vergabebekanntmachungsverordnung – VergBmV)",
+              "Eli": "https://www.ris.bka.gv.at/eli/bgbl/II/2026/317/20261103",
+              "BgblAuth": {
+                "Bgblnummer": "BGBl. II Nr. 317/2026",
+                "Teil": "Teil2",
+                "Ausgabedatum": "2026-11-03",
+                "Typ": "Verordnung",
+                "AlteDokumentnummer": "BGBLA_2026_II_317"
+              }
+            }
+          },
+          "Dokumentliste": {
+            "ContentReference": {
+              "ContentType": "MainDocument",
+              "Name": "Hauptdokument",
+              "Urls": {
+                "ContentUrl": [
+                  {
+                    "DataType": "Xml",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_II_317/BGBLA_2026_II_317.xml"
+                  },
+                  {
+                    "DataType": "Html",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_II_317/BGBLA_2026_II_317.html"
+                  },
+                  {
+                    "DataType": "Rtf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_II_317/BGBLA_2026_II_317.rtf"
+                  },
+                  {
+                    "DataType": "Authentisch",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_II_317/BGBLA_2026_II_317.pdf"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

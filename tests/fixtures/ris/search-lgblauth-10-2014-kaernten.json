@@ -1,0 +1,66 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "1"
+      },
+      "OgdDocumentReference": {
+        "Data": {
+          "Metadaten": {
+            "Technisch": {
+              "ID": "LGBLA_KA_20140228_10",
+              "Applikation": "LgblAuth",
+              "Organ": "LReg Kärnten",
+              "ImportTimestamp": {
+                "@xsi:nil": "true",
+                "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+              }
+            },
+            "Allgemein": {
+              "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/lgbl/ka/2014/10/20140228"
+            },
+            "Landesrecht": {
+              "Kurztitel": "Kärntner Landesholding-Gesetz und Kärntner Wirtschaftsförderungsgesetz; Änderung   ",
+              "Titel": "Gesetz vom 20. Februar 2014, mit dem das Kärntner Landesholding-Gesetz und das Kärntner Wirtschaftsförderungsgesetz geändert werden",
+              "Kundmachungsdatum": "2014-02-28",
+              "Bundesland": "Kärnten",
+              "LgblAuth": {
+                "Lgblnummer": "LGBl. Nr. 10/2014",
+                "Typ": "Landesgesetz",
+                "EuropeanLegislationIdentifier": "https://www.ris.bka.gv.at/eli/lgbl/ka/2014/10/20140228"
+              }
+            }
+          },
+          "Dokumentliste": {
+            "ContentReference": {
+              "ContentType": "MainDocument",
+              "Name": "Hauptdokument",
+              "Urls": {
+                "ContentUrl": [
+                  {
+                    "DataType": "Xml",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_KA_20140228_10/LGBLA_KA_20140228_10.xml"
+                  },
+                  {
+                    "DataType": "Html",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_KA_20140228_10/LGBLA_KA_20140228_10.html"
+                  },
+                  {
+                    "DataType": "Rtf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_KA_20140228_10/LGBLA_KA_20140228_10.rtf"
+                  },
+                  {
+                    "DataType": "Authentisch",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_KA_20140228_10/LGBLA_KA_20140228_10.pdf"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

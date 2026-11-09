@@ -11,7 +11,9 @@
  * state name to its code while advertising the same JSON Schema as before (#58). The
  * search-failure mapper gives a local rejection a recovery naming the field to correct, never
  * the page-first advice RIS's own errors need (#59). A date window whose `_from` is later than
- * its `_to` gets one notice naming every reversed pair and its swap (#92). Fully offline: only
+ * its `_to` gets one notice naming every reversed pair and its swap (#92). A `norm` naming an
+ * article spaced or as Artikel is searched under all three spellings RIS indexes, and a notice
+ * quoting it reads back verbatim in `content[]` (#108). Fully offline: only
  * input schemas, schema-level rejections, the error mapper, and the page-size and notice helpers
  * are exercised, no handler and no service.
  * @module tests/tools/_shared.test
@@ -22,12 +24,17 @@ import { JsonRpcErrorCode, McpError, validationError } from '@cyanheads/mcp-ts-c
 import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { describe, expect, it } from 'vitest';
 
+import { risDocumentResource } from '@/mcp-server/resources/definitions/ris-document.resource.js';
 import {
+  delimitedArticleAdvice,
+  escapedNoticeTrailer,
   failMinistrySearchError,
   failSearchError,
+  foldCodeCase,
   isoDateString,
   joinNotices,
   reversedWindowNotice,
+  rewriteNormArticles,
   servePageSize,
 } from '@/mcp-server/tools/definitions/_shared.js';
 import { risGetDocument } from '@/mcp-server/tools/definitions/ris-get-document.tool.js';
@@ -39,9 +46,14 @@ import { risSearchDrafts } from '@/mcp-server/tools/definitions/ris-search-draft
 import { risSearchGazette } from '@/mcp-server/tools/definitions/ris-search-gazette.tool.js';
 import { risSearchLegislation } from '@/mcp-server/tools/definitions/ris-search-legislation.tool.js';
 import { risTrackChanges } from '@/mcp-server/tools/definitions/ris-track-changes.tool.js';
-import { foldStateName, RIS_STATES } from '@/services/ris/reference/index.js';
+import {
+  foldStateName,
+  RIS_APPLICATIONS,
+  RIS_COURTS,
+  RIS_STATES,
+} from '@/services/ris/reference/index.js';
 
-import { expectArgumentRejection } from './_wire.js';
+import { expectArgumentRejection, readCommonMark } from './_wire.js';
 
 /** A real date, an impossible one, and the base input each tool needs to reach its date field. */
 const VALID = '2026-07-26';
@@ -563,6 +575,245 @@ describe('reversedWindowNotice — a window whose _from is later than its _to (#
   });
 });
 
+// RIS indexes an article three ways that never match one another — joined Art6, spaced Art. 6,
+// and Artikel 6 — while reading a period as nothing, so an article token in any of them is sent
+// as an ODER of all three. Both norm filters route through this helper; their tests prove the
+// wiring.
+describe('rewriteNormArticles — an article searched under every spelling RIS indexes (#108)', () => {
+  const ART_6_DSGVO = '(Art6 DSGVO) ODER (Art 6 DSGVO) ODER (Artikel 6 DSGVO)';
+  const ART_6_MRK = '(Art6 MRK) ODER (Art 6 MRK) ODER (Artikel 6 MRK)';
+
+  it.each([
+    ['Art. 6 DSGVO', ART_6_DSGVO, 'the citation form'],
+    ['Art.6 DSGVO', ART_6_DSGVO, 'no space after the period'],
+    ['Art 6 DSGVO', ART_6_DSGVO, 'no period'],
+    ['Art6 DSGVO', ART_6_DSGVO, 'joined'],
+    [
+      'DSGVO Art32',
+      '(DSGVO Art32) ODER (DSGVO Art 32) ODER (DSGVO Artikel 32)',
+      'joined, the law first',
+    ],
+    [
+      'ArtIX EGJN',
+      '(ArtIX EGJN) ODER (Art IX EGJN) ODER (Artikel IX EGJN)',
+      'a joined Roman numeral',
+    ],
+    ['art 6 dsgvo', '(Art6 dsgvo) ODER (Art 6 dsgvo) ODER (Artikel 6 dsgvo)', 'lower case'],
+    ['Artikel 6 MRK', ART_6_MRK, 'Artikel'],
+    ['ARTIKEL 6 MRK', ART_6_MRK, 'Artikel in capitals'],
+    ['Art. IX EGJN', '(ArtIX EGJN) ODER (Art IX EGJN) ODER (Artikel IX EGJN)', 'a Roman numeral'],
+    [
+      'Art. 15a B-VG',
+      '(Art15a B-VG) ODER (Art 15a B-VG) ODER (Artikel 15a B-VG)',
+      'an attached letter',
+    ],
+    ['DSGVO Art. 6', '(DSGVO Art6) ODER (DSGVO Art 6) ODER (DSGVO Artikel 6)', 'the law first'],
+    [
+      'Art. 6 Abs. 1 lit. f DSGVO',
+      '(Art6 Abs. 1 lit. f DSGVO) ODER (Art 6 Abs. 1 lit. f DSGVO) ODER (Artikel 6 Abs. 1 lit. f DSGVO)',
+      'Abs. and lit. left as written',
+    ],
+    [
+      'Art. 6 DSGVO ODER Art. 140 B-VG',
+      '(Art6 DSGVO ODER Art140 B-VG) ODER (Art 6 DSGVO ODER Art 140 B-VG) ODER (Artikel 6 DSGVO ODER Artikel 140 B-VG)',
+      'every token respelled, the caller’s ODER inside each arm',
+    ],
+    [
+      'Art. 6 DSGVO NICHT Abs1',
+      '(Art6 DSGVO NICHT Abs1) ODER (Art 6 DSGVO NICHT Abs1) ODER (Artikel 6 DSGVO NICHT Abs1)',
+      'the caller’s NICHT inside each arm',
+    ],
+    [
+      'Art. 6 DSGVO UND B-VG Art140',
+      '(Art6 DSGVO UND B-VG Art140) ODER (Art 6 DSGVO UND B-VG Art 140) ODER (Artikel 6 DSGVO UND B-VG Artikel 140) ODER (Art. 6 DSGVO UND B-VG Art140)',
+      'spaced beside joined — both respelled per arm, plus the value as written',
+    ],
+    [
+      'Art6 DSGVO UND Art. 7 DSGVO',
+      '(Art6 DSGVO UND Art7 DSGVO) ODER (Art 6 DSGVO UND Art 7 DSGVO) ODER (Artikel 6 DSGVO UND Artikel 7 DSGVO) ODER (Art6 DSGVO UND Art. 7 DSGVO)',
+      'joined beside spaced — plus the value as written',
+    ],
+    [
+      'Art. 6 DSGVO UND Artikel 7 DSGVO',
+      '(Art6 DSGVO UND Art7 DSGVO) ODER (Art 6 DSGVO UND Art 7 DSGVO) ODER (Artikel 6 DSGVO UND Artikel 7 DSGVO) ODER (Art. 6 DSGVO UND Artikel 7 DSGVO)',
+      'spaced beside Artikel — plus the value as written',
+    ],
+    [
+      'Art.6 DSGVO UND Art 7 DSGVO',
+      '(Art6 DSGVO UND Art7 DSGVO) ODER (Art 6 DSGVO UND Art 7 DSGVO) ODER (Artikel 6 DSGVO UND Artikel 7 DSGVO)',
+      'Art.6 beside Art 7 — one spelling, since RIS reads the period as a space',
+    ],
+    ['Art.\t \n6 DSGVO', ART_6_DSGVO, 'a whitespace run'],
+    ['  Art. 6 DSGVO\t', ART_6_DSGVO, 'edge whitespace'],
+    [
+      'Art 57, 58, 96 B-VG',
+      '(Art57, 58, 96 B-VG) ODER (Art 57, 58, 96 B-VG) ODER (Artikel 57, 58, 96 B-VG)',
+      'a comma list — only the number after Art is a token',
+    ],
+    [
+      'B-VG Art 14 b',
+      '(B-VG Art14 b) ODER (B-VG Art 14 b) ODER (B-VG Artikel 14 b)',
+      'a letter set apart — the number alone is the token',
+    ],
+  ])('%j → %s (%s)', (norm, expression) => {
+    expect(rewriteNormArticles(norm)?.expression).toBe(expression);
+  });
+
+  it.each([
+    ['DSG §1', 'no article'],
+    ['Artikel6 MRK', 'Artikel with no space'],
+    ['ARTIKEL6 MRK', 'Artikel in capitals with no space'],
+    ['Art. ix EGJN', 'a lower-case Roman numeral'],
+    ['Art. 6ab DSGVO', 'two letters after the number'],
+    ['Art. 6b2 DSGVO', 'a number running into a letter and a digit'],
+    ['Grundart 6', 'Art ending a longer word'],
+    ['ArtSchG 6', 'Art opening a longer word'],
+    ['Art. Abs1', 'no number'],
+    ['(Art. 6 DSGVO)', 'parentheses'],
+    ['Art. 6 DSGVO)', 'a lone closing parenthesis'],
+    ['"Art. 6 DSGVO"', 'a quoted phrase'],
+    ['Art. 6 DSGVO"', 'a lone quote'],
+  ])('%j is sent as written (%s)', (norm) => {
+    expect(rewriteNormArticles(norm)).toBeUndefined();
+  });
+
+  it('names the expression it searched in the notice', () => {
+    expect(rewriteNormArticles('Art. 6 DSGVO')?.notice).toBe(
+      'norm searched as (Art6 DSGVO) ODER (Art 6 DSGVO) ODER (Artikel 6 DSGVO) — RIS indexes an article as Art6, Art 6, or Artikel 6, and each spelling matches only entries indexed that way.',
+    );
+  });
+
+  // The notice spells out the first article's three spellings, whatever its number.
+  it.each([
+    ['Art. 57 B-VG', 'Art57, Art 57, or Artikel 57'],
+    ['DSGVO Art32', 'Art32, Art 32, or Artikel 32'],
+    ['Art. IX EGJN', 'ArtIX, Art IX, or Artikel IX'],
+    ['Art. 15a B-VG', 'Art15a, Art 15a, or Artikel 15a'],
+    ['B-VG Art140 UND Art. 6 DSGVO', 'Art140, Art 140, or Artikel 140'],
+  ])('names the spellings of the first article in %j: %s', (norm, spellings) => {
+    const rewrite = rewriteNormArticles(norm);
+    expect(rewrite?.notice).toBe(
+      `norm searched as ${rewrite?.expression} — RIS indexes an article as ${spellings}, and each spelling matches only entries indexed that way.`,
+    );
+  });
+});
+
+// A norm sent as written because it carries ( ) or " still names an article; its zero-hit advice
+// says the article matched only as spelled, never to copy a norms_cited string in one spelling.
+describe('delimitedArticleAdvice — an article in a norm sent as written (#108)', () => {
+  const advice = (spellings: string) =>
+    `norm carries ( ) or ", so it was sent as written and each article matched only as spelled — RIS indexes an article as ${spellings}, and each spelling matches only entries indexed that way. Drop the ( ) and " to search every spelling, or copy the exact string from a result's norms_cited.`;
+
+  it.each([
+    ['(Art 6 DSGVO)', 'Art6, Art 6, or Artikel 6'],
+    ['"Art. 57 B-VG"', 'Art57, Art 57, or Artikel 57'],
+    ['Art. 6 DSGVO)', 'Art6, Art 6, or Artikel 6'],
+    ['(DSG §1) UND (Artikel 8 MRK)', 'Art8, Art 8, or Artikel 8'],
+  ])('advises on %j with %s', (norm, spellings) => {
+    expect(rewriteNormArticles(norm)).toBeUndefined();
+    expect(delimitedArticleAdvice(norm)).toBe(advice(spellings));
+  });
+
+  it.each([
+    ['Art. 6 DSGVO', 'no delimiter — the value is rewritten instead'],
+    ['(DSG §1)', 'a delimiter but no article'],
+    ['DSG §1', 'neither'],
+    ['(Artikel6 MRK)', 'a delimiter and an Artikel run into its number, which is no token'],
+  ])('gives none for %j (%s)', (norm) => {
+    expect(delimitedArticleAdvice(norm)).toBeUndefined();
+  });
+});
+
+// The search tools' notices now quote a caller's norm, which can hold the * wildcard, _, <, or
+// backticks — so the trailer escapes the notice before quoting it, as ris_get_document's does.
+describe('escapedNoticeTrailer — a notice quoting caller text reads back verbatim (#108)', () => {
+  const blockquote = (notice: string) =>
+    ['⟨blockquote_open⟩', notice, '⟨blockquote_close⟩'].join('\n\n');
+
+  it('renders a notice with nothing to escape as the framework’s own block quote', () => {
+    const notice = '0 decisions in vwgh. Other courts are separate calls — repeat per court.';
+    expect(escapedNoticeTrailer.render(notice)).toBe(`> ${notice}`);
+  });
+
+  it.each([
+    'norm searched as (Art6 *DSGVO* <b>) ODER (Art 6 *DSGVO* <b>)',
+    'a `code` _em_ [link](x) ~~strike~~ | pipe \\ backslash',
+    'two lines\n- the second opens a list',
+  ])('reads back %j as one block quote holding it as written', (notice) => {
+    expect(readCommonMark(escapedNoticeTrailer.render(notice))).toBe(blockquote(notice));
+  });
+
+  // Escaping turns every line break into a hard break before the notice is quoted, so a blank
+  // line stays inside the one paragraph and no line of the quote is bare — unlike the
+  // framework's own trailer, which quotes the notice unescaped and a blank line as `>`.
+  it('quotes a blank line as a hard break inside the one paragraph', () => {
+    expect(escapedNoticeTrailer.render('a\n\nb')).toBe('> a\\\n> \\\n> b');
+  });
+});
+
+const SIZES = [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 320_000];
+
+/** Thread-CPU milliseconds of one call, the fastest of three samples of ≥ 10 ms each. */
+function cpuMs(run: () => void): number {
+  let best = Number.POSITIVE_INFINITY;
+  for (let sample = 0; sample < 3; sample++) {
+    const start = process.threadCpuUsage();
+    let runs = 0;
+    let ms = 0;
+    do {
+      run();
+      runs++;
+      const { user, system } = process.threadCpuUsage(start);
+      ms = (user + system) / 1_000;
+    } while (ms < 10);
+    best = Math.min(best, ms / runs);
+  }
+  return best;
+}
+
+// The rewrite runs over the caller's norm before any request: one delimiter test, one search,
+// and three replacements, each of which must stay linear in the value's length. The zero-hit
+// advice for a delimited value runs the same token search, so it is timed on the same shapes
+// behind an opening parenthesis.
+describe('rewriteNormArticles — time on adversarial input', () => {
+  /** Bound on one call at 320,000 characters; the slowest shape, every word a token, takes ~15 ms. */
+  const BOUND_MS = 100;
+
+  const SHAPES: [string, (size: number) => string][] = [
+    ['a long digit run ending in two letters', (size) => `Art ${'1'.repeat(size)}xy`],
+    ['a long Roman-numeral run ending in a letter', (size) => `Art ${'I'.repeat(size)}x`],
+    ['a whitespace run after Art. with no number', (size) => `Art.${' '.repeat(size)}x`],
+    ['repeated Art. with no number', (size) => 'Art.'.repeat(size / 4)],
+    ['repeated Artikel with no number', (size) => 'Artikel '.repeat(size / 8)],
+    ['joined Roman prefixes running into the next Art', (size) => 'ArtI'.repeat(size / 4)],
+    ['overlapping token prefixes', (size) => `${'Art 1x'.repeat(size / 6)}y`],
+    ['every word a token', (size) => 'Art. 6 '.repeat(size / 7)],
+    ['one long line ending in a break', (size) => `${'§1 x'.repeat(size / 4)}\ny`],
+    ['line breaks throughout', (size) => '  \r\n'.repeat(size / 4)],
+    ['Art. before every line break', (size) => 'Art.  \r\n'.repeat(size / 8)],
+  ];
+
+  /** Time `run` on `make` at every size, the bound checked before the next size runs. */
+  function expectLinear(make: (size: number) => string, run: (input: string) => unknown): void {
+    const times: number[] = [];
+    for (const size of SIZES) {
+      const input = make(size);
+      const ms = cpuMs(() => run(input));
+      expect(ms, `${size} characters`).toBeLessThan(BOUND_MS);
+      times.push(ms);
+    }
+    expect((times.at(-1) ?? 0) / (times[0] ?? 1)).toBeLessThan(256);
+  }
+
+  it.each(SHAPES)('stays linear on %s', (_shape, make) => {
+    expectLinear(make, rewriteNormArticles);
+  });
+
+  it.each(SHAPES)('delimitedArticleAdvice stays linear on %s', (_shape, make) => {
+    expectLinear((size) => `(${make(size)}`, delimitedArticleAdvice);
+  });
+});
+
 /** The nine state codes, in the order every state enum lists them. */
 const STATE_CODES = RIS_STATES.map((state) => state.code);
 
@@ -682,30 +933,15 @@ describe('foldStateName', () => {
   );
 });
 
-// The fold runs over a caller-sized string before the enum sees it.
-describe('foldStateName — time on adversarial input', () => {
-  const SIZES = [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 320_000];
+// Each fold runs over a caller-sized string before the enum sees it.
+describe('foldStateName and foldCodeCase — time on adversarial input', () => {
   /** Bound on one call at 320,000 characters; linear work there takes about a millisecond. */
   const BOUND_MS = 50;
   const SCOPE = new Set(['federal', ...STATE_CODES]);
-
-  /** Thread-CPU milliseconds of one call, the fastest of three samples of ≥ 10 ms each. */
-  function cpuMs(run: () => void): number {
-    let best = Number.POSITIVE_INFINITY;
-    for (let sample = 0; sample < 3; sample++) {
-      const start = process.threadCpuUsage();
-      let runs = 0;
-      let ms = 0;
-      do {
-        run();
-        runs++;
-        const { user, system } = process.threadCpuUsage(start);
-        ms = (user + system) / 1_000;
-      } while (ms < 10);
-      best = Math.min(best, ms / runs);
-    }
-    return best;
-  }
+  const COURT = foldCodeCase(
+    z.enum(RIS_COURTS.map((court) => court.code) as [string, ...string[]]),
+    { definition: 'test', field: 'court' },
+  );
 
   it.each<[string, (size: number) => string]>([
     ['a long digit run', (size) => '1'.repeat(size)],
@@ -720,6 +956,25 @@ describe('foldStateName — time on adversarial input', () => {
     for (const size of SIZES) {
       const input = make(size);
       const ms = cpuMs(() => foldStateName(input, SCOPE));
+      expect(ms, `${size} characters`).toBeLessThan(BOUND_MS);
+      times.push(ms);
+    }
+    expect((times.at(-1) ?? 0) / (times[0] ?? 1)).toBeLessThan(256);
+  });
+
+  it.each<[string, (size: number) => string]>([
+    ['a long digit run', (size) => '1'.repeat(size)],
+    [
+      'a whitespace run around a code',
+      (size) => `${' '.repeat(size / 2)}Vfgh${' '.repeat(size / 2)}`,
+    ],
+    ['one long line ending in a break', (size) => `${'§1 x'.repeat(size / 4)}\ny`],
+    ['line breaks throughout', (size) => '  \r\n'.repeat(size / 4)],
+  ])('foldCodeCase stays linear on %s', (_shape, make) => {
+    const times: number[] = [];
+    for (const size of SIZES) {
+      const input = make(size);
+      const ms = cpuMs(() => COURT.safeParse(input));
       expect(ms, `${size} characters`).toBeLessThan(BOUND_MS);
       times.push(ms);
     }
@@ -797,6 +1052,222 @@ describe('state parameters — German and English names fold to the code (#58)',
       const before = (
         entry.default === undefined ? plain.optional() : plain.default(entry.default)
       ).describe(String(definition.input.shape[field]?.description));
+      expect(wireSchema(definition.input)).toStrictEqual(
+        wireSchema(definition.input.extend({ [field]: before })),
+      );
+    });
+  });
+});
+
+/** Every court code, in the order the case-law enum lists them. */
+const COURT_CODES = RIS_COURTS.map((court) => court.code) as [string, ...string[]];
+/** The court hint's codes: every court but normenliste, a norm index that carries no case numbers. */
+const CASE_NUMBER_COURTS = COURT_CODES.filter((code) => code !== 'normenliste') as [
+  string,
+  ...string[],
+];
+/** Every application code, in the order the application enums list them. */
+const APPLICATION_CODES = RIS_APPLICATIONS.map((app) => app.code) as [string, ...string[]];
+
+/**
+ * Every court- or application-valued parameter, with its codes, one spelling that folds to a
+ * code, whether it may be omitted, and the minimal sibling input it needs. The fold itself is
+ * tabled once, on its helper; these rows prove only that each field is wired to it. The sweep
+ * below derives the tool rows from the advertised schemas, so a parameter added later must
+ * land here.
+ */
+const CODE_FIELDS: ReadonlyArray<{
+  readonly base: Readonly<Record<string, unknown>>;
+  readonly definition: { readonly input: z.ZodObject; readonly name: string };
+  readonly field: string;
+  readonly folds: readonly [sent: string, code: string];
+  readonly optional: boolean;
+  readonly values: readonly [string, ...string[]];
+}> = [
+  {
+    definition: risSearchCaseLaw,
+    field: 'court',
+    base: { query: 'Datenschutz' },
+    folds: ['Vfgh', 'vfgh'],
+    optional: false,
+    values: COURT_CODES,
+  },
+  {
+    definition: risLookupCitation,
+    field: 'court',
+    base: { citation: 'G 287/2022' },
+    folds: [' VfGH ', 'vfgh'],
+    optional: true,
+    values: CASE_NUMBER_COURTS,
+  },
+  {
+    definition: risGetDocument,
+    field: 'application',
+    base: { document_number: 'NOR40262691' },
+    folds: ['vfgh', 'Vfgh'],
+    optional: true,
+    values: APPLICATION_CODES,
+  },
+  {
+    definition: risTrackChanges,
+    field: 'application',
+    base: {},
+    folds: ['BRKONS', 'BrKons'],
+    optional: false,
+    values: APPLICATION_CODES,
+  },
+  {
+    definition: { name: 'ris_document', input: risDocumentResource.params as z.ZodObject },
+    field: 'application',
+    base: { documentNumber: 'NOR40262691' },
+    folds: ['brkons', 'BrKons'],
+    optional: false,
+    values: APPLICATION_CODES,
+  },
+];
+
+describe('foldCodeCase — a code in any letter case, padded or not, folds to the code (#107)', () => {
+  const SITE = { definition: 'test', field: 'code' } as const;
+  const COURT = foldCodeCase(z.enum(COURT_CODES), SITE);
+  const APPLICATION = foldCodeCase(z.enum(APPLICATION_CODES).optional(), SITE);
+
+  it.each<[z.ZodType, string, string, string]>([
+    [COURT, 'Vfgh', 'vfgh', 'the spelling a case-law record carries'],
+    [COURT, 'VfGH', 'vfgh', 'the spelling the court uses itself'],
+    [COURT, 'JUSTIZ', 'justiz', 'all caps'],
+    [COURT, ' vwgh ', 'vwgh', 'surrounding spaces'],
+    [COURT, '\tAsylGH\n', 'asylgh', 'a tab, a newline, and an inner capital'],
+    [APPLICATION, 'vfgh', 'Vfgh', 'the lowercase court code a caller searched with'],
+    [APPLICATION, 'VFGH', 'Vfgh', 'all caps'],
+    [APPLICATION, 'brkons', 'BrKons', 'a lowercase code with an inner capital'],
+    [APPLICATION, ' LGBLAUTH ', 'LgblAuth', 'all caps with surrounding spaces'],
+  ])('folds %#: %j to %s (%s)', (schema, sent, code) => {
+    expect(schema.parse(sent)).toBe(code);
+  });
+
+  it('folds every court and application code, lowercased or uppercased, to itself', () => {
+    for (const [schema, codes] of [
+      [COURT, COURT_CODES],
+      [APPLICATION, APPLICATION_CODES],
+    ] as const) {
+      for (const code of codes) {
+        expect(schema.parse(code.toLowerCase()), code).toBe(code);
+        expect(schema.parse(code.toUpperCase()), code).toBe(code);
+      }
+    }
+  });
+
+  it.each(['OGH', 'DSB', '', ' ', 'v fgh', 'vfgh.', 'vfghx', 'Vfgh Vwgh'])(
+    'passes %j to the enum as sent, which rejects it',
+    (sent) => {
+      const outcome = COURT.safeParse(sent, { reportInput: true });
+      expect(outcome.success).toBe(false);
+      expect(outcome.error?.issues[0]?.input).toBe(sent);
+    },
+  );
+
+  it.each([7, null, true, ['vfgh'], { court: 'vfgh' }])(
+    'passes the non-string %j to the enum untouched',
+    (sent) => {
+      const outcome = COURT.safeParse(sent, { reportInput: true });
+      expect(outcome.success).toBe(false);
+      expect(outcome.error?.issues[0]?.input).toBe(sent);
+    },
+  );
+
+  it('keeps an optional field optional and a default as the default', () => {
+    expect(APPLICATION.parse(undefined)).toBeUndefined();
+    expect(foldCodeCase(z.enum(['Abc', 'Xyz']).default('Xyz'), SITE).parse(undefined)).toBe('Xyz');
+  });
+
+  it('refuses an enum whose codes differ only in letter case, where a fold could name either', () => {
+    expect(() => foldCodeCase(z.enum(['Abc', 'abc']), SITE)).toThrow(
+      'test code: two codes differ only in letter case.',
+    );
+  });
+});
+
+/** The advertised node of each property whose enum lists every case-number court or every application. */
+function codeEnumParams(definition: { readonly input: z.ZodType; readonly name: string }) {
+  return Object.entries(advertisedInput(definition).properties ?? {})
+    .filter(([, node]) =>
+      [CASE_NUMBER_COURTS, APPLICATION_CODES].some((codes) =>
+        codes.every((code) => node.enum?.includes(code)),
+      ),
+    )
+    .map(([param]) => `${definition.name}.${param}`);
+}
+
+describe('court and application codes — any letter case folds to the code (#107)', () => {
+  it('covers every parameter whose enum lists the court or application codes, on every tool', () => {
+    expect(ALL_TOOLS.flatMap(codeEnumParams).toSorted()).toEqual(
+      CODE_FIELDS.filter(({ definition }) => definition.name !== 'ris_document')
+        .map(({ definition, field }) => `${definition.name}.${field}`)
+        .toSorted(),
+    );
+  });
+
+  it('folds the court value every case-law record carries to its code on ris_search_case_law', () => {
+    for (const court of RIS_COURTS) {
+      const outcome = risSearchCaseLaw.input.safeParse({ court: court.application, query: 'x' });
+      expect(outcome.data?.court, court.application).toBe(court.code);
+    }
+  });
+
+  it('rejects Normenliste on the ris_lookup_citation court hint, whose codes omit the norm index', async () => {
+    const result = await runToolContract(risLookupCitation, {
+      citation: 'G 287/2022',
+      court: 'Normenliste' as never,
+    });
+    expectArgumentRejection(result, [
+      'court: Invalid option',
+      CASE_NUMBER_COURTS.map((code) => `"${code}"`).join('|'),
+    ]);
+  });
+
+  describe.each(
+    CODE_FIELDS.map((entry) => [`${entry.definition.name}.${entry.field}`, entry] as const),
+  )('%s', (_param, entry) => {
+    const { base, definition, field, values } = entry;
+    const [sent, code] = entry.folds;
+    const parse = (value: unknown) => definition.input.safeParse({ ...base, [field]: value });
+
+    it(`folds ${JSON.stringify(sent)} to ${code}`, () => {
+      const outcome = parse(sent);
+      expect(outcome.success).toBe(true);
+      expect((outcome.data as Record<string, unknown>)[field]).toBe(code);
+    });
+
+    it('accepts every code unchanged', () => {
+      for (const value of values) {
+        expect((parse(value).data as Record<string, unknown>)[field], value).toBe(value);
+      }
+    });
+
+    it.each<[unknown, string]>([
+      ['OGH', 'a court name that is not a code'],
+      ['DSB', 'an authority abbreviation that is not a code'],
+      ['', 'an empty string'],
+      [7, 'a number'],
+    ])('rejects %j (%s) with the enum message naming the field and its codes', async (bad) => {
+      const options = values.map((value) => `"${value}"`).join('|');
+      if (definition.name === 'ris_document') {
+        const outcome = parse(bad);
+        expect(outcome.success).toBe(false);
+        expect(outcome.error?.issues.map((issue) => issue.message)).toEqual([
+          `Invalid option: expected one of ${options}`,
+        ]);
+        return;
+      }
+      const result = await runToolContract(definition as never, { ...base, [field]: bad } as never);
+      expectArgumentRejection(result, [`${field}: Invalid option`, options]);
+    });
+
+    it('advertises the same JSON Schema as the plain enum it wraps — only the key order moves', () => {
+      const plain = z.enum(values);
+      const before = (entry.optional ? plain.optional() : plain).describe(
+        String(definition.input.shape[field]?.description),
+      );
       expect(wireSchema(definition.input)).toStrictEqual(
         wireSchema(definition.input.extend({ [field]: before })),
       );

@@ -1,0 +1,82 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "1"
+      },
+      "OgdDocumentReference": {
+        "Data": {
+          "Metadaten": {
+            "Technisch": {
+              "ID": "NOR40212006",
+              "Applikation": "BrKons",
+              "Organ": "BKA (Bundeskanzleramt)",
+              "ImportTimestamp": {
+                "@xsi:nil": "true",
+                "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+              }
+            },
+            "Allgemein": {
+              "Veroeffentlicht": "2019-02-08",
+              "Geaendert": "2019-02-08",
+              "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/bgbl/i/1999/165/A2P4/NOR40212006"
+            },
+            "Bundesrecht": {
+              "Kurztitel": "Datenschutzgesetz",
+              "Eli": "https://www.ris.bka.gv.at/eli/bgbl/i/1999/165/A2P4/NOR40212006",
+              "BrKons": {
+                "Kundmachungsorgan": "BGBl. I Nr. 165/1999 zuletzt geändert durch BGBl. I Nr. 14/2019 ",
+                "Typ": "BG",
+                "Dokumenttyp": "Paragraph",
+                "ArtikelParagraphAnlage": "Art. 2 § 4",
+                "Artikelnummer": "2",
+                "Paragraphnummer": "4",
+                "StammnormPublikationsorgan": "BGBl. I Nr.",
+                "StammnormBgblnummer": "165/1999",
+                "NovellenPublikationsorgan": "BGBl. I Nr.",
+                "NovellenBgblnummer": "14/2019",
+                "NovellenBeziehung": "zuletzt geändert durch",
+                "Inkrafttretensdatum": "2020-01-01",
+                "Abkuerzung": "DSG",
+                "Indizes": {
+                  "item": "10/10 Grundrechte, Datenschutz, Auskunftspflicht"
+                },
+                "Aenderung": "",
+                "Gesetzesnummer": "10001597",
+                "GesamteRechtsvorschriftUrl": "https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=Bundesnormen&Gesetzesnummer=10001597"
+              }
+            }
+          },
+          "Dokumentliste": {
+            "ContentReference": {
+              "ContentType": "MainDocument",
+              "Name": "Hauptdokument",
+              "Urls": {
+                "ContentUrl": [
+                  {
+                    "DataType": "Xml",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40212006/NOR40212006.xml"
+                  },
+                  {
+                    "DataType": "Html",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40212006/NOR40212006.html"
+                  },
+                  {
+                    "DataType": "Rtf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40212006/NOR40212006.rtf"
+                  },
+                  {
+                    "DataType": "Pdf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40212006/NOR40212006.pdf"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

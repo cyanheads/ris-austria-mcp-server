@@ -47,6 +47,13 @@
           "format": "string",
           "isRequired": false,
           "default": "https://ogd.ris.bka.gv.at"
+        },
+        {
+          "name": "RIS_FOLD_INPUT_SPELLINGS",
+          "description": "Fold a court or application code sent in another letter case, or a state sent by its German or English name, to the code before validation. false restores strict validation.",
+          "format": "boolean",
+          "isRequired": false,
+          "default": "true"
         }
       ],
       "transport": {
@@ -120,6 +127,13 @@
           "format": "string",
           "isRequired": false,
           "default": "https://ogd.ris.bka.gv.at"
+        },
+        {
+          "name": "RIS_FOLD_INPUT_SPELLINGS",
+          "description": "Fold a court or application code sent in another letter case, or a state sent by its German or English name, to the code before validation. false restores strict validation.",
+          "format": "boolean",
+          "isRequired": false,
+          "default": "true"
         }
       ],
       "transport": {

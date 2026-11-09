@@ -319,7 +319,12 @@ export const GazetteRecordSchema = z
     document_number: z
       .string()
       .describe(
-        'Technical RIS document number (e.g. BGBLA_2026_II_171, 1961_194_0, rgb1902_…, LGBLA_SA_…, VBL_TI_…, BVB_ST_…, GEMREA_OB_…) — pass together with the served application to ris_get_document.',
+        'Technical RIS document number (e.g. BGBLA_2026_II_171, 1961_194_0, rgb1902_…, LGBLA_SA_…, VBL_TI_…, BVB_ST_…, GEMREA_OB_…) — pass together with application to ris_get_document.',
+      ),
+    application: z
+      .string()
+      .describe(
+        'RIS application the entry belongs to — the gazette the call was routed to: BgblAuth, BgblPdf, or BgblAlt (federal, by era), LgblAuth, Lgbl, or LgblNO (state), Vbl (ordinance gazette), Bvb (district), or GrA (municipal). Pass it with document_number to ris_get_document.',
       ),
     gazette_number: z
       .string()
@@ -366,7 +371,9 @@ export const GazetteRecordSchema = z
     eli: z
       .string()
       .optional()
-      .describe('European Legislation Identifier, where assigned (federal coverage is best).'),
+      .describe(
+        'European Legislation Identifier, where RIS assigns one (BgblAuth and LgblAuth entries). Pass it to ris_get_document as document_url to read this entry.',
+      ),
     celex_references: z
       .array(z.string().describe('One CELEX number of a transposed EU act, as RIS writes it.'))
       .describe(
@@ -408,7 +415,9 @@ export const GazetteRecordSchema = z
     document_url: z
       .string()
       .optional()
-      .describe('RIS web view of the gazette document (DokumentUrl) — for humans.'),
+      .describe(
+        'RIS link to the gazette document (DokumentUrl): its ELI on BgblAuth and LgblAuth, a Dokument.wxe web view elsewhere. Pass it to ris_get_document as document_url to read this entry.',
+      ),
     content_urls: ContentUrlsSchema,
   })
   .describe('One gazette entry from the resolved application.');
@@ -426,9 +435,13 @@ function pickContentUrls(hit: RisHit): GazetteRecord['content_urls'] {
   };
 }
 
-/** Map a normalized RIS hit to the tool's record shape (application drives the binding label). */
+/**
+ * Map a normalized RIS hit to the tool's record shape. The routed application drives the binding
+ * label and is the record's own `application` — the code `ris_get_document` resolves its number in.
+ */
 export function toRecord(hit: RisHit, application: GazetteApplication): GazetteRecord {
   const base: GazetteRecord = {
+    application,
     binding: GAZETTE_BINDING[application],
     celex_references: [],
     content_urls: pickContentUrls(hit),
@@ -506,7 +519,10 @@ export const risSearchGazette = tool('ris_search_gazette', {
     'Browse Austria’s promulgation record — the authentic, legally binding gazettes — at every level of government. scope picks the jurisdiction: federal (default; the Bundesgesetzblatt across three era tiers auto-routed by year — BgblAuth 2004+ authentic, BgblPdf 1945–2003, BgblAlt 1848–1940 metadata-only ÖNB scans; one call serves one tier, so a published_from/published_to interval crossing 2004-01-01 or 1945-01-01 is rejected with the boundaries to split at, and RIS carries no federal gazette for 1941–1944), one Bundesland (its Landesgesetzblatt), district (Bezirke promulgations), or municipal (Gemeinde promulgations). For a state scope, series selects law gazettes (law_gazette, the default → LGBl) vs ordinance gazettes (ordinance_gazette → Verordnungsblätter, currently Tirol only), and state_era picks which era of that series to search: current (the default → the authentic LGBl) or legacy (the state’s earlier non-authentic series — Niederösterreich’s systematic LgblNO, or the older Lgbl elsewhere; Wien carries neither, and ordinance gazettes have no legacy series). Filter by query (full text), title, number ("171/2026" — a pre-2004 number auto-routes to the right era tier), part (federal I/II/III or pre_1997), type (laws/regulations/announcements/other), published_from/to, issuer (federal or ordinance gazettes only), district_authority (district only), or municipality (municipal only). Every result carries a binding label (authentic vs historical_record vs consolidated_informational) and the amtssigniert authentic PDF wherever it exists — the binding artifact, never a paraphrase. For one known gazette number, ris_lookup_citation resolves it directly. Coverage windows, era tiers, and part semantics: ris_list_reference topic applications or gazette_parts.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
-    scope: foldStateNames(z.enum(GAZETTE_SCOPE_VALUES).default('federal')).describe(
+    scope: foldStateNames(z.enum(GAZETTE_SCOPE_VALUES).default('federal'), {
+      definition: 'ris_search_gazette',
+      field: 'scope',
+    }).describe(
       'Jurisdiction level: federal (default — the Bundesgesetzblatt, era tier auto-routed), a Bundesland (burgenland … wien, its Landesgesetzblatt), district (Bezirke promulgations), or municipal (Gemeinde promulgations).',
     ),
     series: z
@@ -877,7 +893,7 @@ export const risSearchGazette = tool('ris_search_gazette', {
     const blocks = result.results.map((r) => {
       const lines = [`## ${esc(r.document_number)}`];
       if (r.title !== undefined) lines.push(`**Title:** ${esc(r.title)}`);
-      lines.push(`**Document:** ${esc(r.document_number)}`);
+      lines.push(`**Document:** ${esc(r.document_number)} (${esc(r.application)})`);
       if (r.promulgation !== undefined) lines.push(`**Promulgation:** ${esc(r.promulgation)}`);
       const facts: string[] = [];
       if (r.gazette_number !== undefined) facts.push(`**Number:** ${esc(r.gazette_number)}`);

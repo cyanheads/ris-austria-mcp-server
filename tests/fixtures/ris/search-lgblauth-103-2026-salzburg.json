@@ -1,0 +1,88 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "1"
+      },
+      "OgdDocumentReference": {
+        "Data": {
+          "Metadaten": {
+            "Technisch": {
+              "ID": "LGBLA_SA_20261104_103",
+              "Applikation": "LgblAuth",
+              "Organ": "LReg Salzburg",
+              "ImportTimestamp": {
+                "@xsi:nil": "true",
+                "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+              }
+            },
+            "Allgemein": {
+              "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/lgbl/SA/2026/103/20261104"
+            },
+            "Landesrecht": {
+              "Kurztitel": "Geschäftsordnung des Amtes der Salzburger Landesregierung; Änderung",
+              "Titel": "Verordnung der Landeshauptfrau von Salzburg vom 28. Oktober 2026, mit der die Geschäftsordnung des Amtes der Salzburger Landesregierung geändert wird",
+              "Kundmachungsdatum": "2026-11-04",
+              "Bundesland": "Salzburg",
+              "LgblAuth": {
+                "Lgblnummer": "LGBl. Nr. 103/2026",
+                "Typ": "Verordnung",
+                "EuropeanLegislationIdentifier": "https://www.ris.bka.gv.at/eli/lgbl/SA/2026/103/20261104"
+              }
+            }
+          },
+          "Dokumentliste": {
+            "ContentReference": [
+              {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_SA_20261104_103/LGBLA_SA_20261104_103.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_SA_20261104_103/LGBLA_SA_20261104_103.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_SA_20261104_103/LGBLA_SA_20261104_103.rtf"
+                    },
+                    {
+                      "DataType": "Authentisch",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_SA_20261104_103/LGBLA_SA_20261104_103.pdf"
+                    }
+                  ]
+                }
+              },
+              {
+                "ContentType": "EmbeddedAttachment",
+                "Name": "Landesgesetzblatt Salzburg",
+                "Urls": {
+                  "ContentUrl": {
+                    "DataType": "Jpg",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_SA_20261104_103/image001.jpg"
+                  }
+                }
+              },
+              {
+                "ContentType": "Material",
+                "Name": "Erläuternde Bemerkungen",
+                "Urls": {
+                  "ContentUrl": {
+                    "DataType": "Authentisch",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/LgblAuth/LGBLA_SA_20261104_103/Material_sa_2026_103_Erlaeuternde_Bemerkungen_as.pdf"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

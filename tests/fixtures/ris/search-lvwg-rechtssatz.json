@@ -1,0 +1,157 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "2",
+        "#text": "2"
+      },
+      "OgdDocumentReference": [
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "LVWGR_NI_20261027_LVwG_AV_1198_002_2026_12",
+                "Applikation": "Lvwg",
+                "Organ": "Landesverwaltungsgericht Niederösterreich",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-11-09",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Lvwg&Dokumentnummer=LVWGR_NI_20261027_LVwG_AV_1198_002_2026_12"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Rechtssatz",
+                "Geschaeftszahl": {
+                  "item": "LVwG-AV-1198/002-2026"
+                },
+                "Normen": {
+                  "item": [
+                    "IFG §6 Abs1 Z7 lita",
+                    "IFG §7 Abs3",
+                    "IFG §16",
+                    "InformationsG NÖ 2025 §3 Z3",
+                    "GdO NÖ 1973 §38 Abs1 Z2",
+                    "ROG NÖ 2014 §24"
+                  ]
+                },
+                "Entscheidungsdatum": "2026-10-27",
+                "Schlagworte": "Auskunftsrecht; Informationsbegehren; Umweltinformationen; Flächenwidmungsplan; informationspflichtige Stelle; Zuständigkeit; Geheimhaltungsinteresse; ",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:LVWGNI:2026:LVwG.AV.1198.002.2026",
+                "Lvwg": {
+                  "Entscheidungsart": "Erkenntnis",
+                  "Gericht": "Landesverwaltungsgericht Niederösterreich",
+                  "Rechtssatznummern": {
+                    "item": "12"
+                  },
+                  "Bundesland": "Niederösterreich"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Lvwg&Dokumentnummer=LVWGR_NI_20261027_LVwG_AV_1198_002_2026_12",
+                "EntscheidungstextUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Lvwg&Dokumentnummer=LVWGT_NI_20261027_LVwG_AV_1198_002_2026_00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Lvwg/LVWGR_NI_20261027_LVwG_AV_1198_002_2026_12/LVWGR_NI_20261027_LVwG_AV_1198_002_2026_12.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Lvwg/LVWGR_NI_20261027_LVwG_AV_1198_002_2026_12/LVWGR_NI_20261027_LVwG_AV_1198_002_2026_12.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Lvwg/LVWGR_NI_20261027_LVwG_AV_1198_002_2026_12/LVWGR_NI_20261027_LVwG_AV_1198_002_2026_12.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Lvwg/LVWGR_NI_20261027_LVwG_AV_1198_002_2026_12/LVWGR_NI_20261027_LVwG_AV_1198_002_2026_12.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "Data": {
+            "Metadaten": {
+              "Technisch": {
+                "ID": "LVWGT_NI_20261027_LVwG_AV_1152_001_2026_00",
+                "Applikation": "Lvwg",
+                "Organ": "Landesverwaltungsgericht Niederösterreich",
+                "ImportTimestamp": {
+                  "@xsi:nil": "true",
+                  "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+                }
+              },
+              "Allgemein": {
+                "Geaendert": "2026-11-04",
+                "DokumentUrl": "https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Lvwg&Dokumentnummer=LVWGT_NI_20261027_LVwG_AV_1152_001_2026_00"
+              },
+              "Judikatur": {
+                "Dokumenttyp": "Text",
+                "Geschaeftszahl": {
+                  "item": "LVwG-AV-1152/001-2026"
+                },
+                "Normen": {
+                  "item": [
+                    "IFG §6 Abs1 Z5",
+                    "IFG §6 Abs1 Z6",
+                    "IFG §6 Abs1 Z7 lita",
+                    "IFG §6 Abs1 Z7 litb",
+                    "IFG §11 Abs3"
+                  ]
+                },
+                "Entscheidungsdatum": "2026-10-27",
+                "Schlagworte": "Auskunftsrecht; Informationsbegehren; Gutachten; Geheimhaltungsinteresse, Interessenabwägung;",
+                "EuropeanCaseLawIdentifier": "ECLI:AT:LVWGNI:2026:LVwG.AV.1152.001.2026",
+                "Lvwg": {
+                  "Entscheidungsart": "Erkenntnis",
+                  "Gericht": "Landesverwaltungsgericht Niederösterreich",
+                  "Bundesland": "Niederösterreich"
+                },
+                "GesamteEntscheidungUrl": "https://ogd.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Lvwg&Dokumentnummer=LVWGT_NI_20261027_LVwG_AV_1152_001_2026_00",
+                "RechtssaetzeUrl": "https://ogd.ris.bka.gv.at/JudikaturRechtssaetze.wxe?Abfrage=Lvwg&Dokumentnummer=LVWGT_NI_20261027_LVwG_AV_1152_001_2026_00"
+              }
+            },
+            "Dokumentliste": {
+              "ContentReference": {
+                "ContentType": "MainDocument",
+                "Name": "Hauptdokument",
+                "Urls": {
+                  "ContentUrl": [
+                    {
+                      "DataType": "Xml",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Lvwg/LVWGT_NI_20261027_LVwG_AV_1152_001_2026_00/LVWGT_NI_20261027_LVwG_AV_1152_001_2026_00.xml"
+                    },
+                    {
+                      "DataType": "Html",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Lvwg/LVWGT_NI_20261027_LVwG_AV_1152_001_2026_00/LVWGT_NI_20261027_LVwG_AV_1152_001_2026_00.html"
+                    },
+                    {
+                      "DataType": "Rtf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Lvwg/LVWGT_NI_20261027_LVwG_AV_1152_001_2026_00/LVWGT_NI_20261027_LVwG_AV_1152_001_2026_00.rtf"
+                    },
+                    {
+                      "DataType": "Pdf",
+                      "Url": "https://ogd.ris.bka.gv.at/Dokumente/Lvwg/LVWGT_NI_20261027_LVwG_AV_1152_001_2026_00/LVWGT_NI_20261027_LVwG_AV_1152_001_2026_00.pdf"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

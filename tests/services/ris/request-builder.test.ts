@@ -269,6 +269,28 @@ describe('buildCaseLawRequest', () => {
     expectValidationError(() => buildCaseLawRequest({ court: 'dok', decisionKind: 'Beschluss' }));
   });
 
+  /*
+   * Measured 2026-11-09 with both Dokumenttyp flags: on Justiz, Rechtssatznummer=RS0022961 returns
+   * its one Rechtssatz; on Vwgh (499,298) and Vfgh (50,001) the same count comes back with the
+   * parameter or without it, so sending it there would filter nothing.
+   */
+  it('sends Rechtssatznummer on justiz only, beside both Dokumenttyp flags', () => {
+    const { controller, params } = buildCaseLawRequest({
+      court: 'justiz',
+      rechtssatzNumber: 'RS0022961',
+    });
+    expect(controller).toBe('Judikatur');
+    expect(params).toMatchObject({
+      Applikation: 'Justiz',
+      'Dokumenttyp.SucheInEntscheidungstexten': 'true',
+      'Dokumenttyp.SucheInRechtssaetzen': 'true',
+      Rechtssatznummer: 'RS0022961',
+    });
+    for (const court of ['vwgh', 'vfgh', 'bvwg'] as const) {
+      expectValidationError(() => buildCaseLawRequest({ court, rechtssatzNumber: 'RS0022961' }));
+    }
+  });
+
   it('validates decision kinds against the per-court table', () => {
     expectValidationError(
       () => buildCaseLawRequest({ court: 'vfgh', decisionKind: 'Bogus' }),

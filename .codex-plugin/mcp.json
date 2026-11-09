@@ -11,7 +11,8 @@
     "env_vars": [
       "RIS_CONTACT",
       "RIS_API_BASE_URL",
-      "RIS_CONTENT_BASE_URL"
+      "RIS_CONTENT_BASE_URL",
+      "RIS_FOLD_INPUT_SPELLINGS"
     ]
   }
 }

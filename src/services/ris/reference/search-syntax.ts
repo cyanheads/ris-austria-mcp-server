@@ -77,7 +77,7 @@ export const RIS_SEARCH_SYNTAX = [
     element: 'full-text-typed identifiers',
     appliesTo: 'case_number (Geschaeftszahl / GZ), norm (Norm)',
     description:
-      'Typed as full-text expressions upstream — an exact Geschäftszahl returns that decision, and norm citations match the format returned in norms_cited ("DSG §1", "DSGVO Art32").',
-    example: 'Norm: "DSG §1"',
+      'Typed as full-text expressions upstream — an exact Geschäftszahl returns that decision, and norm citations match the format returned in norms_cited ("DSG §1", "DSGVO Art32"). In norm, RIS reads a period as nothing and "Abs. 1" as "Abs1", but indexes an article three ways that never match one another — Art6, Art. 6, Artikel 6 — so a norm naming an article in any of them is searched as an ODER of all three (plus the value as written when its articles mix spellings), and the notice names the expression. Combine norm terms with UND/ODER/NICHT; AND and OR match as words there.',
+    example: 'Norm: "Art. 6 DSGVO" → (Art6 DSGVO) ODER (Art 6 DSGVO) ODER (Artikel 6 DSGVO)',
   },
 ] as const satisfies readonly SearchSyntaxRule[];

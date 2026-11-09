@@ -1,0 +1,79 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "1"
+      },
+      "OgdDocumentReference": {
+        "Data": {
+          "Metadaten": {
+            "Technisch": {
+              "ID": "NOR40146336",
+              "Applikation": "BrKons",
+              "Organ": "BKA (Bundeskanzleramt)",
+              "ImportTimestamp": {
+                "@xsi:nil": "true",
+                "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+              }
+            },
+            "Allgemein": {
+              "Veroeffentlicht": "2013-01-15",
+              "Geaendert": "2016-08-10",
+              "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/bgbl/i/2013/10/P1/NOR40146336"
+            },
+            "Bundesrecht": {
+              "Kurztitel": "Bundesverwaltungsgerichtsgesetz",
+              "Eli": "https://www.ris.bka.gv.at/eli/bgbl/i/2013/10/P1/NOR40146336",
+              "BrKons": {
+                "Kundmachungsorgan": "BGBl. I Nr. 10/2013",
+                "Typ": "BG",
+                "Dokumenttyp": "Paragraph",
+                "ArtikelParagraphAnlage": "§ 1",
+                "Paragraphnummer": "1",
+                "StammnormPublikationsorgan": "BGBl. I Nr.",
+                "StammnormBgblnummer": "10/2013",
+                "NovellenBeziehung": "Undefined",
+                "Inkrafttretensdatum": "2014-01-01",
+                "Abkuerzung": "BVwGG",
+                "Indizes": {
+                  "item": "10/07 Verfassungs- und Verwaltungsgerichtsbarkeit"
+                },
+                "Aenderung": "",
+                "Gesetzesnummer": "20008212",
+                "GesamteRechtsvorschriftUrl": "https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=Bundesnormen&Gesetzesnummer=20008212"
+              }
+            }
+          },
+          "Dokumentliste": {
+            "ContentReference": {
+              "ContentType": "MainDocument",
+              "Name": "Hauptdokument",
+              "Urls": {
+                "ContentUrl": [
+                  {
+                    "DataType": "Xml",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40146336/NOR40146336.xml"
+                  },
+                  {
+                    "DataType": "Html",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40146336/NOR40146336.html"
+                  },
+                  {
+                    "DataType": "Rtf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40146336/NOR40146336.rtf"
+                  },
+                  {
+                    "DataType": "Pdf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR40146336/NOR40146336.pdf"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

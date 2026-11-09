@@ -446,6 +446,11 @@ export interface CaseLawSearchParams extends RisPagingParams {
   readonly norm?: string;
   readonly party?: string;
   readonly query?: string;
+  /**
+   * Justiz headnote number (Rechtssatznummer — "RS0022961", "RW0001127"), justiz only: Vwgh and
+   * Vfgh accept the parameter and filter nothing with it.
+   */
+  readonly rechtssatzNumber?: string;
   readonly senate?: 'I' | 'II' | 'III';
   readonly sortBy?: 'case_number' | 'decision_date';
   readonly sortDirection?: RisSortDirection;
@@ -521,6 +526,10 @@ export function buildCaseLawRequest(params: CaseLawSearchParams): RisRequest {
   if (params.subjectArea !== undefined) {
     if (code !== 'justiz') unsupported('subjectArea', court.application);
     bag.set('Fachgebiet', params.subjectArea);
+  }
+  if (params.rechtssatzNumber !== undefined) {
+    if (code !== 'justiz') unsupported('rechtssatzNumber', court.application);
+    bag.set('Rechtssatznummer', params.rechtssatzNumber);
   }
   if (params.state !== undefined) {
     if (!STATE_COURTS.has(code)) unsupported('state', court.application);

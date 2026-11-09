@@ -529,6 +529,192 @@ describe('the original gazette number of a consolidated law (#80)', () => {
   });
 });
 
+describe('the original and latest-change gazette cites of a consolidated law (#109)', () => {
+  it('joins the BrKons Stammnorm and Novellen organ and number, relation verbatim', () => {
+    const meta = metadataById<RisBundesrechtMetadata>(fixture('search-brkons-celex.json'));
+    expect(meta.get('NOR40262691')).toMatchObject({
+      latestChangeGazette: 'BGBl. I Nr. 70/2024',
+      latestChangeRelation: 'zuletzt geändert durch',
+      originalGazette: 'BGBl. I Nr. 165/1999',
+      originalGazetteNumber: '165/1999',
+    });
+    // A repeal is a latest change too, not an amendment.
+    const multi = metadataById<RisBundesrechtMetadata>(fixture('search-brkons-multi.json'));
+    expect(multi.get('NOR11013238')).toMatchObject({
+      latestChangeGazette: 'BGBl. I Nr. 61/2018',
+      latestChangeRelation: 'aufgehoben durch',
+      originalGazette: 'BGBl. II Nr. 130/1998',
+    });
+  });
+
+  it("keeps each LrKons organ in RIS's own spelling", () => {
+    const meta = metadataById<RisLandesrechtMetadata>(fixture('search-lrkons-abkuerzung.json'));
+    expect(meta.get('LWI40016426')).toMatchObject({
+      latestChangeGazette: 'LGBl. Nr. 37/2023',
+      originalGazette: 'LGBl. Nr. 11/1930',
+    });
+    expect(meta.get('LSB40028116')).toMatchObject({
+      latestChangeGazette: 'LGBl Nr 42/2024',
+      latestChangeRelation: 'zuletzt geändert durch',
+      originalGazette: 'LGBl Nr 27/2022',
+    });
+  });
+
+  it('leaves every latest-change field absent on a version RIS records no change for', () => {
+    const federal = metadataById<RisBundesrechtMetadata>(fixture('search-brkons-multi.json'));
+    expect(federal.get('NOR40148597')!.originalGazette).toBe('BGBl. III Nr. 62/2013');
+    const state = metadataById<RisLandesrechtMetadata>(fixture('search-lrkons-abkuerzung.json'));
+    expect(state.get('LWI40000588')!.originalGazette).toBe('LGBl. Nr. 49/2009');
+    for (const meta of [federal.get('NOR40148597')!, state.get('LWI40000588')!]) {
+      expect(meta).not.toHaveProperty('latestChangeGazette');
+      expect(meta).not.toHaveProperty('latestChangeRelation');
+    }
+  });
+
+  // search-brkons-bvwgg-section-1.json: BVwGG § 1 (live 2026-11-09), whose NovellenBeziehung is
+  // RIS's no-value member and which carries no Novellen organ or number.
+  it('reads the NovellenBeziehung placeholder "Undefined" as no relation', () => {
+    const meta = metadataById<RisBundesrechtMetadata>(
+      fixture('search-brkons-bvwgg-section-1.json'),
+    );
+    const record = meta.get('NOR40146336')!;
+    expect(record.originalGazette).toBe('BGBl. I Nr. 10/2013');
+    expect(record).not.toHaveProperty('latestChangeRelation');
+    expect(record).not.toHaveProperty('latestChangeGazette');
+  });
+
+  it('trims each part and joins them with one space', () => {
+    const meta = metadataById<RisBundesrechtMetadata>(
+      withMetadata('search-brkons-celex.json', 'NOR40262691', ['Bundesrecht', 'BrKons'], {
+        NovellenBgblnummer: '37/1873 ',
+        NovellenPublikationsorgan: ' RGBl. Nr. ',
+        StammnormBgblnummer: ' 30/2011/',
+      }),
+    );
+    expect(meta.get('NOR40262691')).toMatchObject({
+      latestChangeGazette: 'RGBl. Nr. 37/1873',
+      originalGazette: 'BGBl. I Nr. 30/2011/',
+    });
+  });
+
+  it('composes no cite from an organ or a number alone, nil included', () => {
+    const meta = metadataById<RisBundesrechtMetadata>(
+      withMetadata('search-brkons-celex.json', 'NOR40262691', ['Bundesrecht', 'BrKons'], {
+        NovellenBeziehung: NIL,
+        NovellenBgblnummer: NIL,
+        StammnormPublikationsorgan: '  ',
+      }),
+    );
+    const record = meta.get('NOR40262691')!;
+    expect(record).not.toHaveProperty('originalGazette');
+    expect(record).not.toHaveProperty('latestChangeGazette');
+    expect(record).not.toHaveProperty('latestChangeRelation');
+    expect(record.originalGazetteNumber).toBe('165/1999');
+  });
+});
+
+describe('Justiz Rechtssatz numbers and legal areas (#104)', () => {
+  const justiz = () =>
+    metadataById<RisJudikaturMetadata>(fixture('search-justiz-6ob236-23h-both.json'));
+
+  it('reads Rechtssatznummern on a Rechtssatz, as a list', () => {
+    const meta = justiz();
+    expect(meta.get('JJR_19521210_OGH0002_0010OB00948_5200000_001')!.rechtssatzNumbers).toEqual([
+      'RS0045485',
+    ]);
+    expect(meta.get('JJR_20240221_OGH0002_0060OB00236_23H0000_002')!.rechtssatzNumbers).toEqual([
+      'RS0134716',
+    ]);
+  });
+
+  it('leaves rechtssatzNumbers absent on a decision text, which carries Textnummern instead', () => {
+    const text = justiz().get('JJT_20240221_OGH0002_0060OB00236_23H0000_000')!;
+    expect(text.decisionDocumentType).toBe('Text');
+    expect(text).not.toHaveProperty('rechtssatzNumbers');
+  });
+
+  it('keeps every Rechtssatz number of a wrapped list, and reads nil as none', () => {
+    const many = metadataById<RisJudikaturMetadata>(
+      withMetadata(
+        'search-justiz-gz-joined.json',
+        'JJR_20070307_OGH0002_0130OS00015_07S0000_001',
+        ['Judikatur', 'Justiz'],
+        { Rechtssatznummern: { item: ['RS0121833', 'RS0121834'] } },
+      ),
+    );
+    expect(many.get('JJR_20070307_OGH0002_0130OS00015_07S0000_001')!.rechtssatzNumbers).toEqual([
+      'RS0121833',
+      'RS0121834',
+    ]);
+    const nil = metadataById<RisJudikaturMetadata>(
+      withMetadata(
+        'search-justiz-gz-joined.json',
+        'JJR_20070307_OGH0002_0130OS00015_07S0000_001',
+        ['Judikatur', 'Justiz'],
+        { Rechtssatznummern: NIL },
+      ),
+    );
+    expect(nil.get('JJR_20070307_OGH0002_0130OS00015_07S0000_001')).not.toHaveProperty(
+      'rechtssatzNumbers',
+    );
+  });
+
+  it('reads Rechtsgebiete on headnotes and texts alike', () => {
+    const meta = metadataById<RisJudikaturMetadata>(fixture('search-justiz-gz-joined.json'));
+    expect(meta.get('JJR_19521210_OGH0002_0010OB00948_5200000_001')!.legalAreas).toEqual([
+      'Zivilrecht',
+    ]);
+    expect(meta.get('JJR_20070307_OGH0002_0130OS00015_07S0000_001')!.legalAreas).toEqual([
+      'Strafrecht',
+    ]);
+    expect(justiz().get('JJT_20240221_OGH0002_0060OB00236_23H0000_000')!.legalAreas).toEqual([
+      'Zivilrecht',
+    ]);
+  });
+
+  // RIS sends the no-value member on some headnotes (live: JJR_19741017_AUSL000_002BSB00366_7400000_001).
+  it('reads the Rechtsgebiete placeholder "Undefined" as no legal area', () => {
+    const meta = metadataById<RisJudikaturMetadata>(
+      withMetadata(
+        'search-justiz-gz-joined.json',
+        'JJR_20070307_OGH0002_0130OS00015_07S0000_001',
+        ['Judikatur', 'Justiz'],
+        { Rechtsgebiete: { item: 'Undefined' } },
+      ),
+    );
+    expect(meta.get('JJR_20070307_OGH0002_0130OS00015_07S0000_001')!.legalAreas).toEqual([]);
+  });
+
+  // An LVwG headnote carries Rechtssatznummern too, holding its ordinal within the decision ("12",
+  // its document number's last segment) — no number a decision cites it by. No other court's node
+  // carried Rechtsgebiete live; the raw type admits it, so it is added here to pin the gate.
+  it('reads neither field from another court’s node', () => {
+    const lvwg = 'LVWGR_NI_20261027_LVwG_AV_1198_002_2026_12';
+    expect(rawFixture('search-lvwg-rechtssatz.json')).toMatch(
+      /"Lvwg": \{[^}]*"Rechtssatznummern": \{\s*"item": "12"\s*\}/u,
+    );
+
+    const meta = metadataById<RisJudikaturMetadata>(
+      withMetadata('search-lvwg-rechtssatz.json', lvwg, ['Judikatur', 'Lvwg'], {
+        Rechtsgebiete: { item: 'Zivilrecht' },
+      }),
+    );
+    const headnote = meta.get(lvwg)!;
+    expect(headnote.decisionDocumentType).toBe('Rechtssatz');
+    expect(headnote).not.toHaveProperty('rechtssatzNumbers');
+    expect(headnote.legalAreas).toEqual([]);
+  });
+
+  it('carries no court name of its own — organ already holds the Gericht value', () => {
+    const { hits } = parseSearchResponse(fixture('search-justiz-gz-joined.json'));
+    const hit = hits.find(
+      (candidate) => candidate.documentNumber === 'JJR_19521210_OGH0002_0010OB00948_5200000_001',
+    )!;
+    expect(hit.organ).toBe('OGH');
+    expect(hit.metadata).not.toHaveProperty('courtName');
+  });
+});
+
 describe('gazette identifiers — CELEX lists, Gliederungszahl, issue and page (#55)', () => {
   it('keeps the BgblAlt issue and start page and the LgblNO Gliederungszahl and issue', () => {
     const bgblAlt = metadataById<RisBundesrechtMetadata>(fixture('search-bgblalt.json'));

@@ -25,7 +25,7 @@ import {
 } from '@/mcp-server/tools/definitions/ris-search-case-law.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import { buildCaseLawRequest, type CaseLawSearchParams } from '@/services/ris/request-builder.js';
-import type { RisHit } from '@/services/ris/types.js';
+import type { RisHit, RisJudikaturMetadata } from '@/services/ris/types.js';
 
 import {
   contentText,
@@ -33,8 +33,10 @@ import {
   expectArgumentRejection,
   expectReadBack,
   HOSTILE_TEXT,
+  hostileHit,
   readCommonMark,
   readFormatBlock,
+  type ToolResult,
   type WireError,
 } from './_wire.js';
 
@@ -429,6 +431,130 @@ describe('risSearchCaseLaw — zero-hit notices', () => {
   });
 });
 
+// The spelling rules are tabled once in _shared.test.ts; these prove the tool's wiring: what
+// reaches the service, where the sentence sits in the notice, and how content[] renders it.
+describe('risSearchCaseLaw — a norm article searched under every spelling (#108)', () => {
+  const EXPRESSION = '(Art6 DSGVO) ODER (Art 6 DSGVO) ODER (Artikel 6 DSGVO)';
+  const REWRITE = `norm searched as ${EXPRESSION} — RIS indexes an article as Art6, Art 6, or Artikel 6, and each spelling matches only entries indexed that way.`;
+
+  /** The notice structuredContent carries, asserted to read back as one block quote in content[]. */
+  function expectNoticeReadBack(result: ToolResult): string {
+    expect(result.isError).not.toBe(true);
+    const { notice } = result.structuredContent as { notice?: string };
+    if (notice === undefined) throw new Error('expected a notice in structuredContent');
+    const trailer = result.content.at(-1);
+    if (trailer?.type !== 'text') throw new Error('expected a text trailer in content[]');
+    expect(readCommonMark(trailer.text)).toContain(
+      ['⟨blockquote_open⟩', notice, '⟨blockquote_close⟩'].join('\n\n'),
+    );
+    return notice;
+  }
+
+  it('sends a spaced article as the three-spelling expression and names it in the notice', async () => {
+    searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-vfgh.json')));
+    const result = await runToolContract(risSearchCaseLaw, { court: 'vwgh', norm: 'Art. 6 DSGVO' });
+
+    expect(searchCaseLaw.mock.calls[0]![0]).toMatchObject({ norm: EXPRESSION });
+    expect(expectNoticeReadBack(result)).toBe(REWRITE);
+  });
+
+  it('sends a joined article as the three-spelling expression too', async () => {
+    searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-vfgh.json')));
+    const result = await runToolContract(risSearchCaseLaw, { court: 'vwgh', norm: 'DSGVO Art32' });
+    const expression = '(DSGVO Art32) ODER (DSGVO Art 32) ODER (DSGVO Artikel 32)';
+
+    expect(searchCaseLaw.mock.calls[0]![0]).toMatchObject({ norm: expression });
+    expect(expectNoticeReadBack(result)).toBe(
+      `norm searched as ${expression} — RIS indexes an article as Art32, Art 32, or Artikel 32, and each spelling matches only entries indexed that way.`,
+    );
+  });
+
+  it('adds the value as written as a fourth arm when its articles mix spellings', async () => {
+    searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-vfgh.json')));
+    const result = await runToolContract(risSearchCaseLaw, {
+      court: 'vwgh',
+      norm: 'Art6 DSGVO UND Art. 7 DSGVO',
+    });
+    const expression =
+      '(Art6 DSGVO UND Art7 DSGVO) ODER (Art 6 DSGVO UND Art 7 DSGVO) ODER (Artikel 6 DSGVO UND Artikel 7 DSGVO) ODER (Art6 DSGVO UND Art. 7 DSGVO)';
+
+    expect(searchCaseLaw.mock.calls[0]![0]).toMatchObject({ norm: expression });
+    expect(expectNoticeReadBack(result)).toBe(
+      `norm searched as ${expression} — RIS indexes an article as Art6, Art 6, or Artikel 6, and each spelling matches only entries indexed that way.`,
+    );
+  });
+
+  it('sends a value with no article as written, and adds no notice', async () => {
+    searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-vfgh.json')));
+    const result = await runToolContract(risSearchCaseLaw, { court: 'vwgh', norm: 'DSG §1' });
+
+    expect(searchCaseLaw.mock.calls[0]![0]).toMatchObject({ norm: 'DSG §1' });
+    expect(result.structuredContent).not.toHaveProperty('notice');
+  });
+
+  it('puts the expression after the page size and before zero-hit guidance, naming it once', async () => {
+    searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
+    const result = await runToolContract(risSearchCaseLaw, {
+      court: 'vwgh',
+      norm: 'Art. 6 DSGVO',
+      page_size: 50,
+    });
+
+    expect(expectNoticeReadBack(result)).toBe(
+      [
+        'page_size 50 served as 20 — this server serves pages of 10 or 20 documents, so page steps through pages of 20.',
+        REWRITE,
+        '0 decisions in vwgh. Other courts are separate calls — repeat per court.',
+        "norm matched no norms_cited entry under any of the three spellings — run a broader search first and copy the exact string from a result's norms_cited.",
+      ].join(' '),
+    );
+  });
+
+  it('advises dropping the delimiters, not one spelling, when a value sent as written finds nothing', async () => {
+    searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
+    const result = await runToolContract(risSearchCaseLaw, {
+      court: 'vfgh',
+      norm: '(Art 6 DSGVO)',
+    });
+
+    expect(searchCaseLaw.mock.calls[0]![0]).toMatchObject({ norm: '(Art 6 DSGVO)' });
+    expect(expectNoticeReadBack(result)).toBe(
+      [
+        '0 decisions in vfgh. Other courts are separate calls — repeat per court.',
+        'norm carries ( ) or ", so it was sent as written and each article matched only as spelled — RIS indexes an article as Art6, Art 6, or Artikel 6, and each spelling matches only entries indexed that way. Drop the ( ) and " to search every spelling, or copy the exact string from a result\'s norms_cited.',
+      ].join(' '),
+    );
+  });
+
+  it('answers a reversed window without a request, a rewrite, or a change to the trailer', async () => {
+    const result = await runToolContract(risSearchCaseLaw, {
+      court: 'vwgh',
+      norm: 'Art. 6 DSGVO',
+      decided_from: '2026-02-01',
+      decided_to: '2026-01-01',
+    });
+    const notice =
+      'decided_from 2026-02-01 is after decided_to 2026-01-01 — a reversed window holds no dates, so nothing matches and RIS was not queried. Retry with the bounds swapped: decided_from 2026-01-01, decided_to 2026-02-01.';
+
+    expect(searchCaseLaw).not.toHaveBeenCalled();
+    expect(expectNoticeReadBack(result)).toBe(notice);
+    // A notice with nothing to escape keeps the framework's own one-line block quote.
+    expect(contentText(result).split('\n').at(-1)).toBe(`> ${notice}`);
+  });
+
+  it('escapes the quoted norm in content[], so a CommonMark parse reads back the notice', async () => {
+    searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-vfgh.json')));
+    const result = await runToolContract(risSearchCaseLaw, {
+      court: 'vwgh',
+      norm: 'Art. 6 *DSGVO* <b>',
+    });
+
+    expect(expectNoticeReadBack(result)).toContain(
+      '(Art6 *DSGVO* <b>) ODER (Art 6 *DSGVO* <b>) ODER (Artikel 6 *DSGVO* <b>)',
+    );
+  });
+});
+
 describe('risSearchCaseLaw — enrichment: truncation disclosure', () => {
   // A declared enrichment field, once set via ctx.enrich, is merged into structuredContent
   // AND auto-appended to content[] as the framework's enrichment trailer; getEnrichment(ctx)
@@ -682,6 +808,98 @@ describe('risSearchCaseLaw — record mapping and format() parity', () => {
   });
 });
 
+describe('risSearchCaseLaw — Rechtssatz numbers and legal areas on Justiz records (#104)', () => {
+  async function callWire(page: unknown, input: Record<string, unknown>) {
+    searchCaseLaw.mockResolvedValue(page);
+    const result = await runToolContract(risSearchCaseLaw, input as never);
+    expect(result.isError).not.toBe(true);
+    const { results } = risSearchCaseLaw.output.parse(result.structuredContent);
+    const blocks = contentText(result).split('\n\n');
+    const blockFor = (documentNumber: string) =>
+      blocks.find((block) => block.includes(`**Document:** ${documentNumber}`)) ?? '';
+    return { blockFor, byId: new Map(results.map((r) => [r.document_number, r])), result, results };
+  }
+
+  it('carries rechtssatz_numbers on a headnote and legal_areas on headnote and text, on both surfaces', async () => {
+    const { blockFor, byId } = await callWire(
+      parseSearchResponse(fixture('search-justiz-6ob236-23h-both.json')),
+      { court: 'justiz', case_number: '6Ob236/23h' },
+    );
+    const headnote = 'JJR_19521210_OGH0002_0010OB00948_5200000_001';
+    expect(byId.get(headnote)).toMatchObject({
+      decision_type: 'Rechtssatz',
+      legal_areas: ['Zivilrecht'],
+      rechtssatz_numbers: ['RS0045485'],
+    });
+    expect(blockFor(headnote)).toContain('**Rechtssatz numbers:** RS0045485');
+    expect(blockFor(headnote)).toContain('**Legal areas:** Zivilrecht');
+
+    const text = 'JJT_20240221_OGH0002_0060OB00236_23H0000_000';
+    expect(byId.get(text)).toMatchObject({ decision_type: 'Text', legal_areas: ['Zivilrecht'] });
+    expect(byId.get(text)).not.toHaveProperty('rechtssatz_numbers');
+    expect(blockFor(text)).toContain('**Legal areas:** Zivilrecht');
+    expect(blockFor(text)).not.toContain('**Rechtssatz numbers:**');
+  });
+
+  // An LVwG headnote's Rechtssatznummern holds its ordinal within the decision ("12"), which no
+  // decision cites it by.
+  it('adds neither field to another court’s records, though its headnote carries Rechtssatznummern', async () => {
+    const page = fixture('search-lvwg-rechtssatz.json');
+    expect(JSON.stringify(page)).toContain('"Rechtssatznummern":{"item":"12"}');
+    const { result, results } = await callWire(parseSearchResponse(page), { court: 'lvwg' });
+    expect(results.map((record) => record.decision_type)).toEqual(['Rechtssatz', 'Text']);
+    for (const record of results) {
+      expect(record).not.toHaveProperty('rechtssatz_numbers');
+      expect(record).not.toHaveProperty('legal_areas');
+    }
+    expect(contentText(result)).not.toMatch(/\*\*(?:Rechtssatz numbers|Legal areas):\*\*/u);
+  });
+
+  it('renders each field on its own, and every value of a list', async () => {
+    const hit = parseSearchResponse(fixture('search-justiz-gz-joined.json')).hits[0]!;
+    const md = hit.metadata as RisJudikaturMetadata;
+    const { blockFor } = await callWire(
+      {
+        hits: [
+          {
+            ...hit,
+            documentNumber: 'JJR_NUMBERS_ONLY',
+            metadata: { ...md, legalAreas: [], rechtssatzNumbers: ['RS0045485', 'RS0045486'] },
+          },
+          {
+            ...hit,
+            documentNumber: 'JJR_AREAS_ONLY',
+            metadata: {
+              ...md,
+              legalAreas: ['Zivilrecht', 'Strafrecht'],
+              rechtssatzNumbers: undefined,
+            },
+          },
+        ],
+        page: 1,
+        pageSize: 20,
+        total: 2,
+      },
+      { court: 'justiz' },
+    );
+    expect(blockFor('JJR_NUMBERS_ONLY')).toContain('**Rechtssatz numbers:** RS0045485, RS0045486');
+    expect(blockFor('JJR_NUMBERS_ONLY')).not.toContain('**Legal areas:**');
+    expect(blockFor('JJR_AREAS_ONLY')).toContain('**Legal areas:** Zivilrecht, Strafrecht');
+    expect(blockFor('JJR_AREAS_ONLY')).not.toContain('**Rechtssatz numbers:**');
+  });
+
+  it('reads back hostile-shaped Rechtssatz numbers and legal areas verbatim', async () => {
+    const hit = parseSearchResponse(fixture('search-justiz-gz-joined.json')).hits[0]!;
+    const { result, results } = await callWire(
+      { hits: [hostileHit(hit, 0, {})], page: 1, pageSize: 20, total: 1 },
+      { court: 'justiz' },
+    );
+    expect(results[0]!.rechtssatz_numbers?.length).toBeGreaterThan(0);
+    expect(results[0]!.legal_areas?.length).toBeGreaterThan(0);
+    expectReadBack(result, results);
+  });
+});
+
 // The fold itself is swept across every state parameter in _shared.test.ts; this pins that a
 // result's own state value works as the next call's state filter on the wire path.
 describe('risSearchCaseLaw — state names in state (#58)', () => {
@@ -696,6 +914,31 @@ describe('risSearchCaseLaw — state names in state (#58)', () => {
     const second = await runToolContract(risSearchCaseLaw, { court: 'lvwg', state: carried });
     expect(second.isError).not.toBe(true);
     expect(searchCaseLaw.mock.calls[0]?.[0]).toMatchObject({ state: 'tirol' });
+  });
+});
+
+// The court fold is tabled in _shared.test.ts; this pins that a record's own court value, as
+// the next call's court, sends the RIS request its code does.
+describe('risSearchCaseLaw — a record’s court as the next call’s court (#107)', () => {
+  it('sends the same RIS request for the court a result carries as for its code', async () => {
+    searchCaseLaw.mockResolvedValue(parseSearchResponse(fixture('search-vfgh.json')));
+    const first = await runToolContract(risSearchCaseLaw, { court: 'vfgh', query: 'Datenschutz' });
+    const { results } = first.structuredContent as { results: { court: string }[] };
+    const carried = results[0]?.court;
+    expect(carried).toBe('Vfgh');
+
+    const second = await runToolContract(risSearchCaseLaw, {
+      court: carried as never,
+      query: 'Datenschutz',
+    });
+    expect(second.isError).not.toBe(true);
+    const [byCode, byRecord] = searchCaseLaw.mock.calls.map(
+      ([params]) => params as CaseLawSearchParams,
+    );
+    expect(byRecord).toEqual(byCode);
+    expect(buildCaseLawRequest(byRecord as CaseLawSearchParams)).toEqual(
+      buildCaseLawRequest(byCode as CaseLawSearchParams),
+    );
   });
 });
 

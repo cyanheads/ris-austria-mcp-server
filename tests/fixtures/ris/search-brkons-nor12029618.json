@@ -1,0 +1,79 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "1"
+      },
+      "OgdDocumentReference": {
+        "Data": {
+          "Metadaten": {
+            "Technisch": {
+              "ID": "NOR12029618",
+              "Applikation": "BrKons",
+              "Organ": "BKA (Bundeskanzleramt)",
+              "ImportTimestamp": {
+                "@xsi:nil": "true",
+                "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+              }
+            },
+            "Allgemein": {
+              "Geaendert": "2015-09-14",
+              "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR12029618"
+            },
+            "Bundesrecht": {
+              "Kurztitel": "Strafgesetzbuch",
+              "Eli": "https://www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR12029618",
+              "BrKons": {
+                "Kundmachungsorgan": "BGBl. Nr. 60/1974",
+                "Typ": "BG",
+                "Dokumenttyp": "Paragraph",
+                "ArtikelParagraphAnlage": "§ 75",
+                "Paragraphnummer": "75",
+                "StammnormPublikationsorgan": "BGBl. Nr.",
+                "StammnormBgblnummer": "60/1974",
+                "Inkrafttretensdatum": "1975-01-01",
+                "Abkuerzung": "StGB",
+                "Indizes": {
+                  "item": "24/01 Strafgesetzbuch"
+                },
+                "Aenderung": "",
+                "Schlagworte": "Umbringen",
+                "Gesetzesnummer": "10002296",
+                "AlteDokumentnummer": "N2197415070T",
+                "GesamteRechtsvorschriftUrl": "https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=Bundesnormen&Gesetzesnummer=10002296"
+              }
+            }
+          },
+          "Dokumentliste": {
+            "ContentReference": {
+              "ContentType": "MainDocument",
+              "Name": "Hauptdokument",
+              "Urls": {
+                "ContentUrl": [
+                  {
+                    "DataType": "Xml",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12029618/NOR12029618.xml"
+                  },
+                  {
+                    "DataType": "Html",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12029618/NOR12029618.html"
+                  },
+                  {
+                    "DataType": "Rtf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12029618/NOR12029618.rtf"
+                  },
+                  {
+                    "DataType": "Pdf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12029618/NOR12029618.pdf"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

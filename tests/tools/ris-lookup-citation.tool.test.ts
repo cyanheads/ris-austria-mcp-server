@@ -35,6 +35,7 @@ import {
   risSearchLegislation,
   toRecord as toLegislationRecord,
 } from '@/mcp-server/tools/definitions/ris-search-legislation.tool.js';
+import { readDocumentLink } from '@/services/ris/document-link.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import { RIS_CITATION_FORMATS, RIS_COURTS } from '@/services/ris/reference/index.js';
 import {
@@ -43,10 +44,11 @@ import {
   buildLegislationRequest,
   type RisRequest,
 } from '@/services/ris/request-builder.js';
-import type { RisHit } from '@/services/ris/types.js';
+import type { RisHit, RisSearchResult } from '@/services/ris/types.js';
 
 import {
   contentText,
+  contractError,
   HOSTILE_TEXT,
   hostileHit as hostileMetadata,
   linkDestinations,
@@ -90,7 +92,7 @@ const UNREADABLE_NORM = (citation: string) =>
 
 /** The guidance for a citation no route classifies — nothing was searched. */
 const UNCLASSIFIED = (citation: string) =>
-  `Could not classify '${citation}'. Expected forms — norm: '§ 6 DSG' / 'Art 10 B-VG'; gazette: 'BGBl. I Nr. 165/1999' or year-first 'BGBl I 2018/24' (also pre-2004 and RGBl/StGBl forms, and LGBl with a state hint); case number: 'Ro 2026/03/0016', court-prefixed 'VfGH G 13/2025', or an ECLI 'ECLI:AT:VFGH:2026:G13.2025'; collection: 'VfSlg 19.632/2012'. Formats: ris_list_reference topic citation_formats. Or set kind explicitly; for keyword search use ris_search_legislation / ris_search_case_law.`;
+  `Could not classify '${citation}'. Expected forms — norm: '§ 6 DSG' / 'Art 10 B-VG'; gazette: 'BGBl. I Nr. 165/1999' or year-first 'BGBl I 2018/24' (also pre-2004 and RGBl/StGBl forms, and LGBl with a state hint); case number: 'Ro 2026/03/0016', court-prefixed 'VfGH G 13/2025', an ECLI 'ECLI:AT:VFGH:2026:G13.2025', or a Rechtssatz number 'RS0022961'; collection: 'VfSlg 19.632/2012'; an RIS ELI link: 'https://www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR12029618'. Formats: ris_list_reference topic citation_formats. Or set kind explicitly; for keyword search use ris_search_legislation / ris_search_case_law.`;
 
 /** Await a handler call expected to reject, and narrow the rejection to an McpError. */
 async function captureError(result: unknown | Promise<unknown>): Promise<McpError> {
@@ -171,7 +173,7 @@ describe('risLookupCitation — unclassifiable citations', () => {
       found: false,
       kind: 'unknown',
       guidance:
-        "Could not classify '42/2020'. Expected forms — norm: '§ 6 DSG' / 'Art 10 B-VG'; gazette: 'BGBl. I Nr. 165/1999' or year-first 'BGBl I 2018/24' (also pre-2004 and RGBl/StGBl forms, and LGBl with a state hint); case number: 'Ro 2026/03/0016', court-prefixed 'VfGH G 13/2025', or an ECLI 'ECLI:AT:VFGH:2026:G13.2025'; collection: 'VfSlg 19.632/2012'. Formats: ris_list_reference topic citation_formats. Or set kind explicitly; for keyword search use ris_search_legislation / ris_search_case_law.",
+        "Could not classify '42/2020'. Expected forms — norm: '§ 6 DSG' / 'Art 10 B-VG'; gazette: 'BGBl. I Nr. 165/1999' or year-first 'BGBl I 2018/24' (also pre-2004 and RGBl/StGBl forms, and LGBl with a state hint); case number: 'Ro 2026/03/0016', court-prefixed 'VfGH G 13/2025', an ECLI 'ECLI:AT:VFGH:2026:G13.2025', or a Rechtssatz number 'RS0022961'; collection: 'VfSlg 19.632/2012'; an RIS ELI link: 'https://www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR12029618'. Formats: ris_list_reference topic citation_formats. Or set kind explicitly; for keyword search use ris_search_legislation / ris_search_case_law.",
     });
     expect(searchLegislation).not.toHaveBeenCalled();
     expect(searchCaseLaw).not.toHaveBeenCalled();
@@ -777,7 +779,10 @@ describe('risLookupCitation — state gazette legacy-series fallback (#27)', () 
     const hit = parseSearchResponse(fixture('search-lgblauth.json')).hits[0]!;
     expect(result.found).toBe(true);
     expect(result.kind).toBe('gazette');
-    // The record is mapped against the application that actually served it, not the primary.
+    // The record is mapped against the application that actually served it — not the primary,
+    // nor the hit's own Technisch.Applikation, which is LgblAuth in this capture.
+    expect(hit.application).toBe('LgblAuth');
+    expect(result.record).toMatchObject({ application: 'Lgbl' });
     expect(result.record).toEqual(toGazetteRecord(hit, 'Lgbl'));
     expect(result.resolution_note).toBe(
       'Resolved via ris_search_gazette (Lgbl) — number "158/2013", scope: tirol, state_era: legacy. 11838 more matched — list them with ris_search_gazette number: "158/2013", scope: tirol, state_era: legacy.',
@@ -850,6 +855,77 @@ describe('risLookupCitation — state gazette legacy-series fallback (#27)', () 
   });
 });
 
+describe('risLookupCitation — a resolved gazette names its application (#105)', () => {
+  it('names BgblPdf on a federal record, on both surfaces', async () => {
+    searchGazette.mockResolvedValue(page('search-bgblpdf-celex.json'));
+    const result = await runToolContract(risLookupCitation, { citation: 'BGBl. I Nr. 165/1999' });
+    expect(result.isError).not.toBe(true);
+    expect(searchGazette.mock.calls[0]?.[0]).toMatchObject({ application: 'BgblPdf' });
+    expect(result.structuredContent).toMatchObject({
+      found: true,
+      kind: 'gazette',
+      record: { application: 'BgblPdf' },
+    });
+    expect(contentText(result)).toContain('**application**: BgblPdf');
+  });
+
+  it('names Lgbl on a record the legacy-series probe resolved, on both surfaces', async () => {
+    // search-lgblauth.json stands in for the Lgbl page: the record must name the application
+    // that served it, never the hit's own Technisch.Applikation.
+    searchGazette
+      .mockResolvedValueOnce(zeroHits())
+      .mockResolvedValueOnce(page('search-lgblauth.json'));
+    const result = await runToolContract(risLookupCitation, {
+      citation: 'LGBl.Nr. 32/2012',
+      state: 'oberoesterreich',
+    });
+    expect(result.isError).not.toBe(true);
+    expect(searchGazette.mock.calls.at(-1)?.[0]).toMatchObject({ application: 'Lgbl' });
+    expect(result.structuredContent).toMatchObject({
+      found: true,
+      kind: 'gazette',
+      record: { application: 'Lgbl' },
+    });
+    expect(contentText(result)).toContain('**application**: Lgbl');
+  });
+});
+
+describe('risLookupCitation — a norm record carries its gazette cites (#109)', () => {
+  it('carries original_gazette, latest_change_gazette, and latest_change_relation, on both surfaces', async () => {
+    searchLegislation.mockResolvedValue(page('search-brkons-celex.json'));
+    const result = await runToolContract(risLookupCitation, { citation: 'DSG' });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      found: true,
+      kind: 'norm',
+      record: {
+        document_number: 'NOR40262691',
+        latest_change_gazette: 'BGBl. I Nr. 70/2024',
+        latest_change_relation: 'zuletzt geändert durch',
+        original_gazette: 'BGBl. I Nr. 165/1999',
+      },
+    });
+    const text = contentText(result);
+    expect(text).toContain('**original_gazette**: BGBl. I Nr. 165/1999');
+    expect(text).toContain('**latest_change_gazette**: BGBl. I Nr. 70/2024');
+    expect(text).toContain('**latest_change_relation**: zuletzt geändert durch');
+  });
+
+  it('leaves RIS’s placeholder relation out of a norm record, never defaulting a latest change', async () => {
+    searchLegislation.mockResolvedValue(page('search-brkons-bvwgg-section-1.json'));
+    const result = await runToolContract(risLookupCitation, { citation: '§ 1 BVwGG' });
+    expect(result.isError).not.toBe(true);
+    const { record } = result.structuredContent as { record: Record<string, unknown> };
+    expect(record).toMatchObject({
+      document_number: 'NOR40146336',
+      original_gazette: 'BGBl. I Nr. 10/2013',
+    });
+    expect(record).not.toHaveProperty('latest_change_gazette');
+    expect(record).not.toHaveProperty('latest_change_relation');
+    expect(contentText(result)).not.toContain('latest_change');
+  });
+});
+
 describe('risLookupCitation — gazette miss guidance is composed per route (#28)', () => {
   /**
    * Every route's guidance, gathered once. The point of the fix is which hints are ABSENT
@@ -904,6 +980,609 @@ describe('risLookupCitation — gazette miss guidance is composed per route (#28
     expect(guidance).toContain('Set state to the issuing Bundesland');
     expect(guidance).toContain('ris_list_reference topic states');
     expect(guidance).not.toContain('part');
+  });
+});
+
+describe('risLookupCitation — a two-cite gazette string resolves by its first cite and names the rest (#106)', () => {
+  /** The sentence naming the later cites, as the norm route names a comma-joined entry's rest. */
+  const ALSO = (...cites: string[]) =>
+    ` The entry also cites ${cites.length > 1 ? `${cites.slice(0, -1).join(', ')} and ${cites.at(-1)}` : cites[0]} — look ${cites.length === 1 ? 'it' : 'each'} up as its own citation.`;
+
+  /** Resolve the first cite alone against the same page — what the string must equal, plus ALSO. */
+  async function alone(citation: string, fixtureName: string | null) {
+    searchGazette.mockReset();
+    searchGazette.mockResolvedValue(fixtureName === null ? zeroHits() : page(fixtureName));
+    const result = await lookup({ citation });
+    searchGazette.mockReset();
+    return result;
+  }
+
+  // [string, captured page for its first cite, params sent, document, the first cite alone, the later cite named]
+  it.each([
+    [
+      'BGBl. I Nr. 165/1999 zuletzt geändert durch BGBl. I Nr. 51/2012',
+      'search-bgblpdf-165-1999-part1.json',
+      { application: 'BgblPdf', number: '165/1999', part: 'part1' },
+      '1999_165_1',
+      'BGBl. I Nr. 165/1999',
+      'BGBl. I Nr. 51/2012 (zuletzt geändert durch)',
+    ],
+    // A partless pre-1997 original: the change cite's part is no filter on it.
+    [
+      'BGBl. Nr. 267/1967 zuletzt geändert durch BGBl. I Nr. 17/2026',
+      'search-bgblpdf-267-1967.json',
+      { application: 'BgblPdf', number: '267/1967' },
+      '1967_267_0',
+      'BGBl. Nr. 267/1967',
+      'BGBl. I Nr. 17/2026 (zuletzt geändert durch)',
+    ],
+    // The B-VG's own promulgation: the change cite's series is no filter on it.
+    [
+      'BGBl. Nr. 1/1930 zuletzt geändert durch StGBl. Nr. 4/1945',
+      'search-bgblalt-1-1930.json',
+      { application: 'BgblAlt', number: '1/1930' },
+      'bgb1930_0001_00001',
+      'BGBl. Nr. 1/1930',
+      'StGBl. Nr. 4/1945 (zuletzt geändert durch)',
+    ],
+  ])(
+    '"%s" searches its first cite alone and names the second',
+    async (citation, fixtureName, params, documentNumber, first, later) => {
+      const single = await alone(first, fixtureName);
+      searchGazette.mockResolvedValue(page(fixtureName));
+      const result = await lookup({ citation });
+      expect(searchGazette).toHaveBeenCalledTimes(1);
+      expect(searchGazette.mock.calls[0]?.[0]).toEqual(params);
+      expect(documentNumberOf(result)).toBe(documentNumber);
+      expect(single.found).toBe(true);
+      expect(result).toEqual({
+        ...single,
+        resolution_note: `${single.resolution_note}${ALSO(later)}`,
+      });
+    },
+  );
+
+  it('ends the note "… part 1." plus the sentence for the DSG 2000 promulgation, on both surfaces', async () => {
+    searchGazette.mockResolvedValue(page('search-bgblpdf-165-1999-part1.json'));
+    const result = await runToolContract(risLookupCitation, {
+      citation: 'BGBl. I Nr. 165/1999 zuletzt geändert durch BGBl. I Nr. 51/2012',
+    });
+    const note =
+      'Resolved via ris_search_gazette (BgblPdf) — number "165/1999", part 1. The entry also cites BGBl. I Nr. 51/2012 (zuletzt geändert durch) — look it up as its own citation.';
+    expect(result.structuredContent).toMatchObject({
+      found: true,
+      kind: 'gazette',
+      resolution_note: note,
+    });
+    expect(readCommonMark(contentText(result))).toContain(
+      `⟨strong⟩resolution_note⟨/strong⟩: ${note}`,
+    );
+    expectRecordRendered(
+      contentText(result),
+      (result.structuredContent as { record: object }).record,
+    );
+  });
+
+  it('keeps a part II change cite off a partless 1996 original', async () => {
+    searchGazette.mockResolvedValue(zeroHits());
+    const result = await lookup({
+      citation: 'BGBl. Nr. 577/1996 zuletzt geändert durch BGBl. II Nr. 49/1999',
+    });
+    expect(searchGazette.mock.calls[0]?.[0]).toEqual({
+      application: 'BgblPdf',
+      number: '577/1996',
+    });
+    const single = await alone('BGBl. Nr. 577/1996', null);
+    expect(result.guidance).toBe(
+      `${single.guidance}${ALSO('BGBl. II Nr. 49/1999 (zuletzt geändert durch)')}`,
+    );
+  });
+
+  // [string, the first cite as named, the later cite named]
+  it.each([
+    [
+      'ABl.Nr. 52/2006 zuletzt geändert durch BGBl. I Nr. 14/2019',
+      'ABl.Nr. 52/2006',
+      'BGBl. I Nr. 14/2019 (zuletzt geändert durch)',
+    ],
+    [
+      'dRGBl. I S 653/1936 aufgehoben durch BGBl. Nr. 253/1957',
+      'dRGBl. I S 653/1936',
+      'BGBl. Nr. 253/1957 (aufgehoben durch)',
+    ],
+    [
+      'GVBlTirVbg.Nr. 47/1900 zuletzt geändert durch BGBl. Nr. 85/1947',
+      'GVBlTirVbg.Nr. 47/1900',
+      'BGBl. Nr. 85/1947 (zuletzt geändert durch)',
+    ],
+  ])(
+    '"%s" leads with a gazette the lookup does not read: found:false, no request, the later cite named',
+    async (citation, first, later) => {
+      searchGazette.mockResolvedValue(page('search-bgblauth-2004-01.json'));
+      const result = await runToolContract(risLookupCitation, { citation, state: 'vorarlberg' });
+      const guidance = `'${first}' is not a gazette citation this lookup reads — it resolves BGBl., RGBl., StGBl., and GBlÖ numbers, and LGBl. numbers with a state hint or a Bundesland suffix (LGBlNÖ, LGBlBgld.) — so nothing was searched.${ALSO(later)}`;
+      expect(searchGazette).not.toHaveBeenCalled();
+      expect(searchLegislation).not.toHaveBeenCalled();
+      expect(result.structuredContent).toEqual({ found: false, kind: 'gazette', guidance });
+      expect(readCommonMark(contentText(result))).toBe(
+        `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: gazette\n\n${guidance}`,
+      );
+    },
+  );
+
+  it('a first cite that misses gets today’s miss guidance plus the sentence, the second never searched', async () => {
+    const single = await alone('BGBl. Nr. 999/1967', null);
+    searchGazette.mockResolvedValue(zeroHits());
+    const result = await lookup({
+      citation: 'BGBl. Nr. 999/1967 zuletzt geändert durch BGBl. Nr. 51/1991',
+    });
+    expect(searchGazette).toHaveBeenCalledTimes(1);
+    expect(searchGazette.mock.calls[0]?.[0]).toEqual({
+      application: 'BgblPdf',
+      number: '999/1967',
+    });
+    expect(single.guidance).toBe(
+      'No gazette entry for 999/1967 in BgblPdf. No part filter was applied, so the number or the year is the mismatch. Parts I/II/III exist only from 1997; ris_search_gazette takes part: pre_1997 for an earlier issue. Browse the surrounding range with ris_search_gazette published_from/published_to to find the actual number.',
+    );
+    expect(result).toEqual({
+      found: false,
+      kind: 'gazette',
+      guidance: `${single.guidance}${ALSO('BGBl. Nr. 51/1991 (zuletzt geändert durch)')}`,
+    });
+  });
+
+  it('keeps the misspelled "BGBI II 58/2021" law’s params and names its "idF" cite', async () => {
+    searchGazette.mockResolvedValue(zeroHits());
+    const result = await lookup({
+      citation: '4. COVID-19-SchutzmaßnahmenV BGBI II 58/2021 idF BGBl II 111/2021 §2',
+    });
+    expect(searchGazette.mock.calls[0]?.[0]).toEqual({
+      application: 'BgblAuth',
+      number: '58/2021',
+      part: 'part2',
+    });
+    expect(result.guidance).toMatch(
+      /^No gazette entry for 58\/2021 in BgblAuth\. Part II was applied/,
+    );
+    expect(result.guidance?.endsWith(ALSO('BGBl II 111/2021 (idF)'))).toBe(true);
+  });
+
+  it('names the later cite on a state-hint miss, a format miss, a series miss, and an ambiguity', async () => {
+    const needsState = await lookup({
+      citation: 'LGBl. Nr. 94/2002 aufgehoben durch BGBl. I Nr. 118/2004',
+    });
+    expect(needsState.guidance).toBe(
+      `Cannot resolve LGBl. Nr. 94/2002 without a state — each of the nine Bundesländer keeps its own Landesgesetzblatt, so nothing was searched. Set state to the issuing Bundesland and retry; codes: ris_list_reference topic states.${ALSO('BGBl. I Nr. 118/2004 (aufgehoben durch)')}`,
+    );
+
+    // The first pair reads as no number and year, so the later one is never read in its place.
+    const unreadable = 'BGBl. I 24/18 zuletzt geändert durch BGBl. I Nr. 5/2020';
+    const format = await lookup({ citation: unreadable });
+    expect(format.guidance).toBe(
+      `Could not read a gazette number from '${unreadable}'. A gazette citation needs a number and a year — 'BGBl. I Nr. 165/1999', 'BGBl. Nr. 194/1961', 'RGBl. Nr. 189/1902', or 'LGBl. Nr. 61/2026' with a state hint. Formats: ris_list_reference topic citation_formats. To search without a number, browse with ris_search_gazette published_from/published_to.${ALSO('BGBl. I Nr. 5/2020 (zuletzt geändert durch)')}`,
+    );
+    expect(searchGazette).not.toHaveBeenCalled();
+
+    const base = page('search-bgblpdf-1-1945.json');
+    const stgbl = base.hits.filter((hit) => hit.documentNumber === '1945_1_0');
+    searchGazette.mockResolvedValue({ ...base, hits: stgbl, total: stgbl.length });
+    const series = await lookup({
+      citation: 'BGBl. Nr. 1/1945 wiederverlautbart durch BGBl. Nr. 2/1946',
+    });
+    expect(series.guidance).toBe(
+      `No BGBl. entry for 1/1945 in BgblPdf — number "1/1945" matched only StGBl. Nr. 1/1945, an entry in another gazette series that shares its numbering. Verify the series against the cite; if StGBl. Nr. 1/1945 is the entry meant, retry with that citation. All matches: ris_search_gazette number: "1/1945".${ALSO('BGBl. Nr. 2/1946 (wiederverlautbart durch)')}`,
+    );
+
+    // A part I change cite once filtered the partless original to part I alone.
+    searchGazette.mockReset().mockResolvedValue(page('search-bgblauth-50-2025.json'));
+    const ambiguous = await lookup({
+      citation: 'BGBl. Nr. 50/2025 zuletzt geändert durch BGBl. I Nr. 1/2026',
+    });
+    expect(searchGazette.mock.calls[0]?.[0]).toEqual({
+      application: 'BgblAuth',
+      number: '50/2025',
+    });
+    expect(ambiguous.found).toBe(false);
+    expect(ambiguous.guidance).toMatch(/^BGBl\. Nr\. 50\/2025 names more than one gazette entry/);
+    expect(ambiguous.guidance?.endsWith(ALSO('BGBl. I Nr. 1/2026 (zuletzt geändert durch)'))).toBe(
+      true,
+    );
+  });
+
+  it('puts the sentence after the other-series note and before the "more matched" recipe', async () => {
+    searchGazette.mockResolvedValue(page('search-bgblpdf-1-1945.json'));
+    const series = await lookup({
+      citation: 'StGBl. Nr. 1/1945 zuletzt geändert durch BGBl. Nr. 5/1946',
+    });
+    expect(series.resolution_note).toBe(
+      `Resolved via ris_search_gazette (BgblPdf) — number "1/1945". Number "1/1945" also names BGBl. Nr. 1/1945, an entry in another gazette series that shares its numbering — not an alternative.${ALSO('BGBl. Nr. 5/1946 (zuletzt geändert durch)')}`,
+    );
+
+    searchGazette.mockReset().mockResolvedValue(page('search-bgblalt.json'));
+    const more = await lookup({ citation: 'GBlÖ Nr. 49/1940 aufgehoben durch BGBl. Nr. 1/1950' });
+    expect(more.resolution_note).toBe(
+      `Resolved via ris_search_gazette (BgblAlt) — number "49/1940".${ALSO('BGBl. Nr. 1/1950 (aufgehoben durch)')} 28546 more matched — list them with ris_search_gazette number: "49/1940".`,
+    );
+  });
+
+  // [string, state, the later cites named]
+  it.each<[string, string | undefined, string[]]>([
+    // Several later cites, each with its own linking words.
+    [
+      'BGBl. Nr. 999/1930 zuletzt geändert durch StGBl. Nr. 4/1945 und BGBl. Nr. 5/1946',
+      undefined,
+      ['StGBl. Nr. 4/1945 (zuletzt geändert durch)', 'BGBl. Nr. 5/1946 (und)'],
+    ],
+    // No linking words between the cites: no parentheses.
+    ['LGBl. Nr. 8/2006  LGBl. Nr. 35/2007', 'burgenland', ['LGBl. Nr. 35/2007']],
+    // A later organ the lookup does not read is named whole, its words opening in uppercase.
+    [
+      'LGBl. Nr. 999/2020 zuletzt geändert durch VBl. Tirol Nr. 5/2021',
+      'tirol',
+      ['VBl. Tirol Nr. 5/2021 (zuletzt geändert durch)'],
+    ],
+    // An organ opening in lowercase is no linking word.
+    [
+      'BGBl. Nr. 999/1930 zuletzt geändert durch dRGBl. I S 5/1939',
+      undefined,
+      ['dRGBl. I S 5/1939 (zuletzt geändert durch)'],
+    ],
+    // A state organ as the later cite; a separator before the linking words is not one of them.
+    [
+      'BGBl. Nr. 32/1964, aufgehoben durch LGBlNÖ Nr. 72/2016',
+      undefined,
+      ['LGBlNÖ Nr. 72/2016 (aufgehoben durch)'],
+    ],
+    // Nothing after the last pair belongs to it.
+    [
+      'BGBl. Nr. 999/1975 idF BGBl. Nr. 418/1975 ArtII Abs1',
+      undefined,
+      ['BGBl. Nr. 418/1975 (idF)'],
+    ],
+  ])('"%s" (state %s) names %j', async (citation, state, later) => {
+    searchGazette.mockResolvedValue(zeroHits());
+    const result = await lookup({ citation, ...(state !== undefined && { state }) });
+    // Burgenland and Tirol carry a legacy Lgbl series, probed after the LgblAuth miss.
+    expect(searchGazette).toHaveBeenCalledTimes(state === undefined ? 1 : 2);
+    expect(result.guidance?.endsWith(ALSO(...later))).toBe(true);
+  });
+
+  it('advertises the first-cite reading on the tool and in citation_formats', () => {
+    const gazette = RIS_CITATION_FORMATS.find((format) => format.kind === 'gazette');
+    for (const surface of [risLookupCitation.description, gazette?.description ?? '']) {
+      expect(surface).toContain('"BGBl. Nr. 267/1967 zuletzt geändert durch BGBl. I Nr. 17/2026"');
+    }
+    expect(risLookupCitation.description).toContain('"ABl.Nr. 52/2006 …") returns found: false');
+    expect(gazette?.resolvesVia).toContain('(zuletzt geändert durch)"), never searched');
+  });
+
+  it('never searches a later cite for a first cite with no number pair, Niederösterreich’s systematic "LGBl. 6075-1"', async () => {
+    searchGazette.mockResolvedValue(zeroHits());
+    const citation = 'LGBl. 6075-1 zuletzt geändert durch LGBl. Nr. 4/2020';
+    const result = await lookup({ citation, state: 'niederoesterreich' });
+    expect(searchGazette).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      found: false,
+      kind: 'gazette',
+      guidance: `Could not read a gazette number from '${citation}'. A gazette citation needs a number and a year — 'BGBl. I Nr. 165/1999', 'BGBl. Nr. 194/1961', 'RGBl. Nr. 189/1902', or 'LGBl. Nr. 61/2026' with a state hint. Formats: ris_list_reference topic citation_formats. To search without a number, browse with ris_search_gazette published_from/published_to.${ALSO('LGBl. Nr. 4/2020 (zuletzt geändert durch)')}`,
+    });
+  });
+
+  it('keeps reading a law named by its amending act’s gazette number, whose words before it name no gazette', async () => {
+    searchGazette.mockResolvedValue(zeroHits());
+    await lookup({ citation: 'AngG idF des BG 3.7.1975 BGBl 1975/418 ArtII Abs1' });
+    expect(searchGazette.mock.calls[0]?.[0]).toEqual({
+      application: 'BgblPdf',
+      number: '418/1975',
+    });
+  });
+
+  it('keeps a gazette title the words run through ("LGBl. für Wien") one cite, its number searched', async () => {
+    // "für" reads as a linking word, but "LGBl." before it carries no number of its own.
+    searchGazette.mockResolvedValue(zeroHits());
+    const result = await lookup({ citation: 'LGBl. für Wien Nr. 5/2020', state: 'wien' });
+    expect(searchGazette.mock.calls.map(([sent]) => sent)).toEqual([
+      { application: 'LgblAuth', number: '5/2020', state: 'wien' },
+    ]);
+    expect(result).toEqual({
+      found: false,
+      kind: 'gazette',
+      guidance:
+        'No gazette entry for 5/2020 in LgblAuth. Wien is carried in neither legacy series, so a pre-e-Recht Wiener number has no route here. Verify the number and year against the cite; browse the surrounding range with ris_search_gazette scope: wien, published_from/published_to.',
+    });
+  });
+});
+
+describe('risLookupCitation — a state gazette organ carrying its Bundesland (LGBlNÖ, LGBlBgld.) names the state', () => {
+  /*
+   * The suffixes RIS writes on a state gazette in a federal record's Stammnorm or Novellen organ,
+   * each from a live BrKons record (2026-11-09): "BGBl. Nr. 32/1964 aufgehoben durch LGBlNÖ Nr.
+   * 72/2016", "LGBlBgld. Nr. 3/1976 aufgehoben durch BGBl. I Nr. 141/2003", "LGBlW. Nr. 10/1970 …".
+   */
+  // [cite, the state it names, the legacy series probed after an LgblAuth miss]
+  it.each([
+    ['LGBlBgld. Nr. 3/1976', 'burgenland', true],
+    ['LGBlKtn. Nr. 97/1995', 'kaernten', true],
+    ['LGBlNÖ Nr. 72/2016', 'niederoesterreich', false],
+    ['LGBlNÖ. Nr. 72/2016', 'niederoesterreich', false],
+    ['LGBlOÖ. Nr. 68/1964', 'oberoesterreich', true],
+    ['LGBlSbg. Nr. 3/2007', 'salzburg', true],
+    ['LGBlStmk. Nr. 60/1972', 'steiermark', true],
+    ['LGBlTir. Nr. 79/2004', 'tirol', true],
+    ['LGBlVbg. Nr. 68/1923', 'vorarlberg', true],
+    ['LGBlW. Nr. 10/1970', 'wien', false],
+  ] as const)(
+    '"%s" searches %s’s Landesgesetzblatt without a state hint',
+    async (citation, state, legacy) => {
+      searchGazette.mockResolvedValue(zeroHits());
+      const result = await lookup({ citation });
+      const number = /\d+\/\d+/.exec(citation)![0];
+      expect(searchGazette.mock.calls.map(([params]) => params)).toEqual([
+        { application: 'LgblAuth', number, state },
+        ...(legacy ? [{ application: 'Lgbl', number, state }] : []),
+      ]);
+      expect(result).toMatchObject({ found: false, kind: 'gazette' });
+      expect(result.guidance).not.toContain('without a state');
+    },
+  );
+
+  it('resolves as the plain LGBl. cite with that state hint does, on both surfaces', async () => {
+    searchGazette.mockResolvedValue(page('search-lgblauth.json'));
+    const plain = await lookup({ citation: 'LGBl. Nr. 62/2026', state: 'salzburg' });
+    searchGazette.mockClear();
+    const result = await runToolContract(risLookupCitation, { citation: 'LGBlSbg. Nr. 62/2026' });
+    expect(searchGazette.mock.calls[0]?.[0]).toEqual({
+      application: 'LgblAuth',
+      number: '62/2026',
+      state: 'salzburg',
+    });
+    expect(result.structuredContent).toEqual(plain);
+    expect(plain.resolution_note).toBe(
+      'Resolved via ris_search_gazette (LgblAuth) — number "62/2026", scope: salzburg. 11838 more matched — list them with ris_search_gazette number: "62/2026", scope: salzburg.',
+    );
+    expect(readCommonMark(contentText(result))).toContain(
+      `⟨strong⟩resolution_note⟨/strong⟩: ${plain.resolution_note}`,
+    );
+  });
+
+  it('searches the state the organ names when the state hint names another', async () => {
+    searchGazette.mockResolvedValue(zeroHits());
+    const result = await lookup({ citation: 'LGBlBgld. Nr. 3/1976', state: 'tirol' });
+    expect(searchGazette.mock.calls.map(([params]) => params)).toEqual([
+      { application: 'LgblAuth', number: '3/1976', state: 'burgenland' },
+      { application: 'Lgbl', number: '3/1976', state: 'burgenland' },
+    ]);
+    expect(result.guidance).toContain('scope: burgenland');
+    // tirol is named only as the hint the organ overrode, never as a scope.
+    expect(
+      result.guidance?.replace(' The organ names Burgenland, so state tirol was not applied.', ''),
+    ).not.toContain('tirol');
+  });
+
+  it('reads the first cite of a federal record’s promulgation string by its organ’s state', async () => {
+    searchGazette.mockResolvedValue(zeroHits());
+    const result = await lookup({
+      citation: 'LGBlBgld. Nr. 3/1976 aufgehoben durch BGBl. I Nr. 141/2003',
+    });
+    expect(searchGazette.mock.calls.map(([params]) => params)).toEqual([
+      { application: 'LgblAuth', number: '3/1976', state: 'burgenland' },
+      { application: 'Lgbl', number: '3/1976', state: 'burgenland' },
+    ]);
+    expect(result.guidance).toMatch(
+      /^No gazette entry for 3\/1976 in LgblAuth or the legacy Lgbl series/,
+    );
+    expect(result.guidance).toContain(
+      ' The entry also cites BGBl. I Nr. 141/2003 (aufgehoben durch) — look it up as its own citation.',
+    );
+  });
+
+  it.each([
+    [
+      'LGBlNÖ. Nr. 9020/9-0 aufgehoben durch BGBl. II Nr. 376/2021',
+      'BGBl. II Nr. 376/2021 (aufgehoben durch)',
+    ],
+    [
+      'LGBlNÖ. Nr. 9020-31 aufgehoben durch BGBl. I Nr. 78/2021',
+      'BGBl. I Nr. 78/2021 (aufgehoben durch)',
+    ],
+  ])(
+    'reads Niederösterreich’s systematic "%s" as no number, never searching the federal cite after it',
+    async (citation, later) => {
+      searchGazette.mockResolvedValue(zeroHits());
+      const result = await lookup({ citation });
+      expect(searchGazette).not.toHaveBeenCalled();
+      expect(result.guidance).toMatch(/^Could not read a gazette number from /);
+      expect(result.guidance).toContain(`The entry also cites ${later} — look it up`);
+    },
+  );
+
+  it.each(['GVBlTirVbg.Nr. 47/1900', 'LGuVBlStmk. Nr. 1/1950', 'LGBlWien Nr. 1/2020'])(
+    '"%s" names no gazette this lookup reads: unclassified, as before',
+    async (citation) => {
+      const result = await lookup({ citation });
+      expect(result).toEqual({ found: false, kind: 'unknown', guidance: UNCLASSIFIED(citation) });
+      expect(searchGazette).not.toHaveBeenCalled();
+    },
+  );
+
+  // GBlÖ is read only as a whole word, so an organ's OÖ suffix is never the 1938–1945 gazette.
+  it('never reads the OÖ suffix inside a state organ as the GBlÖ, even when it runs into the next word', async () => {
+    searchGazette.mockResolvedValue(zeroHits());
+    await lookup({ citation: 'LGBlOÖNr. 68/1964' });
+    expect(searchGazette.mock.calls.map(([sent]) => sent.application)).not.toContain('BgblAlt');
+  });
+
+  it('advertises the state-marked organs on the state hint, citation_formats, and the legislation gazette fields', () => {
+    const gazette = RIS_CITATION_FORMATS.find((format) => format.kind === 'gazette');
+    const output = risSearchLegislation.output.shape.results.element.shape;
+    for (const surface of [
+      risLookupCitation.input.shape.state.description ?? '',
+      gazette?.description ?? '',
+      output.original_gazette.description ?? '',
+      output.latest_change_gazette.description ?? '',
+    ]) {
+      expect(surface).toContain('LGBlNÖ');
+    }
+  });
+});
+
+describe('risLookupCitation — a state organ that overrides a disagreeing state hint says so', () => {
+  const overridden = (organ: string, hint: string) =>
+    ` The organ names ${organ}, so state ${hint} was not applied.`;
+
+  /** The same citation's answer without a state hint, against the same page. */
+  async function withoutHint(citation: string, answer: RisSearchResult) {
+    searchGazette.mockReset();
+    searchGazette.mockResolvedValue(answer);
+    const result = await lookup({ citation });
+    searchGazette.mockReset();
+    return result;
+  }
+
+  it('names the hint after the filters in a resolution note, on both surfaces', async () => {
+    const plain = await withoutHint('LGBlSbg. Nr. 62/2026', page('search-lgblauth.json'));
+    searchGazette.mockResolvedValue(page('search-lgblauth.json'));
+    const result = await runToolContract(risLookupCitation, {
+      citation: 'LGBlSbg. Nr. 62/2026',
+      state: 'tirol',
+    });
+    expect(searchGazette.mock.calls.map(([params]) => params)).toEqual([
+      { application: 'LgblAuth', number: '62/2026', state: 'salzburg' },
+    ]);
+    const note = `Resolved via ris_search_gazette (LgblAuth) — number "62/2026", scope: salzburg.${overridden('Salzburg', 'tirol')} 11838 more matched — list them with ris_search_gazette number: "62/2026", scope: salzburg.`;
+    expect(result.structuredContent).toEqual({ ...plain, resolution_note: note });
+    expect(readCommonMark(contentText(result))).toContain(
+      `⟨strong⟩resolution_note⟨/strong⟩: ${note}`,
+    );
+  });
+
+  it('ends a miss’s guidance with it, on both surfaces', async () => {
+    const plain = await withoutHint('LGBlBgld. Nr. 3/1976', zeroHits());
+    searchGazette.mockResolvedValue(zeroHits());
+    const result = await runToolContract(risLookupCitation, {
+      citation: 'LGBlBgld. Nr. 3/1976',
+      state: 'tirol',
+    });
+    const guidance = `${plain.guidance}${overridden('Burgenland', 'tirol')}`;
+    expect(result.structuredContent).toEqual({ found: false, kind: 'gazette', guidance });
+    expect(readCommonMark(contentText(result))).toBe(
+      `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: gazette\n\n${guidance}`,
+    );
+  });
+
+  it('names the organ’s Bundesland as RIS writes it and the hint as the code it folded to', async () => {
+    const plain = await withoutHint('LGBlNÖ Nr. 72/2016', zeroHits());
+    searchGazette.mockResolvedValue(zeroHits());
+    const result = await lookup({ citation: 'LGBlNÖ Nr. 72/2016', state: 'Wien' });
+    expect(result.guidance).toBe(`${plain.guidance}${overridden('Niederösterreich', 'wien')}`);
+  });
+
+  it('comes before the later cites of a several-cite string', async () => {
+    const citation = 'LGBlBgld. Nr. 3/1976 aufgehoben durch BGBl. I Nr. 141/2003';
+    const alone = await withoutHint('LGBlBgld. Nr. 3/1976', zeroHits());
+    searchGazette.mockResolvedValue(zeroHits());
+    const result = await lookup({ citation, state: 'tirol' });
+    expect(result.guidance).toBe(
+      `${alone.guidance}${overridden('Burgenland', 'tirol')} The entry also cites BGBl. I Nr. 141/2003 (aufgehoben durch) — look it up as its own citation.`,
+    );
+  });
+
+  it('comes before the later cites in a several-cite string’s resolution note', async () => {
+    searchGazette.mockResolvedValue(page('search-lgblauth.json'));
+    const result = await lookup({
+      citation: 'LGBlSbg. Nr. 62/2026 aufgehoben durch BGBl. I Nr. 141/2003',
+      state: 'tirol',
+    });
+    expect(result.resolution_note).toBe(
+      `Resolved via ris_search_gazette (LgblAuth) — number "62/2026", scope: salzburg.${overridden('Salzburg', 'tirol')} The entry also cites BGBl. I Nr. 141/2003 (aufgehoben durch) — look it up as its own citation. 11838 more matched — list them with ris_search_gazette number: "62/2026", scope: salzburg.`,
+    );
+  });
+
+  it.each([
+    ['an agreeing hint on a miss', 'LGBlBgld. Nr. 3/1976', 'burgenland', 'search-zero-hits.json'],
+    [
+      'an agreeing hint on a resolution',
+      'LGBlSbg. Nr. 62/2026',
+      'salzburg',
+      'search-lgblauth.json',
+    ],
+  ])('adds nothing for %s', async (_case, citation, state, fixtureName) => {
+    const plain = await withoutHint(citation, page(fixtureName));
+    searchGazette.mockResolvedValue(page(fixtureName));
+    expect(await lookup({ citation, state })).toEqual(plain);
+  });
+
+  it('adds nothing to a plain LGBl. cite, whose state the hint is', async () => {
+    searchGazette.mockResolvedValue(page('search-lgblauth.json'));
+    const result = await lookup({ citation: 'LGBl. Nr. 62/2026', state: 'tirol' });
+    expect(searchGazette.mock.calls[0]?.[0]).toEqual({
+      application: 'LgblAuth',
+      number: '62/2026',
+      state: 'tirol',
+    });
+    expect(result.resolution_note).not.toContain('was not applied');
+  });
+});
+
+describe('risLookupCitation — splitting a gazette string stays linear in its length (#106)', () => {
+  it.each([
+    [
+      'a cite and its linking words, repeated',
+      (n: number) =>
+        `BGBl. I Nr. 1/2000${' zuletzt geändert durch BGBl. I Nr. 2/2001'.repeat(Math.floor(n / 41))}`,
+    ],
+    [
+      'a run of organ words before a later pair',
+      (n: number) => `BGBl. I Nr. 1/2000 ${'BGBl. '.repeat(Math.floor(n / 6))}2/2001`,
+    ],
+    [
+      'a run of linking words before a later pair',
+      (n: number) => `BGBl. I Nr. 1/2000 ${'durch '.repeat(Math.floor(n / 6))}BGBl. 2/2001`,
+    ],
+    [
+      'pairs with no words between',
+      (n: number) => `BGBl. I Nr. 1/2000${' 2/2001'.repeat(Math.floor(n / 7))}`,
+    ],
+    [
+      'one long line ending in a break before a later pair',
+      (n: number) => `BGBl. I Nr. 1/2000 ${'§1 x'.repeat(Math.floor(n / 4))}\ny 2/2001`,
+    ],
+    [
+      'breaks throughout before a later cite',
+      (n: number) =>
+        `BGBl. I Nr. 1/2000${'  \r\n'.repeat(Math.floor(n / 4))}zuletzt geändert durch BGBl. I Nr. 2/2001`,
+    ],
+    // The state-marked organ's suffix, past a whitespace run.
+    [
+      'a whitespace run after a state-marked organ',
+      (n: number) => `LGBlNÖ${' '.repeat(n)}Nr. 1/2016`,
+    ],
+  ])('%s', async (_shape, build) => {
+    searchGazette.mockResolvedValue(zeroHits());
+    await expectLinearResolution(build, {}, 1_250);
+  });
+
+  it('repeated LGBl prefixes before a state-marked organ', async () => {
+    searchGazette.mockResolvedValue(zeroHits());
+    await expectLinearResolution(
+      (n) => `${'LGBl '.repeat(Math.floor(n / 5))}LGBlNÖ Nr. 1/2016`,
+      {},
+      1_250,
+    );
+    // Every size is split and its organ's suffix read: each search names the state it carries.
+    expect(new Set(searchGazette.mock.calls.map(([sent]) => JSON.stringify(sent)))).toEqual(
+      new Set([
+        JSON.stringify({ application: 'LgblAuth', number: '1/2016', state: 'niederoesterreich' }),
+      ]),
+    );
+  });
+
+  it('a later pair’s digit run, across the full 5k–320k span', async () => {
+    searchGazette.mockResolvedValue(zeroHits());
+    await expectLinearResolution(
+      (n) => `BGBl. I Nr. 1/2000 zuletzt geändert durch BGBl. I Nr. ${'1'.repeat(n)}/2001`,
+      {},
+    );
   });
 });
 
@@ -965,10 +1644,10 @@ describe('risLookupCitation — case_number route', () => {
       expect(url.searchParams.get('Dokumenttyp.SucheInRechtssaetzen')).toBe('true');
       expect(url.searchParams.get('Dokumenttyp.SucheInEntscheidungstexten')).toBe('true');
     }
-    // The case-number route ranks a 100-hit page (#48); the collection route keeps the default.
+    // Both routes rank a 100-hit page (#48): "VwSlg 19508 *" matches 29 documents, past RIS's default 20.
     expect(urls.map((url) => url.searchParams.get('DokumenteProSeite'))).toEqual([
       'OneHundred',
-      null,
+      'OneHundred',
     ]);
     // This Rechtssätze-only page leads with a 1952 headnote listing 6Ob236/23h among its
     // split case numbers (#53); the pick is a headnote the cited decision leads (#48).
@@ -1121,7 +1800,11 @@ describe('risLookupCitation — collection_number route', () => {
     const input = risLookupCitation.input.parse({ citation: 'VfSlg 19.632/2012' });
     const result = await risLookupCitation.handler(input, ctx);
 
-    expect(searchCaseLaw.mock.calls[0]?.[0]).toEqual({ collectionNumber: '19.632', court: 'vfgh' });
+    expect(searchCaseLaw.mock.calls[0]?.[0]).toEqual({
+      collectionNumber: '19.632',
+      court: 'vfgh',
+      pageSize: 100,
+    });
 
     const hit = parseSearchResponse(fixture('search-vfgh.json')).hits[0]!;
     const expectedRecord = toCaseLawRecord(hit, 'Vfgh');
@@ -1154,21 +1837,27 @@ describe('risLookupCitation — collection_number route', () => {
     expect(searchCaseLaw).not.toHaveBeenCalled();
   });
 
-  it('returns collectionGuidance when a parsed VwSlg collection number resolves to zero hits', async () => {
+  it('names both filters when a VwSlg cite with a year matches nothing in either search (#99)', async () => {
     searchCaseLaw.mockResolvedValue(zeroHits());
     const ctx = createMockContext({ errors: risLookupCitation.errors });
     const input = risLookupCitation.input.parse({ citation: 'VwSlg 18.000 A/2010' });
     const result = await risLookupCitation.handler(input, ctx);
 
-    expect(searchCaseLaw.mock.calls[0]?.[0]).toEqual({
-      collectionNumber: 'VwSlg 18000 A*',
-      court: 'vwgh',
-    });
+    expect(searchCaseLaw.mock.calls.map(([params]) => params)).toEqual([
+      { collectionNumber: 'VwSlg 18000 A*', court: 'vwgh', pageSize: 100 },
+      {
+        collectionNumber: '*18000*',
+        court: 'vwgh',
+        decidedFrom: '2010-01-01',
+        decidedTo: '2010-12-31',
+        pageSize: 100,
+      },
+    ]);
     expect(result).toEqual({
       found: false,
       kind: 'collection_number',
       guidance:
-        'No decision for VwSlg 18.000 — Sammlungsnummer "VwSlg 18000 A*" matched nothing. That filter already carries the labelled undotted form VwGH stores, so the number or the part letter (A administrative, F finance) is the mismatch — verify both against the cite. Keyword fallback: ris_search_case_law court: vwgh with query.',
+        'No decision for VwSlg 18.000 A/2010 — Sammlungsnummer "VwSlg 18000 A*" matched nothing, and "*18000*" decided 2010-01-01 to 2010-12-31, which finds the number in any shape VwGH stores it, matched no row naming that cite. Verify the number, the part letter (A administrative, F finance), and the year against the cite. Keyword fallback: ris_search_case_law court: vwgh with query.',
     });
   });
 });
@@ -1218,7 +1907,7 @@ describe('risLookupCitation — VwGH collection numbers use the labelled cite (#
     expect(result.resolution_note).not.toContain('"18.000"');
   });
 
-  it('tells a VwGH miss the filter was already in the accepted form, rather than sending it back through the same query', async () => {
+  it('tells a VwGH miss which two filters it searched, rather than sending it back through the same query (#99)', async () => {
     searchCaseLaw.mockResolvedValue(zeroHits());
     const ctx = createMockContext({ errors: risLookupCitation.errors });
     const vwgh = await risLookupCitation.handler(
@@ -1231,7 +1920,10 @@ describe('risLookupCitation — VwGH collection numbers use the labelled cite (#
       ctx,
     );
 
-    expect(vwgh.guidance).toContain('already carries the labelled undotted form');
+    // Stored shapes the labelled prefix never reaches make "already the form VwGH stores" false.
+    expect(vwgh.guidance).not.toContain('already carries');
+    expect(vwgh.guidance).toContain('"VwSlg 18000 A*" matched nothing');
+    expect(vwgh.guidance).toContain('"*18000*" decided 2010-01-01 to 2010-12-31');
     expect(vwgh.guidance).toContain('part letter');
     // The retry it must NOT offer: the same collection_number the tool just sent upstream.
     expect(vwgh.guidance).not.toContain('collection_number');
@@ -1362,44 +2054,50 @@ describe('risLookupCitation — a collection cite’s year picks the decision it
     );
   });
 
+  /*
+   * A VwSlg row also sends the #99 fallback search ("*<n>*" in the cited year), whose live page
+   * is the fourth column — empty for both — so its year-mismatch guidance comes after two
+   * requests. A VfSlg cite sends one.
+   */
   it.each([
     [
       'VfSlg 19.632/2020',
       VFSLG_19632,
       'No decision for VfSlg 19.632/2020 — Sammlungsnummer "19.632" matched VfSlg 19.632/2012, decided in another year (VfSlg volumes run by decision year). Verify the year against the cite; if VfSlg 19.632/2012 is the decision meant, retry with that cite. All matches: ris_search_case_law court: vfgh, collection_number: "19.632".',
+      undefined,
     ],
     [
       'VwSlg 18.000 A/2020',
       VWSLG_18000_A,
       'No decision for VwSlg 18.000 A/2020 — Sammlungsnummer "VwSlg 18000 A*" matched VwSlg 18000 A/2010, dated another year by both its decision date and its Sammlungsnummer. Verify the year against the cite; if VwSlg 18000 A/2010 is the decision meant, retry with that cite. All matches: ris_search_case_law court: vwgh, collection_number: "VwSlg 18000 A*".',
+      'search-vwgh-vwslg-fallback-18000-2020.json',
     ],
     [
       'VwSlg 8000/1980',
       VWSLG_8000,
       'No decision for VwSlg 8000/1980 — Sammlungsnummer "VwSlg 8000 *" matched VwSlg 8000 F/2005 and VwSlg 8000 A/1971, each dated another year by both its decision date and its Sammlungsnummer. Verify the year against the cite; retry with the cite of the decision meant. All matches: ris_search_case_law court: vwgh, collection_number: "VwSlg 8000 *".',
-    ],
-    [
-      // The letterless row stored as "VwSlg 1809/50" is beyond the "VwSlg 1809 *" filter; the year keeps 1958 from passing for it.
-      'VwSlg 1809/50',
-      'search-vwgh-vwslg-1809.json',
-      'No decision for VwSlg 1809/50 — Sammlungsnummer "VwSlg 1809 *" matched VwSlg 1809 F/1958, dated another year by both its decision date and its Sammlungsnummer. Verify the year against the cite; if VwSlg 1809 F/1958 is the decision meant, retry with that cite. All matches: ris_search_case_law court: vwgh, collection_number: "VwSlg 1809 *".',
+      'search-vwgh-vwslg-fallback-8000-1980.json',
     ],
     [
       // The "17330 - 17898" Rechtssatz is dated 2004-10-13, 17.330's decision — it confirms only that number.
       'VfSlg 17.898/2004',
       VFSLG_17898,
       'No decision for VfSlg 17.898/2004 — Sammlungsnummer "17.898" matched VfSlg 17.898/2006, decided in another year (VfSlg volumes run by decision year). Verify the year against the cite; if VfSlg 17.898/2006 is the decision meant, retry with that cite. All matches: ris_search_case_law court: vfgh, collection_number: "17.898".',
+      undefined,
     ],
     [
       'VfSlg 8/1925',
       VFSLG_8,
       'No decision for VfSlg 8/1925 — Sammlungsnummer "8" matched VfSlg 8/1921 and VfSlg 8/1919, each decided in another year (VfSlg volumes run by decision year). Verify the year against the cite; retry with the cite of the decision meant. All matches: ris_search_case_law court: vfgh, collection_number: "8".',
+      undefined,
     ],
   ])(
     '%s matched only other years — found: false naming each cite the number does match',
-    async (citation, name, guidance) => {
-      const result = await resolveAgainst(searchCaseLaw, name, { citation });
-      expect(searchCaseLaw).toHaveBeenCalledTimes(1);
+    async (citation, name, guidance, fallback) => {
+      searchCaseLaw.mockResolvedValueOnce(page(name));
+      if (fallback !== undefined) searchCaseLaw.mockResolvedValueOnce(page(fallback));
+      const result = await lookup({ citation });
+      expect(searchCaseLaw).toHaveBeenCalledTimes(fallback === undefined ? 1 : 2);
       expect(result).toEqual({ found: false, kind: 'collection_number', guidance });
     },
   );
@@ -1442,7 +2140,12 @@ describe('risLookupCitation — a collection cite’s year picks the decision it
     },
   );
 
-  it('sends exactly one RIS request for every case, through the real service', async () => {
+  /*
+   * One request where the first search decides: a hit of the cited year, every VfSlg cite, and
+   * every yearless VwSlg cite. A VwSlg cite with a year that the first search misses sends the #99
+   * fallback as its second, its page the live one for that number and year.
+   */
+  it('sends one RIS request where the first search decides and two where a VwSlg cite with a year misses it, through the real service', async () => {
     const actual = await vi.importActual<typeof import('@/services/ris/ris-service.js')>(
       '@/services/ris/ris-service.js',
     );
@@ -1450,41 +2153,47 @@ describe('risLookupCitation — a collection cite’s year picks the decision it
     searchCaseLaw.mockImplementation((...args: Parameters<typeof realService.searchCaseLaw>) =>
       realService.searchCaseLaw(...args),
     );
-    const CASES: ReadonlyArray<[string, string]> = [
-      ['VfSlg 19.632/2020', VFSLG_19632],
-      ['VfSlg 19.632/2012', VFSLG_19632],
-      ['VfSlg 19.632', VFSLG_19632],
-      ['VwSlg 18.000 A/2020', VWSLG_18000_A],
-      ['VwSlg 18.000 A/2010', VWSLG_18000_A],
-      ['VwSlg 18.000 A', VWSLG_18000_A],
-      ['VwSlg 18000 A/10', VWSLG_18000_A],
-      ['VfSlg 8/1919', VFSLG_8],
-      ['VfSlg 8/1921', VFSLG_8],
-      ['VfSlg 8', VFSLG_8],
-      ['VfSlg 11', 'search-vfgh-vfslg-11-both.json'],
-      ['VfSlg 35', 'search-vfgh-vfslg-35-both.json'],
-      ['VfSlg 60', 'search-vfgh-vfslg-60-both.json'],
-      ['VwSlg 8000/1971', VWSLG_8000],
-      ['VwSlg 8000/1980', VWSLG_8000],
-      ['VwSlg 8000', VWSLG_8000],
-      ['VwSlg 1809/50', 'search-vwgh-vwslg-1809.json'],
-      ['VfSlg 17.898/2006', VFSLG_17898],
-      ['VfSlg 17.898/2004', VFSLG_17898],
-      ['VwSlg 6843 A/1966', 'search-vwgh-vwslg-6843-a.json'],
-      ['VwSlg 6843 A/1964', 'search-vwgh-vwslg-6843-a.json'],
-      ['VwSlg 2524 A/1952', 'search-vwgh-vwslg-2524-a.json'],
+    const fallback = (key: string) => `search-vwgh-vwslg-fallback-${key}.json`;
+    const CASES: ReadonlyArray<[string, readonly string[]]> = [
+      ['VfSlg 19.632/2020', [VFSLG_19632]],
+      ['VfSlg 19.632/2012', [VFSLG_19632]],
+      ['VfSlg 19.632', [VFSLG_19632]],
+      ['VwSlg 18.000 A/2020', [VWSLG_18000_A, fallback('18000-2020')]],
+      ['VwSlg 18.000 A/2010', [VWSLG_18000_A]],
+      ['VwSlg 18.000 A', [VWSLG_18000_A]],
+      ['VwSlg 18000 A/10', [VWSLG_18000_A]],
+      ['VfSlg 8/1919', [VFSLG_8]],
+      ['VfSlg 8/1921', [VFSLG_8]],
+      ['VfSlg 8', [VFSLG_8]],
+      ['VfSlg 11', ['search-vfgh-vfslg-11-both.json']],
+      ['VfSlg 35', ['search-vfgh-vfslg-35-both.json']],
+      ['VfSlg 60', ['search-vfgh-vfslg-60-both.json']],
+      ['VwSlg 8000/1971', [VWSLG_8000]],
+      ['VwSlg 8000/1980', [VWSLG_8000, fallback('8000-1980')]],
+      ['VwSlg 8000', [VWSLG_8000]],
+      ['VwSlg 1809/50', ['search-vwgh-vwslg-1809.json', fallback('1809-1950')]],
+      ['VfSlg 17.898/2006', [VFSLG_17898]],
+      ['VfSlg 17.898/2004', [VFSLG_17898]],
+      ['VwSlg 6843 A/1966', ['search-vwgh-vwslg-6843-a.json']],
+      ['VwSlg 6843 A/1964', ['search-vwgh-vwslg-6843-a.json']],
+      ['VwSlg 2524 A/1952', ['search-vwgh-vwslg-2524-a.json']],
+      ['VwSlg 1485 A', ['search-zero-hits.json']],
+      ['VfSlg 99999/2010', ['search-zero-hits.json']],
     ];
     try {
-      for (const [citation, name] of CASES) {
-        const fetchMock = vi.fn((_url: unknown) =>
-          Promise.resolve(new Response(JSON.stringify(fixture(name)))),
-        );
+      for (const [citation, answers] of CASES) {
+        let served = 0;
+        const fetchMock = vi.fn((_url: unknown) => {
+          const answer = answers[served] ?? 'search-zero-hits.json';
+          served += 1;
+          return Promise.resolve(new Response(JSON.stringify(fixture(answer))));
+        });
         vi.stubGlobal('fetch', fetchMock);
         await risLookupCitation.handler(
           risLookupCitation.input.parse({ citation }),
           createMockContext({ errors: risLookupCitation.errors }),
         );
-        expect(fetchMock, citation).toHaveBeenCalledTimes(1);
+        expect(fetchMock, citation).toHaveBeenCalledTimes(answers.length);
       }
     } finally {
       vi.unstubAllGlobals();
@@ -1534,6 +2243,763 @@ describe('risLookupCitation — a collection cite’s year picks the decision it
       expect(surface).toContain('two-digit year');
       expect(surface).toContain('VfSlg numbering restarted in 1921');
     }
+  });
+});
+
+describe('risLookupCitation — a VwSlg cite stored in another shape resolves through one more search (#99)', () => {
+  /*
+   * VwGH stores some collection numbers, decided up to 1987, in shapes the labelled prefix never
+   * reaches: zero-padded ("VwSlg 0017 F/1947"), a dotted label ("VwSlg. 1485 A/1950"), the letter
+   * after the slash ("VwSlg 544 /F1952", "VwSlg 10414/A"), two spaces, which RIS collapses in the
+   * filter value ("VwSlg 64  A/1947"), or no part letter at all ("VwSlg 9766/79"). Each fallback
+   * fixture is the live page "*<n>*" plus the cited year's decision window returns (2026-11-09).
+   */
+  const fallback = (key: string) => `search-vwgh-vwslg-fallback-${key}.json`;
+  const ZERO = 'search-zero-hits.json';
+  const recipe = (n: string, year: string) =>
+    `ris_search_case_law court: vwgh, collection_number: "*${n}*", decided_from: "${year}-01-01", decided_to: "${year}-12-31"`;
+  const bothMissed = (cited: string, filter: string, n: string, year: string) =>
+    `No decision for ${cited} — Sammlungsnummer "${filter}" matched nothing, and "*${n}*" decided ${year}-01-01 to ${year}-12-31, which finds the number in any shape VwGH stores it, matched no row naming that cite. Verify the number, the part letter (A administrative, F finance), and the year against the cite. Keyword fallback: ris_search_case_law court: vwgh with query.`;
+
+  /** Answer the first search with `first` and the fallback with `second`, then resolve. */
+  async function resolveTwice(citation: string, first: string, second: string | RisSearchResult) {
+    searchCaseLaw
+      .mockResolvedValueOnce(page(first))
+      .mockResolvedValueOnce(typeof second === 'string' ? page(second) : second);
+    return await lookup({ citation });
+  }
+
+  // [citation, first page, filter sent first, number, window year, picked document, its Sammlungsnummer, alternatives]
+  const ISSUE_CITES = [
+    [
+      'VwSlg 17 F/1947',
+      ZERO,
+      'VwSlg 17 F*',
+      '17',
+      '1947',
+      'JWR_1946000335_19470627X01',
+      'VwSlg 0017 F/1947',
+      2,
+    ],
+    [
+      'VwSlg 1485 A/1950',
+      ZERO,
+      'VwSlg 1485 A*',
+      '1485',
+      '1950',
+      'JWT_1948001669_19500603X00',
+      'VwSlg. 1485 A/1950',
+      2,
+    ],
+    [
+      'VwSlg 544 F/1952',
+      ZERO,
+      'VwSlg 544 F*',
+      '544',
+      '1952',
+      'JWR_1950000787_19520208X01',
+      'VwSlg 544 /F1952',
+      1,
+    ],
+    [
+      'VwSlg 64 A/1947',
+      ZERO,
+      'VwSlg 64 A*',
+      '64',
+      '1947',
+      'JWR_1947000037_19470217X01',
+      'VwSlg 64  A/1947',
+      1,
+    ],
+    [
+      'VwSlg 296/1948',
+      'search-vwgh-vwslg-296.json',
+      'VwSlg 296 *',
+      '296',
+      '1948',
+      'JWR_1947000157_19480128X01',
+      'VwSlg 0296/1948',
+      undefined,
+    ],
+    [
+      'VwSlg 1809/50',
+      'search-vwgh-vwslg-1809.json',
+      'VwSlg 1809 *',
+      '1809',
+      '1950',
+      'JWT_1950001078_19501206X00',
+      'VwSlg 1809/50',
+      1,
+    ],
+    [
+      'VwSlg 10414 A/1981',
+      ZERO,
+      'VwSlg 10414 A*',
+      '10414',
+      '1981',
+      'JWT_1980001826_19810406X00',
+      'VwSlg 10414/A',
+      1,
+    ],
+    [
+      'VwSlg 9766 A/1979',
+      ZERO,
+      'VwSlg 9766 A*',
+      '9766',
+      '1979',
+      'JWR_1977001920_19790214X01',
+      'VwSlg 9766/79',
+      2,
+    ],
+  ] as const;
+
+  it.each(ISSUE_CITES)(
+    '"%s" resolves in two searches on one budget — %s first, then "*<n>*" in the cited year',
+    async (citation, first, filter, n, year, documentNumber, stored, alternatives) => {
+      const result = await resolveTwice(citation, first, fallback(`${n}-${year}`));
+      expect(searchCaseLaw.mock.calls.map(([params]) => params)).toEqual([
+        { collectionNumber: filter, court: 'vwgh', pageSize: 100 },
+        {
+          collectionNumber: `*${n}*`,
+          court: 'vwgh',
+          decidedFrom: `${year}-01-01`,
+          decidedTo: `${year}-12-31`,
+          pageSize: 100,
+        },
+      ]);
+      // Both searches draw on the one budget the lookup created (#85).
+      expect(searchCaseLaw.mock.calls[1]?.[2]).toBe(searchCaseLaw.mock.calls[0]?.[2]);
+      expect(result.found).toBe(true);
+      expect(result.kind).toBe('collection_number');
+      expect(documentNumberOf(result)).toBe(documentNumber);
+      expect((result.record as { collection_number: string }).collection_number).toBe(stored);
+      expect(result.alternatives_count).toBe(alternatives);
+      const more =
+        alternatives === undefined
+          ? ''
+          : ` ${alternatives} more matched — list them with ${recipe(n, year)}.`;
+      expect(result.resolution_note).toBe(
+        `Resolved via ris_search_case_law (Vwgh) — Sammlungsnummer "*${n}*" decided ${year}-01-01 to ${year}-12-31, after "${filter}" matched no decision of ${year}.${more}`,
+      );
+    },
+  );
+
+  it('the eight resolve through the real service, the second request on the wire as "*<n>*" with the year window and a 100-hit page', async () => {
+    const actual = await vi.importActual<typeof import('@/services/ris/ris-service.js')>(
+      '@/services/ris/ris-service.js',
+    );
+    const realService = new actual.RisService('ris-austria-mcp-server/test');
+    searchCaseLaw.mockImplementation((...args: Parameters<typeof realService.searchCaseLaw>) =>
+      realService.searchCaseLaw(...args),
+    );
+    try {
+      for (const [citation, first, , n, year, documentNumber] of ISSUE_CITES) {
+        const answers = [first, fallback(`${n}-${year}`)];
+        const fetchMock = vi.fn((_url: unknown) =>
+          Promise.resolve(
+            new Response(JSON.stringify(fixture(answers[fetchMock.mock.calls.length - 1]!))),
+          ),
+        );
+        vi.stubGlobal('fetch', fetchMock);
+        const result = await lookup({ citation });
+        expect(fetchMock, citation).toHaveBeenCalledTimes(2);
+        expect(documentNumberOf(result), citation).toBe(documentNumber);
+        const second = new URL(String(fetchMock.mock.calls[1]?.[0]));
+        expect(Object.fromEntries(second.searchParams), citation).toEqual({
+          Applikation: 'Vwgh',
+          DokumenteProSeite: 'OneHundred',
+          'Dokumenttyp.SucheInEntscheidungstexten': 'true',
+          'Dokumenttyp.SucheInRechtssaetzen': 'true',
+          EntscheidungsdatumBis: `${year}-12-31`,
+          EntscheidungsdatumVon: `${year}-01-01`,
+          Sammlungsnummer: `*${n}*`,
+        });
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('never picks a fallback row that names another number — "VwSlg 170 A/1947" for "VwSlg 17 F/1947"', async () => {
+    const base = page(fallback('17-1947'));
+    const otherNumber = base.hits.filter(
+      (hit) =>
+        hit.metadata.controller === 'Judikatur' &&
+        hit.metadata.collectionNumber === 'VwSlg 170 A/1947',
+    );
+    expect(otherNumber).toHaveLength(2);
+    const result = await resolveTwice('VwSlg 17 F/1947', ZERO, {
+      ...base,
+      hits: otherNumber,
+      total: 2,
+    });
+    expect(result).toEqual({
+      found: false,
+      kind: 'collection_number',
+      guidance: bothMissed('VwSlg 17 F/1947', 'VwSlg 17 F*', '17', '1947'),
+    });
+  });
+
+  it('never picks a fallback row whose part letter contradicts the cite, naming it instead', async () => {
+    // The page holds "VwSlg 0017 F/1947"; the cite names the A series.
+    const result = await resolveTwice('VwSlg 17 A/1947', ZERO, fallback('17-1947'));
+    expect(result).toEqual({
+      found: false,
+      kind: 'collection_number',
+      guidance: `No decision for VwSlg 17 A/1947 — Sammlungsnummer "VwSlg 17 A*" matched nothing, and "*17*" decided 1947-01-01 to 1947-12-31 matched VwSlg 0017 F/1947, which names the cited number and year under another part letter. Verify the part letter (A administrative, F finance) against the cite; if VwSlg 17 F/1947 is the decision meant, retry with that cite. All matches: ${recipe('17', '1947')}.`,
+    });
+  });
+
+  it('names both filters when neither finds the invented "VwSlg 99999 A/2010"', async () => {
+    const result = await resolveTwice('VwSlg 99999 A/2010', ZERO, fallback('99999-2010'));
+    expect(searchCaseLaw).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      found: false,
+      kind: 'collection_number',
+      guidance: bothMissed('VwSlg 99999 A/2010', 'VwSlg 99999 A*', '99999', '2010'),
+    });
+    expect(result.guidance).not.toContain('already carries');
+  });
+
+  it('windows a two-digit year as the latest year ending in those digits', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-09T12:00:00Z'));
+    try {
+      for (const [cited, year] of [
+        ['50', '1950'],
+        ['10', '2010'],
+        ['26', '2026'],
+        ['27', '1927'],
+      ] as const) {
+        searchCaseLaw.mockReset();
+        searchCaseLaw.mockResolvedValue(zeroHits());
+        await lookup({ citation: `VwSlg 100 A/${cited}` });
+        expect(searchCaseLaw.mock.calls[1]?.[0], cited).toMatchObject({
+          decidedFrom: `${year}-01-01`,
+          decidedTo: `${year}-12-31`,
+        });
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ['VwSlg 1485 A', 'VwSlg 1485 A*', 'VwSlg 1485 A'],
+    ['VwSlg 1485', 'VwSlg 1485 *', 'VwSlg 1485'],
+    // A year of neither four nor two digits names no window to search.
+    ['VwSlg 1485 A/195', 'VwSlg 1485 A*', 'VwSlg 1485 A'],
+  ])(
+    '"%s" misses in one search and names "*<n>*" with a date window as the retry',
+    async (citation, filter, retry) => {
+      searchCaseLaw.mockResolvedValue(zeroHits());
+      const result = await lookup({ citation });
+      expect(searchCaseLaw).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({
+        found: false,
+        kind: 'collection_number',
+        guidance: `No decision for ${citation} — Sammlungsnummer "${filter}" matched nothing. VwGH stores some older cites in other shapes ("VwSlg 0017 F/1947", "VwSlg. 1485 A/1950", "VwSlg 10414/A") that only "*1485*" reaches, and on its own that filter matches every number holding those digits: cite the decision year ("${retry}/<year>"), which runs it here, or run it for that year — ris_search_case_law court: vwgh, collection_number: "*1485*", decided_from: "<year>-01-01", decided_to: "<year>-12-31".`,
+      });
+    },
+  );
+
+  /** The live "*64*" page for 1947 plus one more decision stored as `stored`, decided 1947-05-05. */
+  function withAnotherDecision(stored: string): RisSearchResult {
+    const base = page(fallback('64-1947'));
+    const first = base.hits[0]!;
+    const another = {
+      ...first,
+      documentNumber: 'JWR_1947000999_19470505X01',
+      metadata: {
+        ...first.metadata,
+        collectionNumber: stored,
+        decisionDate: '1947-05-05',
+      } as RisHit['metadata'],
+    };
+    return { ...base, hits: [...base.hits, another], total: base.total + 1 };
+  }
+
+  it.each([
+    [
+      'VwSlg 64/1947',
+      'VwSlg 64 *',
+      'VwSlg 64 F/1947',
+      'VwGH runs two collection series that reuse numbers (A administrative, F finance), so the part letter is what picks one — retry with the full cite.',
+    ],
+    [
+      'VwSlg 64 A/1947',
+      'VwSlg 64 A*',
+      'VwSlg 64/1947',
+      'None of them contradicts the cited number, part letter, or year as VwGH stores it, so compare each against the cite.',
+    ],
+  ])(
+    '"%s" whose fallback page names two decisions is not resolved to either',
+    async (citation, filter, stored, picks) => {
+      const result = await resolveTwice(citation, ZERO, withAnotherDecision(stored));
+      expect(result).toEqual({
+        found: false,
+        kind: 'collection_number',
+        guidance: `${citation} names more than one decision — Sammlungsnummer "${filter}" matched no decision of 1947, and "*64*" decided 1947-01-01 to 1947-12-31 matched VwSlg 64  A/1947 and ${stored}. ${picks} All matches: ${recipe('64', '1947')}.`,
+      });
+    },
+  );
+
+  it('renders a fallback resolution and a two-filter miss on both surfaces', async () => {
+    searchCaseLaw
+      .mockResolvedValueOnce(zeroHits())
+      .mockResolvedValueOnce(page(fallback('1485-1950')));
+    const found = await runToolContract(risLookupCitation, { citation: 'VwSlg 1485 A/1950' });
+    const structured = found.structuredContent as { record: object; resolution_note: string };
+    expect(structured).toMatchObject({ alternatives_count: 2, found: true });
+    expectRecordRendered(contentText(found), structured.record);
+    expect(readCommonMark(contentText(found))).toContain(
+      `⟨strong⟩resolution_note⟨/strong⟩: ${structured.resolution_note}`,
+    );
+
+    searchCaseLaw.mockReset();
+    searchCaseLaw.mockResolvedValue(zeroHits());
+    const missed = await runToolContract(risLookupCitation, { citation: 'VwSlg 99999 A/2010' });
+    const { guidance } = missed.structuredContent as { guidance: string };
+    expect(guidance).toBe(bothMissed('VwSlg 99999 A/2010', 'VwSlg 99999 A*', '99999', '2010'));
+    expect(readCommonMark(contentText(missed))).toBe(
+      `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: collection_number\n\n${guidance}`,
+    );
+  });
+
+  const unavailable = (key: string) =>
+    ` The second search for the other shapes VwGH stores old cites in, Sammlungsnummer "*${key}*" decided 1950-01-01 to 1950-12-31, failed — RIS was unavailable — so retry the same citation shortly.`;
+  const lateFallback = (key: string, year: string) =>
+    ` The second search for the other shapes VwGH stores old cites in, Sammlungsnummer "*${key}*" decided ${year}-01-01 to ${year}-12-31, failed — RIS did not answer in time — so retry the same citation shortly.`;
+
+  it('answers from the first search, the failure disclosed, when RIS fails the fallback', async () => {
+    searchCaseLaw
+      .mockResolvedValueOnce(zeroHits())
+      .mockRejectedValueOnce(serviceUnavailable('RIS returned HTTP 503.'));
+    const zero = await lookup({ citation: 'VwSlg 1485 A/1950' });
+    expect(zero).toEqual({
+      found: false,
+      kind: 'collection_number',
+      guidance: `No decision for VwSlg 1485 A/1950 — Sammlungsnummer "VwSlg 1485 A*" matched nothing.${unavailable('1485')} Keyword fallback: ris_search_case_law court: vwgh with query.`,
+    });
+
+    searchCaseLaw
+      .mockResolvedValueOnce(page('search-vwgh-vwslg-1809.json'))
+      .mockRejectedValueOnce(timeout('RisService.search:Judikatur exceeded its deadline.'));
+    const otherYear = await lookup({ citation: 'VwSlg 1809/50' });
+    expect(otherYear).toEqual({
+      found: false,
+      kind: 'collection_number',
+      guidance: `No decision for VwSlg 1809/50 — Sammlungsnummer "VwSlg 1809 *" matched VwSlg 1809 F/1958, dated another year by both its decision date and its Sammlungsnummer. Verify the year against the cite; if VwSlg 1809 F/1958 is the decision meant, retry with that cite. All matches: ris_search_case_law court: vwgh, collection_number: "VwSlg 1809 *".${lateFallback('1809', '1950')}`,
+    });
+  });
+
+  it('keeps a cancellation during the fallback a cancellation', async () => {
+    const controller = new AbortController();
+    searchCaseLaw.mockResolvedValueOnce(zeroHits()).mockImplementationOnce(() => {
+      controller.abort();
+      return Promise.reject(
+        new McpError(JsonRpcErrorCode.RequestCancelled, 'fetch GET … was aborted.'),
+      );
+    });
+    const err = await captureError(
+      risLookupCitation.handler(
+        risLookupCitation.input.parse({ citation: 'VwSlg 1485 A/1950' }),
+        createMockContext({ errors: risLookupCitation.errors, signal: controller.signal }),
+      ),
+    );
+    expect(err.code).toBe(JsonRpcErrorCode.RequestCancelled);
+  });
+
+  // A failure that would degrade is still the caller's once it cancelled: never a degraded answer.
+  it.each([
+    [
+      'unavailable',
+      () => serviceUnavailable('RIS returned HTTP 503.'),
+      JsonRpcErrorCode.ServiceUnavailable,
+      'upstream_error',
+    ],
+    [
+      'timed out',
+      () => timeout('RisService.search:Judikatur exceeded its deadline.'),
+      JsonRpcErrorCode.Timeout,
+      'upstream_timeout',
+    ],
+  ] as const)(
+    'rethrows a fallback that failed as %s after the caller cancelled',
+    async (_label, failure, code, reason) => {
+      const controller = new AbortController();
+      searchCaseLaw.mockResolvedValueOnce(zeroHits()).mockImplementationOnce(() => {
+        controller.abort();
+        return Promise.reject(failure());
+      });
+      const err = await captureError(
+        risLookupCitation.handler(
+          risLookupCitation.input.parse({ citation: 'VwSlg 1485 A/1950' }),
+          createMockContext({ errors: risLookupCitation.errors, signal: controller.signal }),
+        ),
+      );
+      expect(err.code).toBe(code);
+      expect(err.data).toMatchObject({ reason });
+    },
+  );
+
+  it('rethrows a fallback failure other than unavailable or timed out', async () => {
+    searchCaseLaw
+      .mockResolvedValueOnce(zeroHits())
+      .mockRejectedValueOnce(new McpError(JsonRpcErrorCode.InternalError, 'unexpected reply'));
+    const err = await captureError(lookup({ citation: 'VwSlg 1485 A/1950' }));
+    expect(err.code).toBe(JsonRpcErrorCode.InternalError);
+    expect(err.message).toBe('unexpected reply');
+  });
+
+  it('settles inside the lookup’s one budget when the fallback never answers (#85)', async () => {
+    // The first search answers, empty, 39 s in; the fallback gets the 9 s left, never more.
+    const actual = await vi.importActual<typeof import('@/services/ris/ris-service.js')>(
+      '@/services/ris/ris-service.js',
+    );
+    const realService = new actual.RisService('ris-austria-mcp-server/test');
+    const fetchMock = vi.fn(
+      (_url: unknown, init: { signal?: AbortSignal }) =>
+        new Promise<Response>((resolve, reject) => {
+          const answer = fetchMock.mock.calls.length === 1 ? ZERO : undefined;
+          const timer =
+            answer === undefined
+              ? undefined
+              : setTimeout(() => resolve(new Response(JSON.stringify(fixture(answer)))), 39_000);
+          init.signal?.addEventListener('abort', () => {
+            clearTimeout(timer);
+            reject(init.signal?.reason as Error);
+          });
+        }),
+    );
+    try {
+      vi.stubGlobal('fetch', fetchMock);
+      searchCaseLaw.mockImplementation((params, ctx, budget) =>
+        realService.searchCaseLaw(params, ctx, budget),
+      );
+      vi.useFakeTimers();
+      const t0 = Date.now();
+      let settledAfterMs = Number.NaN;
+      const pending = runToolContract(risLookupCitation, { citation: 'VwSlg 1485 A/1950' }).then(
+        (result) => {
+          settledAfterMs = Date.now() - t0;
+          return result;
+        },
+      );
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await pending;
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(settledAfterMs).toBe(48_000);
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toEqual({
+        found: false,
+        kind: 'collection_number',
+        guidance: `No decision for VwSlg 1485 A/1950 — Sammlungsnummer "VwSlg 1485 A*" matched nothing.${lateFallback('1485', '1950')} Keyword fallback: ris_search_case_law court: vwgh with query.`,
+      });
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('describes the second search on the lookup, citation_formats, and the case-law collection_number field', () => {
+    const collection = RIS_CITATION_FORMATS.find((format) => format.kind === 'collection_number');
+    const field = risSearchCaseLaw.input.shape.collection_number.description ?? '';
+    for (const surface of [risLookupCitation.description, collection?.resolvesVia ?? '', field]) {
+      expect(surface).toContain('"*1485*"');
+      expect(surface).toContain('VwSlg. 1485 A/1950');
+    }
+  });
+});
+
+describe('risLookupCitation — a VwSlg cite whose second search finds it under the other part letter names that row', () => {
+  /*
+   * The fallback pages are the live "*<n>*" captures for the cited year (2026-11-09); the first
+   * search answers zero hits, the case the hint covers. A row naming the cited number and year
+   * under a part letter the cite contradicts is never picked — the A and F series reuse numbers —
+   * but it is the likeliest decision meant, so the miss names it and the cite to retry with, as
+   * the year-mismatch guidance names the cite of another year.
+   */
+  const fallback = (key: string) => `search-vwgh-vwslg-fallback-${key}.json`;
+  const ZERO = 'search-zero-hits.json';
+  const allMatches = (n: string, year: string) =>
+    `All matches: ris_search_case_law court: vwgh, collection_number: "*${n}*", decided_from: "${year}-01-01", decided_to: "${year}-12-31".`;
+  /** The miss for a cite whose second search matched `stored` (rows of the cited number and year). */
+  const otherLetter = (
+    cited: string,
+    filter: string,
+    n: string,
+    year: string,
+    stored: string,
+    retry: string,
+  ) =>
+    `No decision for ${cited} — Sammlungsnummer "${filter}" matched nothing, and "*${n}*" decided ${year}-01-01 to ${year}-12-31 matched ${stored}, ${stored.includes(' and ') ? 'each naming' : 'which names'} the cited number and year under another part letter. Verify the part letter (A administrative, F finance) against the cite; ${retry}. ${allMatches(n, year)}`;
+
+  async function resolveTwice(
+    citation: string,
+    first: string | RisSearchResult,
+    second: string | RisSearchResult,
+  ) {
+    searchCaseLaw
+      .mockResolvedValueOnce(typeof first === 'string' ? page(first) : first)
+      .mockResolvedValueOnce(typeof second === 'string' ? page(second) : second);
+    return await lookup({ citation });
+  }
+
+  /** The live "*17*" page for 1947 plus one row storing `stored`, decided `decided`. */
+  function seventeenWith(stored: string, decided = '1947-03-03'): RisSearchResult {
+    const base = page(fallback('17-1947'));
+    const first = base.hits[0]!;
+    const added = {
+      ...first,
+      documentNumber: 'JWR_1947000999_19470303X01',
+      metadata: {
+        ...first.metadata,
+        collectionNumber: stored,
+        decisionDate: decided,
+      } as RisHit['metadata'],
+    };
+    return { ...base, hits: [...base.hits, added], total: base.total + 1 };
+  }
+
+  it('"VwSlg 17 A/1947" names the stored "VwSlg 0017 F/1947" and the F cite, on both surfaces', async () => {
+    searchCaseLaw
+      .mockResolvedValueOnce(page(ZERO))
+      .mockResolvedValueOnce(page(fallback('17-1947')));
+    const result = await runToolContract(risLookupCitation, { citation: 'VwSlg 17 A/1947' });
+    expect(searchCaseLaw).toHaveBeenCalledTimes(2);
+    const guidance = otherLetter(
+      'VwSlg 17 A/1947',
+      'VwSlg 17 A*',
+      '17',
+      '1947',
+      'VwSlg 0017 F/1947',
+      'if VwSlg 17 F/1947 is the decision meant, retry with that cite',
+    );
+    expect(result.structuredContent).toEqual({ found: false, kind: 'collection_number', guidance });
+    expect(readCommonMark(contentText(result))).toBe(
+      `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: collection_number\n\n${guidance}`,
+    );
+  });
+
+  // [citation, filter sent first, number, year, the fallback page's stored value, the cite to retry with]
+  it.each([
+    // The letter after the slash, and no year: dated by its decision date.
+    [
+      'VwSlg 10414 F/1981',
+      'VwSlg 10414 F*',
+      '10414',
+      '1981',
+      'VwSlg 10414/A',
+      'VwSlg 10414 A/1981',
+    ],
+    // A dotted label; the cite's thousands dot is kept as cited.
+    [
+      'VwSlg 1.485 F/1950',
+      'VwSlg 1485 F*',
+      '1485',
+      '1950',
+      'VwSlg. 1485 A/1950',
+      'VwSlg 1.485 A/1950',
+    ],
+  ])(
+    '"%s" names the row stored under the other letter and the cite carrying it',
+    async (citation, filter, n, year, stored, retry) => {
+      const result = await resolveTwice(citation, ZERO, fallback(`${n}-${year}`));
+      expect(searchCaseLaw).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({
+        found: false,
+        kind: 'collection_number',
+        guidance: otherLetter(
+          citation,
+          filter,
+          n,
+          year,
+          stored,
+          `if ${retry} is the decision meant, retry with that cite`,
+        ),
+      });
+    },
+  );
+
+  it('names each row when two stored values carry the number and year under the other letter', async () => {
+    const result = await resolveTwice('VwSlg 17 A/1947', ZERO, seventeenWith('VwSlg 17 F/1947'));
+    expect(result.guidance).toBe(
+      otherLetter(
+        'VwSlg 17 A/1947',
+        'VwSlg 17 A*',
+        '17',
+        '1947',
+        'VwSlg 0017 F/1947 and VwSlg 17 F/1947',
+        'if VwSlg 17 F/1947 is the decision meant, retry with that cite',
+      ),
+    );
+  });
+
+  it('leaves the retry to the caller when the rows carry two letters the cite contradicts', async () => {
+    const result = await resolveTwice('VwSlg 17 B/1947', ZERO, seventeenWith('VwSlg 17 A/1947'));
+    expect(result.guidance).toBe(
+      otherLetter(
+        'VwSlg 17 B/1947',
+        'VwSlg 17 B*',
+        '17',
+        '1947',
+        'VwSlg 0017 F/1947 and VwSlg 17 A/1947',
+        'retry with the cite of the decision meant',
+      ),
+    );
+  });
+
+  it('keeps the both-filters text when the other-letter row is of another year', async () => {
+    // The 1947 page answers a 1948 window: "VwSlg 0017 F/1947" names neither the letter nor the year.
+    const result = await resolveTwice('VwSlg 17 A/1948', ZERO, fallback('17-1947'));
+    expect(result.guidance).toBe(
+      'No decision for VwSlg 17 A/1948 — Sammlungsnummer "VwSlg 17 A*" matched nothing, and "*17*" decided 1948-01-01 to 1948-12-31, which finds the number in any shape VwGH stores it, matched no row naming that cite. Verify the number, the part letter (A administrative, F finance), and the year against the cite. Keyword fallback: ris_search_case_law court: vwgh with query.',
+    );
+  });
+
+  /** A first page holding only "VwSlg 17 A/1950", the cited letter in another year. */
+  function seventeenA1950(): RisSearchResult {
+    const base = page(fallback('17-1947'));
+    const row = base.hits[2]!;
+    return {
+      ...base,
+      hits: [
+        {
+          ...row,
+          metadata: {
+            ...row.metadata,
+            collectionNumber: 'VwSlg 17 A/1950',
+            decisionDate: '1950-05-05',
+          } as RisHit['metadata'],
+        },
+      ],
+      total: 1,
+    };
+  }
+  const YEAR_MISMATCH_17 =
+    'No decision for VwSlg 17 A/1947 — Sammlungsnummer "VwSlg 17 A*" matched VwSlg 17 A/1950, dated another year by both its decision date and its Sammlungsnummer. Verify the year against the cite; if VwSlg 17 A/1950 is the decision meant, retry with that cite. All matches: ris_search_case_law court: vwgh, collection_number: "VwSlg 17 A*".';
+
+  it('keeps the year-mismatch text byte-identical when the fallback holds no other-letter row', async () => {
+    // The live "*17*" page for 1947 without its "VwSlg 0017 F/1947" row: the "VwSlg 170 A/1947" bleed.
+    const base = page(fallback('17-1947'));
+    const bleed = base.hits.filter(
+      (hit) =>
+        hit.metadata.controller === 'Judikatur' &&
+        hit.metadata.collectionNumber === 'VwSlg 170 A/1947',
+    );
+    expect(bleed).toHaveLength(2);
+    const result = await resolveTwice('VwSlg 17 A/1947', seventeenA1950(), {
+      ...base,
+      hits: bleed,
+      total: 2,
+    });
+    expect(searchCaseLaw).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      found: false,
+      kind: 'collection_number',
+      guidance: YEAR_MISMATCH_17,
+    });
+  });
+
+  it('"VwSlg 544 A/1952" adds the "VwSlg 544 /F1952" row to the year-mismatch text, on both surfaces', async () => {
+    // Both pages live: "VwSlg 544 A*" holds VwSlg 544 A/1948, "*544*" in 1952 VwSlg 544 /F1952.
+    searchCaseLaw
+      .mockResolvedValueOnce(page('search-vwgh-vwslg-544-a.json'))
+      .mockResolvedValueOnce(page(fallback('544-1952')));
+    const result = await runToolContract(risLookupCitation, { citation: 'VwSlg 544 A/1952' });
+    expect(searchCaseLaw).toHaveBeenCalledTimes(2);
+    const guidance =
+      'No decision for VwSlg 544 A/1952 — Sammlungsnummer "VwSlg 544 A*" matched VwSlg 544 A/1948, dated another year by both its decision date and its Sammlungsnummer. Verify the year against the cite; if VwSlg 544 A/1948 is the decision meant, retry with that cite. All matches: ris_search_case_law court: vwgh, collection_number: "VwSlg 544 A*". The second search also matched VwSlg 544 /F1952, the cited number and year under another part letter — if VwSlg 544 F/1952 is the decision meant, retry with that cite.';
+    expect(result.structuredContent).toEqual({
+      found: false,
+      kind: 'collection_number',
+      guidance,
+    });
+    expect(readCommonMark(contentText(result))).toBe(
+      `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: collection_number\n\n${guidance}`,
+    );
+  });
+
+  it('names each other-letter row after the year-mismatch text', async () => {
+    const result = await resolveTwice(
+      'VwSlg 17 A/1947',
+      seventeenA1950(),
+      seventeenWith('VwSlg 17 F/1947'),
+    );
+    expect(result.guidance).toBe(
+      `${YEAR_MISMATCH_17} The second search also matched VwSlg 0017 F/1947 and VwSlg 17 F/1947, each the cited number and year under another part letter — if VwSlg 17 F/1947 is the decision meant, retry with that cite.`,
+    );
+  });
+
+  it('still resolves a row that names the cited letter beside one under the other', async () => {
+    const result = await resolveTwice('VwSlg 17 A/1947', ZERO, seventeenWith('VwSlg 17 A/1947'));
+    expect(result.found).toBe(true);
+    expect(documentNumberOf(result)).toBe('JWR_1947000999_19470303X01');
+  });
+
+  it('states the other-letter miss on the lookup and citation_formats', () => {
+    const collection = RIS_CITATION_FORMATS.find((format) => format.kind === 'collection_number');
+    for (const surface of [risLookupCitation.description, collection?.resolvesVia ?? '']) {
+      expect(surface).toContain('another part letter');
+    }
+  });
+});
+
+describe('risLookupCitation — the stored Sammlungsnummer reading stays linear in its length (#99)', () => {
+  /**
+   * Resolve "VwSlg 17 F/1947" against first and fallback pages whose one hit stores
+   * `build(size)`, at each doubling size across a 64× span: every size stays under 250 ms of CPU
+   * and the largest under 256× the smallest, ending the same way as the smallest.
+   */
+  async function expectLinearStoredReading(build: (size: number) => string, from = 5_000) {
+    const base = page('search-vwgh-vwslg-fallback-17-1947.json');
+    const at = (size: number) => ({
+      ...base,
+      hits: base.hits.slice(0, 1).map((hit) => ({
+        ...hit,
+        metadata: { ...hit.metadata, collectionNumber: build(size) } as RisHit['metadata'],
+      })),
+      total: 1,
+    });
+    const run = async (size: number) => {
+      searchCaseLaw.mockReset();
+      searchCaseLaw.mockResolvedValue(at(size));
+      const { found, kind } = await lookup({ citation: 'VwSlg 17 F/1947' });
+      return { found, kind, requests: searchCaseLaw.mock.calls.length };
+    };
+    const time = async (size: number) => {
+      searchCaseLaw.mockReset();
+      searchCaseLaw.mockResolvedValue(at(size));
+      return await cpuMicros({ citation: 'VwSlg 17 F/1947' });
+    };
+    const expected = await run(from);
+    await time(from); // warm-up
+    const timings: number[] = [];
+    for (let size = from; size <= from * 64; size *= 2) {
+      expect(await run(size), `${size} chars`).toStrictEqual(expected);
+      const micros = Math.min(await time(size), await time(size));
+      expect(micros, `${size} chars`).toBeLessThan(250_000);
+      timings.push(Math.max(micros, 1));
+    }
+    expect(timings.at(-1)! / timings[0]!).toBeLessThan(256);
+  }
+
+  it.each([
+    ['a whitespace run after the label', (n: number) => `VwSlg${' '.repeat(n)}x`],
+    ['a whitespace run after the number', (n: number) => `VwSlg 17${' '.repeat(n)}x`],
+    ['a whitespace run before the slash', (n: number) => `VwSlg 17 F${' '.repeat(n)}/x`],
+    ['a slash run', (n: number) => `VwSlg 17 F${' /'.repeat(Math.floor(n / 2))}`],
+    ['a dot run inside the number', (n: number) => `VwSlg 1${'.'.repeat(n)}x`],
+    ['one long line ending in a break', (n: number) => `${'§1 x'.repeat(Math.floor(n / 4))}\ny`],
+    ['breaks throughout', (n: number) => `VwSlg 17${'  \r\n'.repeat(Math.floor(n / 4))}F/1947`],
+  ])('%s', async (_shape, build) => {
+    await expectLinearStoredReading(build, 1_250);
+  });
+
+  it('a run of leading zeros, across the full 5k–320k span', async () => {
+    await expectLinearStoredReading((n) => `VwSlg ${'0'.repeat(n)}17 F/1947`);
   });
 });
 
@@ -2641,6 +4107,45 @@ describe('risLookupCitation — a gazette cite picks the hit from its own series
   });
 });
 
+describe('risLookupCitation — the "Reichs-Gesetz-Blatt" spelling reads as the RGBl.', () => {
+  /*
+   * search-bgblalt-33-1868.json is BgblAlt `Gesetzblattnummer=33/1868` (2026-11-09): one entry,
+   * rgb1868_0033_00067, its Kundmachungsorgan "Reichs-Gesetz-Blatt für das Kaiserthum Österreich".
+   */
+  const RGB_1868 = 'search-bgblalt-33-1868.json';
+
+  it('resolves "RGBl. Nr. 33/1868" to that entry, of its own series', async () => {
+    const result = await resolveAgainst(searchGazette, RGB_1868, { citation: 'RGBl. Nr. 33/1868' });
+    expect(searchGazette.mock.calls[0]?.[0]).toEqual({ application: 'BgblAlt', number: '33/1868' });
+    expect(documentNumberOf(result)).toBe('rgb1868_0033_00067');
+    expect(result.resolution_note).toBe(
+      'Resolved via ris_search_gazette (BgblAlt) — number "33/1868".',
+    );
+  });
+
+  it('never resolves a StGBl. cite to it — the entry names its own gazette', async () => {
+    const result = await resolveAgainst(searchGazette, RGB_1868, {
+      citation: 'StGBl. Nr. 33/1868',
+    });
+    expect(result).toEqual({
+      found: false,
+      kind: 'gazette',
+      guidance:
+        'No StGBl. entry for 33/1868 in BgblAlt — number "33/1868" matched only RGBl. Nr. 33/1868, an entry in another gazette series that shares its numbering. Verify the series against the cite; if RGBl. Nr. 33/1868 is the entry meant, retry with that citation. All matches: ris_search_gazette number: "33/1868".',
+    });
+  });
+
+  it('resolves the ABGB-era promulgation string by its RGBl. cite, naming the StGBl. change', async () => {
+    const result = await resolveAgainst(searchGazette, RGB_1868, {
+      citation: 'RGBl. Nr. 33/1868 zuletzt geändert durch StGBl. Nr. 47/1945',
+    });
+    expect(documentNumberOf(result)).toBe('rgb1868_0033_00067');
+    expect(result.resolution_note).toBe(
+      'Resolved via ris_search_gazette (BgblAlt) — number "33/1868". The entry also cites StGBl. Nr. 47/1945 (zuletzt geändert durch) — look it up as its own citation.',
+    );
+  });
+});
+
 /** Thread CPU time of one resolution of `input`, in microseconds. */
 async function cpuMicros(input: Record<string, unknown>): Promise<number> {
   const ctx = createMockContext({ errors: risLookupCitation.errors });
@@ -2716,6 +4221,739 @@ describe('risLookupCitation — ranking stays linear in the citation length (#48
   it('a digit run before a cited year, across the full 5k–320k span', async () => {
     searchLegislation.mockResolvedValue(page('search-brkons-alvg-1977.json'));
     await expectLinearResolution((n) => `A${'1'.repeat(n)} 1977 §1`, {});
+  });
+});
+
+/**
+ * Assert `content[]` reads back the result `structuredContent` carries: found and kind, then the
+ * resolution note and the record block on a hit, or the whole guidance on a miss.
+ */
+function expectSameOnBothSurfaces(result: ToolResult): void {
+  const structured = result.structuredContent as {
+    found: boolean;
+    guidance?: string;
+    kind: string;
+    record?: Record<string, unknown>;
+    resolution_note?: string;
+  };
+  const text = contentText(result);
+  const head = `⟨strong⟩found⟨/strong⟩: ${structured.found}\n⟨strong⟩kind⟨/strong⟩: ${structured.kind}`;
+  if (structured.record === undefined) {
+    expect(readCommonMark(text)).toBe(`${head}\n\n${structured.guidance}`);
+    return;
+  }
+  expect(readCommonMark(text)).toContain(
+    `${head}\n⟨strong⟩resolution_note⟨/strong⟩: ${structured.resolution_note}\n\n${RECORD_HEADING}`,
+  );
+  expectRecordRendered(text, structured.record);
+}
+
+describe('risLookupCitation — an RIS ELI is read before any cite parsing (#110)', () => {
+  it.each([
+    [
+      'https://www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR12029618',
+      'BrKons',
+      'NOR12029618',
+      'search-brkons-nor12029618.json',
+    ],
+    [
+      'https://ris.bka.gv.at/eli/bgbl/i/1999/165/A2P4/NOR40212006',
+      'BrKons',
+      'NOR40212006',
+      'search-brkons-nor40212006.json',
+    ],
+    [
+      'https://www.ris.bka.gv.at/eli/jgs/1811/946/P1/NOR12017691',
+      'BrKons',
+      'NOR12017691',
+      'search-brkons-nor12017691.json',
+    ],
+    // No longer in force: RIS finds it only when no in-force date is sent.
+    [
+      'https://ris.bka.gv.at/eli/bgbl/1978/565/A2P4/NOR12009176',
+      'BrKons',
+      'NOR12009176',
+      'search-brkons-nor12009176.json',
+    ],
+    [
+      'https://ogd.ris.bka.gv.at/eli/lgbl/NI/2018/13/P0/LNO40026933',
+      'LrKons',
+      'LNO40026933',
+      'search-lrkons-lno40026933.json',
+    ],
+    // Niederösterreich's Gliederungszahl layout names no gazette number at all.
+    [
+      'https://ris.bka.gv.at/eli/lgbl/NI/0824/A13/LNO40086080',
+      'LrKons',
+      'LNO40086080',
+      'search-lrkons-lno40086080.json',
+    ],
+    // Nothing is fetched from the link, so plain http reads like https.
+    [
+      'http://www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR12029618',
+      'BrKons',
+      'NOR12029618',
+      'search-brkons-nor12029618.json',
+    ],
+  ] as const)(
+    'resolves %s as a norm through one search for its document number, with no in-force date or state',
+    async (citation, application, documentNumber, fixtureName) => {
+      searchLegislation.mockResolvedValue(page(fixtureName));
+      const result = await runToolContract(risLookupCitation, { citation });
+
+      expect(result.isError).not.toBe(true);
+      expect(searchLegislation.mock.calls.map(([params]) => params)).toEqual([
+        { application, pageSize: 100, query: documentNumber },
+      ]);
+      expect(searchGazette).not.toHaveBeenCalled();
+      expect(searchCaseLaw).not.toHaveBeenCalled();
+      const record = toLegislationRecord(page(fixtureName).hits[0]!, application);
+      expect(record.document_number).toBe(documentNumber);
+      expect(result.structuredContent).toEqual({
+        found: true,
+        kind: 'norm',
+        record,
+        resolution_note: `Resolved via ris_search_legislation (${application}) — query "${documentNumber}", the document number the ELI ends in, across every version.`,
+      });
+      expectSameOnBothSurfaces(result);
+    },
+  );
+
+  it.each([
+    [
+      'https://ogd.ris.bka.gv.at/eli/lgbl/SA/2026/103/20261104',
+      { application: 'LgblAuth', number: '103/2026', state: 'salzburg' },
+      'LGBLA_SA_20261104_103',
+      'search-lgblauth-103-2026-salzburg.json',
+      'number "103/2026", scope: salzburg',
+    ],
+    [
+      'https://www.ris.bka.gv.at/eli/bgbl/II/2026/317/20261103',
+      { application: 'BgblAuth', number: '317/2026', part: 'part2' },
+      'BGBLA_2026_II_317',
+      'search-bgblauth-317-2026-part2.json',
+      'number "317/2026", part 2',
+    ],
+    // Older state ELIs write the state code in lowercase.
+    [
+      'https://ogd.ris.bka.gv.at/eli/lgbl/ka/2014/10/20140228',
+      { application: 'LgblAuth', number: '10/2014', state: 'kaernten' },
+      'LGBLA_KA_20140228_10',
+      'search-lgblauth-10-2014-kaernten.json',
+      'number "10/2014", scope: kaernten',
+    ],
+    [
+      'http://ogd.ris.bka.gv.at/eli/lgbl/SA/2026/103/20261104',
+      { application: 'LgblAuth', number: '103/2026', state: 'salzburg' },
+      'LGBLA_SA_20261104_103',
+      'search-lgblauth-103-2026-salzburg.json',
+      'number "103/2026", scope: salzburg',
+    ],
+    [
+      'http://www.ris.bka.gv.at/eli/bgbl/II/2026/317/20261103',
+      { application: 'BgblAuth', number: '317/2026', part: 'part2' },
+      'BGBLA_2026_II_317',
+      'search-bgblauth-317-2026-part2.json',
+      'number "317/2026", part 2',
+    ],
+  ] as const)(
+    'resolves %s as a gazette through the gazette search for its number and part or state',
+    async (citation, params, documentNumber, fixtureName, filters) => {
+      searchGazette.mockResolvedValue(page(fixtureName));
+      const result = await runToolContract(risLookupCitation, { citation });
+
+      expect(result.isError).not.toBe(true);
+      expect(searchGazette.mock.calls.map(([sent]) => sent)).toEqual([
+        { ...params, pageSize: 100 },
+      ]);
+      expect(searchLegislation).not.toHaveBeenCalled();
+      const record = toGazetteRecord(page(fixtureName).hits[0]!, params.application);
+      expect(record.document_number).toBe(documentNumber);
+      expect(result.structuredContent).toEqual({
+        found: true,
+        kind: 'gazette',
+        record,
+        resolution_note: `Resolved via ris_search_gazette (${params.application}) — ${filters}, from the ELI, which names entry ${documentNumber}.`,
+      });
+      expectSameOnBothSurfaces(result);
+    },
+  );
+
+  it.each([
+    [
+      'a federal provision of a dRGBl. law',
+      'https://www.ris.bka.gv.at/eli/drgbl/1897/219/P1/NOR40069773',
+      'search-brkons-ugb-section-1.json',
+      'NOR40069773',
+    ],
+    [
+      'a state provision',
+      'https://ris.bka.gv.at/eli/lgbl/SA/2008/52/P1/LSB40028116',
+      'search-lrkons-abkuerzung.json',
+      'LSB40028116',
+    ],
+    [
+      'a federal gazette entry',
+      'https://www.ris.bka.gv.at/eli/bgbl/II/2025/50/20250324',
+      'search-bgblauth-50-2025.json',
+      'BGBLA_2025_II_50',
+    ],
+  ])(
+    'resolves %s to the hit carrying the ELI’s document number, not the first hit',
+    async (_layout, citation, fixtureName, documentNumber) => {
+      const hits = page(fixtureName).hits;
+      expect(hits.findIndex((hit) => hit.documentNumber === documentNumber)).toBeGreaterThan(0);
+      searchLegislation.mockResolvedValue(page(fixtureName));
+      searchGazette.mockResolvedValue(page(fixtureName));
+      const result = await runToolContract(risLookupCitation, { citation });
+
+      expect(result.structuredContent).toMatchObject({
+        found: true,
+        record: { document_number: documentNumber },
+      });
+      expect(result.structuredContent).not.toHaveProperty('alternatives_count');
+      expectSameOnBothSurfaces(result);
+    },
+  );
+
+  it('returns found:false, kind:"norm" when no hit carries the document number the ELI ends in', async () => {
+    searchLegislation.mockResolvedValueOnce(zeroHits());
+    const missing = await runToolContract(risLookupCitation, {
+      citation: 'https://www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR99999999',
+    });
+    // A page holding another provision is a miss too, never that provision.
+    searchLegislation.mockResolvedValueOnce(page('search-brkons-nor12029618.json'));
+    const other = await runToolContract(risLookupCitation, {
+      citation: 'https://www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR12029619',
+    });
+
+    expect(searchLegislation.mock.calls.map(([params]) => params)).toEqual([
+      { application: 'BrKons', pageSize: 100, query: 'NOR99999999' },
+      { application: 'BrKons', pageSize: 100, query: 'NOR12029619' },
+    ]);
+    for (const [result, documentNumber] of [
+      [missing, 'NOR99999999'],
+      [other, 'NOR12029619'],
+    ] as const) {
+      expect(result.structuredContent).toEqual({
+        found: false,
+        kind: 'norm',
+        guidance: `No consolidated provision in BrKons carries document number "${documentNumber}", the one the ELI ends in — a search for it across every version found none. Verify the ELI against the eli of a ris_search_legislation record, or resolve the provision by its cite ('§ 6 DSG').`,
+      });
+      expectSameOnBothSurfaces(result);
+    }
+  });
+
+  it('returns found:false, kind:"gazette" when no entry carries the document number the ELI names', async () => {
+    // The date is part of a state entry's document number, so another date names no entry here.
+    searchGazette.mockResolvedValueOnce(page('search-lgblauth-103-2026-salzburg.json'));
+    const state = await runToolContract(risLookupCitation, {
+      citation: 'https://ogd.ris.bka.gv.at/eli/lgbl/SA/2026/103/20260101',
+    });
+    searchGazette.mockResolvedValueOnce(zeroHits());
+    const federal = await runToolContract(risLookupCitation, {
+      citation: 'https://www.ris.bka.gv.at/eli/bgbl/III/2026/999/20261103',
+    });
+
+    expect(state.structuredContent).toEqual({
+      found: false,
+      kind: 'gazette',
+      guidance:
+        'No entry in LgblAuth for number "103/2026", scope: salzburg carries document number "LGBLA_SA_20260101_103", the one the ELI names. Verify the ELI against the eli or document_url of a ris_search_gazette record; list the entries for that number with ris_search_gazette number: "103/2026", scope: salzburg.',
+    });
+    expect(federal.structuredContent).toEqual({
+      found: false,
+      kind: 'gazette',
+      guidance:
+        'No entry in BgblAuth for number "999/2026", part 3 carries document number "BGBLA_2026_III_999", the one the ELI names. Verify the ELI against the eli or document_url of a ris_search_gazette record; list the entries for that number with ris_search_gazette number: "999/2026", part: part3.',
+    });
+    expectSameOnBothSurfaces(state);
+    expectSameOnBothSurfaces(federal);
+  });
+
+  // A refused path that spells no gazette cite (a part the BGBl. never had, a provision's path
+  // without or after its document number) is answered with the reader's reason.
+  it.each([
+    [
+      'https://www.ris.bka.gv.at/eli/bgbl/IV/2026/317/20261103',
+      '/eli/bgbl/{I|II|III}/{year}/{number}/{yyyymmdd}',
+    ],
+    ['https://www.ris.bka.gv.at/eli/bgbl/1974/60/P75', "a consolidated provision's ELI"],
+    [
+      'https://www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR12029618/',
+      "a consolidated provision's ELI",
+    ],
+    // A segment mixing letters and digits names a provision, not the work, with a part or without.
+    ['https://www.ris.bka.gv.at/eli/bgbl/1974/60/A2P4', "a consolidated provision's ELI"],
+    ['https://www.ris.bka.gv.at/eli/bgbl/1974/60/19740129/de1', "a consolidated provision's ELI"],
+    ['https://www.ris.bka.gv.at/eli/rgbl/1868/33/P1', "a consolidated provision's ELI"],
+    ['https://www.ris.bka.gv.at/eli/bgbl/i/1999/165/A2P4', "a consolidated provision's ELI"],
+    [
+      'https://www.ris.bka.gv.at/eli/bgbl/i/1999/165/A2P4/NOR40212006/',
+      "a consolidated provision's ELI",
+    ],
+    ['https://ris.bka.gv.at/eli/lgbl/SA/2008/52/P1', "a consolidated provision's ELI"],
+    ['https://ris.bka.gv.at:8443/eli/bgbl/1974/60/P75/NOR12029618', 'default port'],
+  ])(
+    'returns found:false, kind:"unknown" for %s with the reader’s reason, searching nothing',
+    async (citation, named) => {
+      const read = readDocumentLink(citation);
+      if (read === null || !('error' in read)) throw new Error('expected the reader to refuse it');
+      const result = await runToolContract(risLookupCitation, { citation });
+
+      expect(result.structuredContent).toEqual({
+        found: false,
+        kind: 'unknown',
+        guidance: `Could not read the ELI link — ${read.error} Nothing was searched. Pass the eli of a ris_search_legislation or ris_search_gazette record, or cite the document as a provision ('§ 6 DSG') or a gazette number ('BGBl. I Nr. 165/1999').`,
+      });
+      expect(read.error).toContain(named);
+      expect(searchLegislation).not.toHaveBeenCalled();
+      expect(searchGazette).not.toHaveBeenCalled();
+      expect(searchCaseLaw).not.toHaveBeenCalled();
+      expectSameOnBothSurfaces(result);
+    },
+  );
+
+  /*
+   * 0.6.1 classified every ELI as the cite its path spells. A path the reader refuses that spells
+   * a gazette cite — series, part or state, year, number — still is, so the answer 0.6.1 gave
+   * stands: the gazette route's own request (no part read from "/bgbl/II/") and its own note.
+   */
+  it.each([
+    ['without its date', 'https://ogd.ris.bka.gv.at/eli/bgbl/II/2026/317'],
+    ['without its date or scheme', 'www.ris.bka.gv.at/eli/bgbl/II/2026/317'],
+    ['without its date, over http', 'http://www.ris.bka.gv.at/eli/bgbl/II/2026/317'],
+    ['with a trailing slash', 'https://www.ris.bka.gv.at/eli/bgbl/II/2026/317/20261103/'],
+    [
+      'with language and format segments',
+      'https://www.ris.bka.gv.at/eli/bgbl/II/2026/317/20261103/de/html',
+    ],
+    ['with a seven-digit date', 'https://www.ris.bka.gv.at/eli/bgbl/II/2026/317/2026110'],
+    [
+      'on a port other than the default',
+      'https://ris.bka.gv.at:8443/eli/bgbl/II/2026/317/20261103',
+    ],
+  ])('classifies a federal gazette ELI %s as the cite its path spells', async (_form, citation) => {
+    const link = citation.includes('://') ? citation : `https://${citation}`;
+    expect(readDocumentLink(link)).toHaveProperty('error');
+    searchGazette.mockResolvedValue(page('search-bgblauth-317-2026-part2.json'));
+    const result = await runToolContract(risLookupCitation, { citation });
+
+    expect(searchGazette.mock.calls.map(([sent]) => sent)).toEqual([
+      { application: 'BgblAuth', number: '317/2026' },
+    ]);
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(result.structuredContent).toEqual({
+      found: true,
+      kind: 'gazette',
+      record: toGazetteRecord(page('search-bgblauth-317-2026-part2.json').hits[0]!, 'BgblAuth'),
+      resolution_note: 'Resolved via ris_search_gazette (BgblAuth) — number "317/2026".',
+    });
+    expect(result.structuredContent).toMatchObject({
+      record: { document_number: 'BGBLA_2026_II_317' },
+    });
+    expectSameOnBothSurfaces(result);
+  });
+
+  it.each([
+    [
+      'https://ogd.ris.bka.gv.at/eli/lgbl/SA/2026/103',
+      'salzburg',
+      '103/2026',
+      'search-lgblauth-103-2026-salzburg.json',
+      'LGBLA_SA_20261104_103',
+    ],
+    [
+      'https://ogd.ris.bka.gv.at/eli/lgbl/ka/2014/10/20140228/',
+      'kaernten',
+      '10/2014',
+      'search-lgblauth-10-2014-kaernten.json',
+      'LGBLA_KA_20140228_10',
+    ],
+  ] as const)(
+    'classifies the state gazette ELI %s as its cite, searched in the hinted state',
+    async (citation, state, number, fixtureName, documentNumber) => {
+      expect(readDocumentLink(citation)).toHaveProperty('error');
+      searchGazette.mockResolvedValue(page(fixtureName));
+      const result = await runToolContract(risLookupCitation, { citation, state });
+
+      expect(searchGazette.mock.calls.map(([sent]) => sent)).toEqual([
+        { application: 'LgblAuth', number, state },
+      ]);
+      expect(result.structuredContent).toMatchObject({
+        found: true,
+        kind: 'gazette',
+        record: { document_number: documentNumber },
+        resolution_note: `Resolved via ris_search_gazette (LgblAuth) — number "${number}", scope: ${state}.`,
+      });
+      expectSameOnBothSurfaces(result);
+    },
+  );
+
+  it('asks for the state of a refused state gazette ELI given without a hint, as a cite would', async () => {
+    const result = await runToolContract(risLookupCitation, {
+      citation: 'https://ogd.ris.bka.gv.at/eli/lgbl/SA/2026/103',
+    });
+
+    expect(result.structuredContent).toEqual({
+      found: false,
+      kind: 'gazette',
+      guidance:
+        'Cannot resolve LGBl. Nr. 103/2026 without a state — each of the nine Bundesländer keeps its own Landesgesetzblatt, so nothing was searched. Set state to the issuing Bundesland and retry; codes: ris_list_reference topic states.',
+    });
+    expect(searchGazette).not.toHaveBeenCalled();
+    expectSameOnBothSurfaces(result);
+  });
+
+  it('classifies the work-level ELI /eli/bgbl/i/1999/165 as BGBl. Nr. 165/1999, as before', async () => {
+    searchGazette.mockResolvedValue(page('search-bgblpdf-165-1999-part1.json'));
+    const result = await runToolContract(risLookupCitation, {
+      citation: 'https://www.ris.bka.gv.at/eli/bgbl/i/1999/165',
+    });
+
+    // "bgbl/i" carries no part the cite reader reads, so the number is searched across parts.
+    expect(searchGazette.mock.calls.map(([sent]) => sent)).toEqual([
+      { application: 'BgblPdf', number: '165/1999' },
+    ]);
+    expect(result.structuredContent).toMatchObject({
+      found: true,
+      kind: 'gazette',
+      record: { document_number: '1999_165_1' },
+      resolution_note: 'Resolved via ris_search_gazette (BgblPdf) — number "165/1999".',
+    });
+    expectSameOnBothSurfaces(result);
+  });
+
+  /*
+   * A federal ELI before 1997 names no part ("/eli/bgbl/1974/60", the StGB's gazette), nor does
+   * one in an older series. 0.6.1 classified it as the cite its path spells, so the work itself —
+   * the bare path, or one followed only by date, language, or format segments — still is.
+   */
+  it.each([
+    'https://www.ris.bka.gv.at/eli/bgbl/1974/60',
+    'https://www.ris.bka.gv.at/eli/bgbl/1974/60/',
+    'https://www.ris.bka.gv.at/eli/bgbl/1974/60/de',
+    'https://www.ris.bka.gv.at/eli/bgbl/1974/60/19740129',
+    'https://www.ris.bka.gv.at/eli/bgbl/1974/60/19740129/de/html/',
+    'www.ris.bka.gv.at/eli/bgbl/1974/60',
+    'http://ris.bka.gv.at/eli/bgbl/1974/60',
+    'https://ris.bka.gv.at:8443/eli/bgbl/1974/60',
+  ])(
+    'searches %s, a gazette ELI without a part, as the cite BGBl. Nr. 60/1974',
+    async (citation) => {
+      const link = citation.includes('://') ? citation : `https://${citation}`;
+      expect(readDocumentLink(link)).toHaveProperty('error');
+      searchGazette.mockResolvedValue(zeroHits());
+      const asCite = await lookup({ citation: 'BGBl. Nr. 60/1974' });
+      const result = await runToolContract(risLookupCitation, { citation });
+
+      expect(searchGazette.mock.calls.map(([sent]) => sent)).toEqual([
+        { application: 'BgblPdf', number: '60/1974' },
+        { application: 'BgblPdf', number: '60/1974' },
+      ]);
+      expect(searchLegislation).not.toHaveBeenCalled();
+      expect(result.structuredContent).toEqual(asCite);
+      expect(result.structuredContent).toMatchObject({ found: false, kind: 'gazette' });
+      expectSameOnBothSurfaces(result);
+    },
+  );
+
+  it.each([
+    [
+      'https://www.ris.bka.gv.at/eli/bgbl/1961/194/19610628/',
+      undefined,
+      'BGBl. Nr. 194/1961',
+      { application: 'BgblPdf', number: '194/1961' },
+      'search-bgblpdf-194-1961.json',
+      '1961_194_0',
+    ],
+    [
+      'https://www.ris.bka.gv.at/eli/rgbl/1868/33',
+      undefined,
+      'RGBl. Nr. 33/1868',
+      { application: 'BgblAlt', number: '33/1868' },
+      'search-bgblalt-33-1868.json',
+      'rgb1868_0033_00067',
+    ],
+    // The 1945 StGBl. shares its numbers with the BGBl.; the path's series picks the entry.
+    [
+      'https://www.ris.bka.gv.at/eli/stgbl/1945/1/de',
+      undefined,
+      'StGBl. Nr. 1/1945',
+      { application: 'BgblPdf', number: '1/1945' },
+      'search-bgblpdf-1-1945.json',
+      '1945_1_0',
+    ],
+    [
+      'https://www.ris.bka.gv.at/eli/stgbl/1920/1',
+      undefined,
+      'StGBl. Nr. 1/1920',
+      { application: 'BgblAlt', number: '1/1920' },
+      'search-bgblalt-1-1920.json',
+      'sgb1920_0001_00001',
+    ],
+    [
+      'https://www.ris.bka.gv.at/eli/gbloe/1938/1',
+      undefined,
+      'GBlÖ Nr. 1/1938',
+      { application: 'BgblAlt', number: '1/1938' },
+      'search-bgblalt-1-1938.json',
+      'glo1938_0001_00001',
+    ],
+    [
+      'https://ogd.ris.bka.gv.at/eli/lgbl/2014/10',
+      'kaernten',
+      'LGBl. Nr. 10/2014',
+      { application: 'LgblAuth', number: '10/2014', state: 'kaernten' },
+      'search-lgblauth-10-2014-kaernten.json',
+      'LGBLA_KA_20140228_10',
+    ],
+  ] as const)(
+    'resolves %s, a gazette ELI without a part or state, as its cite does',
+    async (citation, state, cite, params, fixtureName, documentNumber) => {
+      expect(readDocumentLink(citation)).toHaveProperty('error');
+      searchGazette.mockResolvedValue(page(fixtureName));
+      const asCite = await lookup({ citation: cite, state });
+      const result = await runToolContract(risLookupCitation, { citation, state });
+
+      expect(searchGazette.mock.calls.map(([sent]) => sent)).toEqual([params, params]);
+      expect(result.structuredContent).toEqual(asCite);
+      expect(result.structuredContent).toMatchObject({
+        found: true,
+        kind: 'gazette',
+        record: { document_number: documentNumber },
+      });
+      expectSameOnBothSurfaces(result);
+    },
+  );
+
+  it('sends neither in_force_as_of nor state with a consolidated ELI, and says so', async () => {
+    searchLegislation.mockResolvedValue(page('search-brkons-nor12009176.json'));
+    const result = await runToolContract(risLookupCitation, {
+      citation: 'https://ris.bka.gv.at/eli/bgbl/1978/565/A2P4/NOR12009176',
+      in_force_as_of: '2026-11-09',
+      state: 'wien',
+    });
+
+    expect(searchLegislation.mock.calls.map(([params]) => params)).toEqual([
+      { application: 'BrKons', pageSize: 100, query: 'NOR12009176' },
+    ]);
+    expect(result.structuredContent).toMatchObject({
+      found: true,
+      kind: 'norm',
+      record: { document_number: 'NOR12009176' },
+      resolution_note:
+        'Resolved via ris_search_legislation (BrKons) — query "NOR12009176", the document number the ELI ends in, across every version. in_force_as_of and state do not apply to an ELI, which names one version of one provision.',
+    });
+    expectSameOnBothSurfaces(result);
+  });
+
+  it.each([
+    ['consolidated', 'https://www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR12029618'],
+    ['gazette', 'https://www.ris.bka.gv.at/eli/bgbl/II/2026/317/20261103'],
+  ])('maps an upstream failure on the %s ELI search to upstream_error', async (_kind, citation) => {
+    const failure = serviceUnavailable('RIS returned an HTML error page.', {});
+    searchLegislation.mockRejectedValue(failure);
+    searchGazette.mockRejectedValue(failure);
+    const error = await contractError(risLookupCitation, { citation });
+    expect(error.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect(error.data).toMatchObject({ reason: 'upstream_error' });
+  });
+
+  it('parses an ELI as a citation under a forced kind, as before', async () => {
+    searchGazette.mockResolvedValue(zeroHits());
+    const result = await runToolContract(risLookupCitation, {
+      citation: 'https://www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR12029618',
+      kind: 'gazette',
+    });
+
+    // Read as an ELI, it would be one legislation search for NOR12029618.
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(searchGazette).toHaveBeenCalledTimes(1);
+    expect(result.structuredContent).toMatchObject({ found: false, kind: 'gazette' });
+  });
+
+  it.each([
+    ['an ELI on another host', 'http://data.europa.eu/eli/reg/2016/679/oj'],
+    [
+      'a Dokument.wxe web view',
+      'https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Bundesnormen&Dokumentnummer=NOR40262691',
+    ],
+    // Not an ELI, so the gate never reads it: no ELI-link guidance for a view the reader refuses.
+    [
+      'a Dokument.wxe web view the reader refuses',
+      'https://www.ris.bka.gv.at/Dokument.wxe?Abfrage=Foo&Dokumentnummer=NOR40262691',
+    ],
+  ])('leaves %s to classification, as before', async (_link, citation) => {
+    const result = await runToolContract(risLookupCitation, { citation });
+    expect(result.structuredContent).toEqual({
+      found: false,
+      kind: 'unknown',
+      guidance: UNCLASSIFIED(citation),
+    });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(searchGazette).not.toHaveBeenCalled();
+    expect(searchCaseLaw).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ' www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR12029618 ',
+    'RIS.BKA.GV.AT/eli/bgbl/1974/60/P75/NOR12029618',
+  ])('reads "%s", an RIS ELI without its scheme, exactly as the https link', async (citation) => {
+    searchLegislation.mockResolvedValue(page('search-brkons-nor12029618.json'));
+    const schemeless = await runToolContract(risLookupCitation, { citation });
+    const https = await runToolContract(risLookupCitation, {
+      citation: 'https://www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR12029618',
+    });
+
+    expect(searchLegislation.mock.calls.map(([params]) => params)).toEqual([
+      { application: 'BrKons', pageSize: 100, query: 'NOR12029618' },
+      { application: 'BrKons', pageSize: 100, query: 'NOR12029618' },
+    ]);
+    expect(searchGazette).not.toHaveBeenCalled();
+    expect(schemeless.structuredContent).toMatchObject({
+      found: true,
+      kind: 'norm',
+      record: { document_number: 'NOR12029618' },
+    });
+    expect(schemeless.structuredContent).toEqual(https.structuredContent);
+    expect(contentText(schemeless)).toBe(contentText(https));
+    expectSameOnBothSurfaces(schemeless);
+  });
+
+  it('leaves an /eli/ path on another host without a scheme to classification', async () => {
+    const citation = 'data.europa.eu/eli/reg/2016/679/oj';
+    const result = await runToolContract(risLookupCitation, { citation });
+    expect(result.structuredContent).toEqual({
+      found: false,
+      kind: 'unknown',
+      guidance: UNCLASSIFIED(citation),
+    });
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(searchGazette).not.toHaveBeenCalled();
+  });
+
+  it('every ELI example in citation_formats is read as an ELI', async () => {
+    const eli = RIS_CITATION_FORMATS.find((format) => format.kind === 'eli');
+    expect(eli?.examples.length).toBeGreaterThan(0);
+    for (const citation of eli?.examples ?? []) {
+      searchLegislation.mockReset().mockResolvedValue(zeroHits());
+      searchGazette.mockReset().mockResolvedValue(zeroHits());
+      await lookup({ citation });
+      const sent = [...searchLegislation.mock.calls, ...searchGazette.mock.calls].map(
+        ([params]) => params as Record<string, unknown>,
+      );
+      expect(sent, citation).toHaveLength(1);
+      expect(sent[0], citation).toMatchObject({ pageSize: 100 });
+    }
+  });
+
+  it('advertises the ELI on the tool, the citation field, and citation_formats', () => {
+    const shape = risLookupCitation.input.shape as Record<string, { description?: string }>;
+    expect(risLookupCitation.description).toContain('An RIS ELI link');
+    expect(shape.citation?.description).toContain('https://www.ris.bka.gv.at/eli/');
+    expect(shape.kind?.description).toContain('only auto reads an RIS ELI link');
+    expect(shape.in_force_as_of?.description).toContain('Not applied to an ELI');
+    expect(shape.state?.description).toContain('Not applied to an ELI');
+    expect(UNCLASSIFIED('x')).toContain("an RIS ELI link: 'https://www.ris.bka.gv.at/eli/");
+  });
+});
+
+describe('risLookupCitation — the ELI read stays linear in the citation length (#110)', () => {
+  it.each([
+    [
+      'a digit run in a consolidated ELI’s document number',
+      (n: number) => `https://www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR${'1'.repeat(n)}`,
+    ],
+    [
+      'a digit run in a gazette ELI’s number',
+      (n: number) => `https://www.ris.bka.gv.at/eli/bgbl/II/2026/${'1'.repeat(n)}/20261103`,
+    ],
+    [
+      'repeated ELI path segments',
+      (n: number) => `https://www.ris.bka.gv.at/eli/${'bgbl/'.repeat(Math.floor(n / 5))}x`,
+    ],
+    [
+      'repeated section cites in an ELI path before a line break',
+      (n: number) => `https://www.ris.bka.gv.at/eli/${'§1 x'.repeat(Math.floor(n / 4))}\ny`,
+    ],
+    [
+      'line breaks throughout an ELI path',
+      (n: number) => `https://www.ris.bka.gv.at/eli/${'  \r\n'.repeat(Math.floor(n / 4))}NOR1`,
+    ],
+    [
+      'a digit run in a schemeless ELI’s document number',
+      (n: number) => `www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR${'1'.repeat(n)}`,
+    ],
+    // A refused path that spells a gazette cite goes on to the cite classifier.
+    [
+      'a digit run in a date-less gazette ELI’s number',
+      (n: number) => `https://www.ris.bka.gv.at/eli/bgbl/II/2026/${'1'.repeat(n)}`,
+    ],
+    [
+      'a digit run ending a gazette ELI’s number in a letter',
+      (n: number) => `https://www.ris.bka.gv.at/eli/bgbl/II/2026/${'1'.repeat(n)}x`,
+    ],
+    [
+      'repeated section cites after a gazette ELI before a line break',
+      (n: number) =>
+        `https://www.ris.bka.gv.at/eli/bgbl/II/2026/317/${'§1 x'.repeat(Math.floor(n / 4))}\ny`,
+    ],
+    [
+      'line breaks throughout after a gazette ELI',
+      (n: number) =>
+        `https://www.ris.bka.gv.at/eli/lgbl/SA/2026/103/${'  \r\n'.repeat(Math.floor(n / 4))}x`,
+    ],
+    // A path is classified only when every later segment is all digits or all letters.
+    [
+      'a digit run in the number of a gazette ELI without a part',
+      (n: number) => `https://www.ris.bka.gv.at/eli/bgbl/1974/${'1'.repeat(n)}`,
+    ],
+    [
+      'a digit run ending in a letter after a gazette ELI without a part',
+      (n: number) => `https://www.ris.bka.gv.at/eli/bgbl/1974/60/${'1'.repeat(n)}x`,
+    ],
+    [
+      'repeated section cites after a gazette ELI without a part before a line break',
+      (n: number) =>
+        `https://www.ris.bka.gv.at/eli/bgbl/1974/60/${'§1 x'.repeat(Math.floor(n / 4))}\ny`,
+    ],
+    [
+      'line breaks throughout after a gazette ELI without a part',
+      (n: number) =>
+        `https://www.ris.bka.gv.at/eli/stgbl/1945/1/${'  \r\n'.repeat(Math.floor(n / 4))}de`,
+    ],
+  ])('%s', async (_shape, build) => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    searchGazette.mockResolvedValue(zeroHits());
+    await expectLinearResolution(build, {});
+  });
+
+  it.each([
+    [
+      'repeated segments after a gazette ELI',
+      (n: number) =>
+        `https://www.ris.bka.gv.at/eli/bgbl/II/2026/317/${'de/'.repeat(Math.floor(n / 3))}`,
+    ],
+    [
+      'repeated digit segments before a mixed one after a state gazette ELI',
+      (n: number) =>
+        `https://ogd.ris.bka.gv.at/eli/lgbl/SA/2026/103/${'19/'.repeat(Math.floor(n / 3))}x1`,
+    ],
+    [
+      'repeated letter segments after a gazette ELI without a part',
+      (n: number) =>
+        `https://www.ris.bka.gv.at/eli/rgbl/1868/33/${'de/'.repeat(Math.floor(n / 3))}`,
+    ],
+    [
+      'repeated digit segments before a mixed one after a gazette ELI without a part',
+      (n: number) =>
+        `https://www.ris.bka.gv.at/eli/bgbl/1974/60/${'19/'.repeat(Math.floor(n / 3))}x1`,
+    ],
+  ])('%s', async (_shape, build) => {
+    searchLegislation.mockResolvedValue(zeroHits());
+    searchGazette.mockResolvedValue(zeroHits());
+    await expectLinearResolution(build, {}, 1_250);
   });
 });
 
@@ -3093,6 +5331,192 @@ describe('risLookupCitation — an ECLI resolves through a full-text search of i
   );
 });
 
+describe('risLookupCitation — a Rechtssatz number resolves through one Justiz search (#104)', () => {
+  /*
+   * Each fixture is the live page for that Rechtssatznummer (captured 2026-11-09, both Dokumenttyp
+   * flags, one hit each). RS numbers the OGH's headnotes; the OLGs and LGs number theirs with
+   * their own prefix (RW for OLG Wien, RLI for LG Linz).
+   */
+  const RS0022961 = 'search-justiz-rs0022961.json';
+  const NOTE = 'Resolved via ris_search_case_law (Justiz) — Rechtssatznummer "RS0022961".';
+  const bracketNote = (bracket: string) =>
+    `${NOTE} The bracket ${bracket} was not searched: a T number counts a Beisatz added inside this Rechtssatz, not a document of its own.`;
+  const MISS =
+    'No Rechtssatz in Justiz carries Rechtssatznummer "RS9999990" — verify the number against the cite. Keyword fallback, which lists the decisions citing it: ris_search_case_law court: justiz, query: "RS9999990".';
+
+  it.each([
+    ['RS0022961', NOTE],
+    ['RIS-Justiz RS0022961', NOTE],
+    ['RIS-Justiz RS0022961 [T3]', bracketNote('[T3]')],
+    ['RS0022961 [T3, T7]', bracketNote('[T3, T7]')],
+  ])('"%s" resolves to the OGH Rechtssatz in one request', async (citation, note) => {
+    const result = await resolveAgainst(searchCaseLaw, RS0022961, { citation });
+    expect(searchCaseLaw).toHaveBeenCalledTimes(1);
+    expect(searchCaseLaw.mock.calls[0]?.[0]).toEqual({
+      court: 'justiz',
+      rechtssatzNumber: 'RS0022961',
+    });
+    expect(result).toEqual({
+      found: true,
+      kind: 'case_number',
+      record: toCaseLawRecord(page(RS0022961).hits[0]!, 'Justiz'),
+      resolution_note: note,
+    });
+    expect(documentNumberOf(result)).toBe('JJR_19590311_OGH0002_0010OB00066_5900000_001');
+  });
+
+  it.each([
+    ['RW0001127', 'search-justiz-rw0001127.json', 'JJR_20251021_OLG0009_00100R00132_25A0000_000'],
+    ['RLI0000012', 'search-justiz-rli0000012.json', 'JJR_19980617_LG00458_01100R00228_98W0000_002'],
+  ])(
+    'an OLG or LG headnote number "%s" resolves the same way',
+    async (citation, name, documentNumber) => {
+      const result = await resolveAgainst(searchCaseLaw, name, { citation });
+      expect(searchCaseLaw.mock.calls).toEqual([
+        [{ court: 'justiz', rechtssatzNumber: citation }, expect.anything(), expect.anything()],
+      ]);
+      expect(result.found).toBe(true);
+      expect(result.kind).toBe('case_number');
+      expect(documentNumberOf(result)).toBe(documentNumber);
+    },
+  );
+
+  it.each([
+    ['a court hint for another court', { citation: 'RS0022961', court: 'vwgh' }],
+    ['a forced case_number kind', { citation: 'RIS-Justiz RS0022961', kind: 'case_number' }],
+    ['a lowercase number', { citation: 'rs0022961' }],
+  ])('%s still sends the one Justiz search, number uppercased', async (_case, input) => {
+    const result = await resolveAgainst(searchCaseLaw, RS0022961, input);
+    expect(searchCaseLaw).toHaveBeenCalledTimes(1);
+    expect(searchCaseLaw.mock.calls[0]?.[0]).toEqual({
+      court: 'justiz',
+      rechtssatzNumber: 'RS0022961',
+    });
+    expect(result.found).toBe(true);
+    expect(result.resolution_note).toBe(NOTE);
+  });
+
+  it('reaches the wire as one Judikatur request: Justiz, Rechtssatznummer, both Dokumenttyp flags', async () => {
+    const actual = await vi.importActual<typeof import('@/services/ris/ris-service.js')>(
+      '@/services/ris/ris-service.js',
+    );
+    const realService = new actual.RisService('ris-austria-mcp-server/test');
+    const fetchMock = vi.fn((_url: unknown) =>
+      Promise.resolve(new Response(JSON.stringify(fixture(RS0022961)))),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    searchCaseLaw.mockImplementation((params, ctx, budget) =>
+      realService.searchCaseLaw(params, ctx, budget),
+    );
+    try {
+      const result = await lookup({ citation: 'RIS-Justiz RS0022961 [T3]' });
+      expect(result.found).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.pathname).toMatch(/\/Judikatur$/);
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      Applikation: 'Justiz',
+      'Dokumenttyp.SucheInEntscheidungstexten': 'true',
+      'Dokumenttyp.SucheInRechtssaetzen': 'true',
+      Rechtssatznummer: 'RS0022961',
+    });
+  });
+
+  it('a number RIS does not hold returns found: false with the Rechtssatz guidance, not a legislation retry', async () => {
+    const { courts, result } = await probedCourts({ citation: 'RS9999990' });
+    expect(courts).toEqual(['justiz']);
+    expect(searchLegislation).not.toHaveBeenCalled();
+    expect(result).toEqual({ found: false, kind: 'case_number', guidance: MISS });
+    // The guidance's search is a call the caller can make as written.
+    const recipe = /ris_search_case_law (court: justiz), query: ("[^"]+")\.$/.exec(MISS);
+    expect(
+      risSearchCaseLaw.input.parse({ court: 'justiz', query: JSON.parse(recipe![2]!) }),
+    ).toMatchObject({ court: 'justiz', query: 'RS9999990' });
+  });
+
+  it('renders the resolution and the miss on both surfaces', async () => {
+    searchCaseLaw.mockResolvedValue(page(RS0022961));
+    const found = await runToolContract(risLookupCitation, { citation: 'RS0022961 [T3, T7]' });
+    expect(found.structuredContent).toMatchObject({
+      found: true,
+      kind: 'case_number',
+      resolution_note: bracketNote('[T3, T7]'),
+    });
+    const record = (found.structuredContent as { record: object }).record;
+    expectRecordRendered(contentText(found), record);
+    expect(readCommonMark(contentText(found))).toContain(
+      `⟨strong⟩resolution_note⟨/strong⟩: ${bracketNote('[T3, T7]')}`,
+    );
+
+    searchCaseLaw.mockResolvedValue(zeroHits());
+    const missed = await runToolContract(risLookupCitation, { citation: 'RS9999990' });
+    expect(missed.structuredContent).toEqual({ found: false, kind: 'case_number', guidance: MISS });
+    expect(readCommonMark(contentText(missed))).toBe(
+      `⟨strong⟩found⟨/strong⟩: false\n⟨strong⟩kind⟨/strong⟩: case_number\n\n${MISS}`,
+    );
+  });
+
+  it.each([
+    // Not the form: VwGH numbers a decision's Rechtssätze 1, 2, 3, and remarks after the number are out of scope.
+    ['Ra 2024/03/0029 RS 3', 'case_number'],
+    ['RS0022961 mwN', 'unknown'],
+    ['RS00229610', 'unknown'],
+    ['RSXYZ0022961', 'unknown'],
+  ])('"%s" is not read as a Rechtssatz number (kind %s)', async (citation, kind) => {
+    const { result } = await probedCourts({ citation });
+    expect(result.kind).toBe(kind);
+    for (const [params] of searchCaseLaw.mock.calls) {
+      expect(params).not.toHaveProperty('rechtssatzNumber');
+    }
+  });
+
+  it('names the form in the description, the citation field, and citation_formats', () => {
+    const caseNumber = RIS_CITATION_FORMATS.find((format) => format.kind === 'case_number');
+    for (const surface of [
+      risLookupCitation.description,
+      risLookupCitation.input.shape.citation.description ?? '',
+      caseNumber?.description ?? '',
+    ]) {
+      expect(surface).toContain('RS0022961');
+    }
+    expect(caseNumber?.examples).toContain('RIS-Justiz RS0022961 [T3]');
+    expect(caseNumber?.resolvesVia).toContain('Rechtssatznummer');
+  });
+});
+
+describe('risLookupCitation — the Rechtssatz-number reading stays linear in the citation length (#104)', () => {
+  it.each([
+    [
+      'an unclosed Beisatz bracket',
+      (n: number) => `RS0022961 [${'T1, '.repeat(Math.floor(n / 4))}`,
+    ],
+    [
+      'an unclosed Beisatz bracket on one long line ending in a break',
+      (n: number) => `RS0022961 [${'T1, '.repeat(Math.floor(n / 4))}\ny`,
+    ],
+    ['a whitespace run after the RIS-Justiz label', (n: number) => `RIS-Justiz${' '.repeat(n)}x`],
+    [
+      'breaks throughout after the RIS-Justiz label',
+      (n: number) => `RIS-Justiz${'  \r\n'.repeat(Math.floor(n / 4))}RS0022961 [T3`,
+    ],
+    ['repeated labels', (n: number) => `${'RIS-Justiz '.repeat(Math.floor(n / 11))}RS0022961`],
+    ['a whitespace run before the bracket', (n: number) => `RS0022961${' '.repeat(n)}[T3`],
+  ])('%s', async (_shape, build) => {
+    searchCaseLaw.mockResolvedValue(zeroHits());
+    searchLegislation.mockResolvedValue(zeroHits());
+    await expectLinearResolution(build, {}, 1_250);
+  });
+
+  it('a digit run after the prefix, across the full 5k–320k span', async () => {
+    searchCaseLaw.mockResolvedValue(zeroHits());
+    searchLegislation.mockResolvedValue(zeroHits());
+    await expectLinearResolution((n) => `RS${'1'.repeat(n)}`, {});
+  });
+});
+
 describe('risLookupCitation — a year-first gazette cite reads year and number (#50)', () => {
   it('"BGBl I 2018/24" resolves to BGBl. I Nr. 24/2018', async () => {
     const result = await resolveAgainst(searchGazette, 'search-bgblauth-24-2018-part1.json', {
@@ -3165,6 +5589,56 @@ describe('risLookupCitation — a year-first gazette cite reads year and number 
     expect(searchGazette).not.toHaveBeenCalled();
     expect(result.found).toBe(false);
     expect(result.guidance).toMatch(/^Could not read a gazette number from 'BGBl\. I 24\/18'\./);
+  });
+});
+
+describe('risLookupCitation — a year-first gazette cite takes no year past the current one', () => {
+  /** Resolve `citation` with Austria's clock at `now`, against zero hits. */
+  async function at(now: string, input: Record<string, unknown>) {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(now));
+    try {
+      searchGazette.mockResolvedValue(zeroHits());
+      return await lookup(input);
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('reads Niederösterreich’s systematic "LGBl. 8240/2-0" as no number and year, searching nothing', async () => {
+    const result = await at('2026-11-09T12:00:00Z', {
+      citation: 'LGBl. 8240/2-0',
+      state: 'niederoesterreich',
+    });
+    expect(searchGazette).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      found: false,
+      kind: 'gazette',
+      guidance:
+        "Could not read a gazette number from 'LGBl. 8240/2-0'. A gazette citation needs a number and a year — 'BGBl. I Nr. 165/1999', 'BGBl. Nr. 194/1961', 'RGBl. Nr. 189/1902', or 'LGBl. Nr. 61/2026' with a state hint. Formats: ris_list_reference topic citation_formats. To search without a number, browse with ris_search_gazette published_from/published_to.",
+    });
+  });
+
+  it('reads the current year as a year, and the next one only once it has begun in Austria', async () => {
+    await at('2026-11-09T12:00:00Z', { citation: 'BGBl I 2026/24' });
+    expect(searchGazette.mock.calls[0]?.[0]).toEqual({
+      application: 'BgblAuth',
+      number: '24/2026',
+      part: 'part1',
+    });
+
+    searchGazette.mockReset();
+    const early = await at('2026-12-31T22:30:00Z', { citation: 'BGBl I 2027/24' });
+    expect(searchGazette).not.toHaveBeenCalled();
+    expect(early.guidance).toMatch(/^Could not read a gazette number from 'BGBl I 2027\/24'\./);
+
+    // 23:30 UTC on 31 December is already 1 January in Vienna.
+    await at('2026-12-31T23:30:00Z', { citation: 'BGBl I 2027/24' });
+    expect(searchGazette.mock.calls[0]?.[0]).toEqual({
+      application: 'BgblAuth',
+      number: '24/2027',
+      part: 'part1',
+    });
   });
 });
 
@@ -3299,15 +5773,15 @@ describe('risLookupCitation — a "list them" recipe reproduces the search that 
 
   /**
    * Run the recipe in `text` through its search tool's own input schema and handler, and
-   * assert the upstream request it builds selects the same documents as the lookup's last
-   * routed search — the one whose total the note counted.
+   * assert the upstream request it builds selects the same documents as the lookup's routed
+   * search the text counted — its last by default; a case-law `call` index names another.
    */
-  async function expectRecipeReproduces(text: string | undefined): Promise<void> {
+  async function expectRecipeReproduces(text: string | undefined, call = -1): Promise<void> {
     const { input, tool } = recipeOf(text);
     let lookup: RisRequest;
     let recipe: RisRequest;
     if (tool === 'ris_search_case_law') {
-      lookup = buildCaseLawRequest(searchCaseLaw.mock.calls.at(-1)?.[0]);
+      lookup = buildCaseLawRequest(searchCaseLaw.mock.calls.at(call)?.[0]);
       searchCaseLaw.mockClear();
       await risSearchCaseLaw.handler(
         risSearchCaseLaw.input.parse(input),
@@ -3457,11 +5931,6 @@ describe('risLookupCitation — a "list them" recipe reproduces the search that 
       'search-vfgh-vfslg-19632-both.json',
       'court: vfgh, collection_number: "19.632"',
     ],
-    [
-      'VwSlg 18.000 A/2020',
-      'search-vwgh-vwslg-18000-a.json',
-      'court: vwgh, collection_number: "VwSlg 18000 A*"',
-    ],
   ])(
     'the collection miss for %s names the collection_number filter it matched with',
     async (citation, name, recipe) => {
@@ -3470,6 +5939,53 @@ describe('risLookupCitation — a "list them" recipe reproduces the search that 
       await expectRecipeReproduces(result.guidance);
     },
   );
+
+  // A default answer stays queued behind the two lookup searches for the recipe's own search.
+  it('the VwSlg year miss names the first search’s filter, the one whose matches it lists (#99)', async () => {
+    searchCaseLaw
+      .mockResolvedValue(zeroHits())
+      .mockResolvedValueOnce(page('search-vwgh-vwslg-18000-a.json'))
+      .mockResolvedValueOnce(page('search-vwgh-vwslg-fallback-18000-2020.json'));
+    const result = await lookup({ citation: 'VwSlg 18.000 A/2020' });
+    expect(searchCaseLaw).toHaveBeenCalledTimes(2);
+    expect(result.guidance).toContain(
+      'All matches: ris_search_case_law court: vwgh, collection_number: "VwSlg 18000 A*".',
+    );
+    await expectRecipeReproduces(result.guidance, 0);
+  });
+
+  it('a VwSlg fallback resolution names the second search: "*<n>*" plus the year window (#99)', async () => {
+    searchCaseLaw
+      .mockResolvedValue(zeroHits())
+      .mockResolvedValueOnce(zeroHits())
+      .mockResolvedValueOnce(page('search-vwgh-vwslg-fallback-1485-1950.json'));
+    const result = await lookup({ citation: 'VwSlg 1485 A/1950' });
+    expect(result.resolution_note).toContain(
+      'list them with ris_search_case_law court: vwgh, collection_number: "*1485*", decided_from: "1950-01-01", decided_to: "1950-12-31".',
+    );
+    await expectRecipeReproduces(result.resolution_note);
+  });
+
+  it('a VwSlg fallback page naming two decisions lists them with the second search (#99)', async () => {
+    const base = page('search-vwgh-vwslg-fallback-64-1947.json');
+    const first = base.hits[0]!;
+    const another = {
+      ...first,
+      documentNumber: 'JWR_1947000999_19470505X01',
+      metadata: {
+        ...first.metadata,
+        collectionNumber: 'VwSlg 64 F/1947',
+        decisionDate: '1947-05-05',
+      } as RisHit['metadata'],
+    };
+    searchCaseLaw
+      .mockResolvedValue(zeroHits())
+      .mockResolvedValueOnce(zeroHits())
+      .mockResolvedValueOnce({ ...base, hits: [...base.hits, another], total: base.total + 1 });
+    const result = await lookup({ citation: 'VwSlg 64/1947' });
+    expect(result.found).toBe(false);
+    await expectRecipeReproduces(result.guidance);
+  });
 
   it('the partless BGBl. collision names the number it matched with', async () => {
     const result = await resolveAgainst(searchGazette, 'search-bgblauth-50-2025.json', {

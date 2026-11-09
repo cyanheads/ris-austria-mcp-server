@@ -27,6 +27,8 @@ import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisHit } from '@/services/ris/types.js';
 
 import {
+  delimitedArticleAdvice,
+  escapedNoticeTrailer,
   failMinistrySearchError,
   filterText,
   foldStateNames,
@@ -35,6 +37,7 @@ import {
   pageSizeParam,
   renditionLinks,
   reversedWindowNotice,
+  rewriteNormArticles,
   rewriteUnsupportedParam,
   servePageSize,
   type UnsupportedParam,
@@ -215,7 +218,7 @@ const AnnouncementRecordSchema = z
       .string()
       .optional()
       .describe(
-        'RIS web view of the document (DokumentUrl) — for humans. The only browsable surface for council minutes (PDF-only) and ministerial decrees.',
+        'RIS web view of the document (DokumentUrl), the only browsable surface for council minutes (PDF-only) and ministerial decrees. Pass it to ris_get_document as document_url to read the document.',
       ),
     content_urls: ContentUrlsSchema,
   })
@@ -342,7 +345,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
     norm: filterText
       .optional()
       .describe(
-        'Cited-provision filter (Norm) — "DSG §1", "DSGVO Art32" style. veterinary and ministerial_decrees only ("decrees citing the DSG"). Omit to leave unfiltered; a blank value is rejected.',
+        'Cited-provision filter (Norm) — "DSG §1", "DSGVO Art32" style. veterinary and ministerial_decrees only ("decrees citing the DSG"). An article in any spelling ("B-VG Art57", "Art. 57 B-VG") is searched under all three RIS indexes (Art57, Art 57, Artikel 57), joined by ODER, and the notice names that expression; a value carrying ( ) or " is sent as written. Omit to leave unfiltered; a blank value is rejected.',
       ),
     case_number: filterText
       .optional()
@@ -365,7 +368,10 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       .describe(
         'health_structure_plans only. Plan kind — all (default), expert_opinion (Gutachten), or regulation (Verordnungen). Searches the federal ÖSG unless plan_state is set.',
       ),
-    plan_state: foldStateNames(z.enum(STATE_CODES).optional()).describe(
+    plan_state: foldStateNames(z.enum(STATE_CODES).optional(), {
+      definition: 'ris_search_announcements',
+      field: 'plan_state',
+    }).describe(
       'health_structure_plans only. Restrict to one Bundesland’s regional health-structure plan (RSG) — setting it switches the search from the federal ÖSG to that state’s RSG.',
     ),
     session_number: filterText
@@ -414,9 +420,12 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       .string()
       .optional()
       .describe(
-        'The served page size when it differs from page_size; then, under an in-force filter, how many rows on this page have no in_force_from (RIS returns undated documents for any date); then zero-hit guidance — the likely cause and the concrete next call. A reversed window (published_from later than published_to, or entered_force_from later than entered_force_to) is answered without a RIS request: 0 documents, and the swapped bounds to retry with in place of the guidance.',
+        'The served page size when it differs from page_size; then, when norm names an article, the expression it was searched as; then, under an in-force filter, how many rows on this page have no in_force_from (RIS returns undated documents for any date); then zero-hit guidance — the likely cause and the concrete next call. A reversed window (published_from later than published_to, or entered_force_from later than entered_force_to) is answered without a RIS request: 0 documents, and the swapped bounds to retry with in place of the guidance.',
       ),
   },
+  // The notice quotes the caller's norm, which can carry Markdown-active characters (the *
+  // wildcard, _, <), so content[] escapes it at render time and reads back structuredContent's.
+  enrichmentTrailer: { notice: escapedNoticeTrailer },
   errors: [
     {
       reason: 'collection_filter_mismatch',
@@ -535,6 +544,8 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       return { results: [] };
     }
 
+    // An article token is searched under every spelling RIS indexes it by.
+    const normRewrite = norm === undefined ? undefined : rewriteNormArticles(norm);
     const params: AnnouncementsSearchParams = {
       collection,
       ...(query !== undefined && { query }),
@@ -546,7 +557,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       ...(enteredForceFrom !== undefined && { enteredForceFrom }),
       ...(enteredForceTo !== undefined && { enteredForceTo }),
       ...(issuer !== undefined && { issuer }),
-      ...(norm !== undefined && { norm }),
+      ...(norm !== undefined && { norm: normRewrite?.expression ?? norm }),
       ...(caseNumber !== undefined && { caseNumber }),
       ...(type !== undefined && { type }),
       ...(department !== undefined && { department }),
@@ -589,7 +600,10 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       const fragments = [`0 documents in ${collection}.`];
       if (norm !== undefined) {
         fragments.push(
-          "norm must match RIS's cited-norm format — copy from a result's norms_cited.",
+          normRewrite === undefined
+            ? (delimitedArticleAdvice(norm) ??
+                "norm must match RIS's cited-norm format — copy from a result's norms_cited.")
+            : "norm matched no norms_cited entry under any of the three spellings — copy the exact string from a result's norms_cited.",
         );
       }
       if (issuer !== undefined) {
@@ -612,7 +626,7 @@ export const risSearchAnnouncements = tool('ris_search_announcements', {
       [inForceAsOf, enteredForceFrom, enteredForceTo].some((date) => date !== undefined)
         ? `${undatedRows} of ${results.length} on this page ${undatedRows === 1 ? 'has' : 'have'} no in_force_from — RIS returns all documents with no recorded entry-into-force date under in_force_as_of, entered_force_from, or entered_force_to, whatever the date, so totalCount counts them too.`
         : undefined;
-    const notice = joinNotices(served.notice, undated, zeroHit);
+    const notice = joinNotices(served.notice, normRewrite?.notice, undated, zeroHit);
     if (notice !== undefined) ctx.enrich.notice(notice);
 
     return { results };

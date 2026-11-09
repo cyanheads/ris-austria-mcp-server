@@ -139,8 +139,13 @@ export interface RawKonsNode {
   readonly Indizes?: RawWrappedList<string>;
   readonly Inkrafttretensdatum?: string;
   readonly Kundmachungsorgan?: string;
+  /** How the Novellen gazette changed this version ("zuletzt geändert durch", "Undefined", …). */
+  readonly NovellenBeziehung?: string;
+  readonly NovellenBgblnummer?: string;
+  readonly NovellenPublikationsorgan?: string;
   readonly Schlagworte?: string;
   readonly StammnormBgblnummer?: string;
+  readonly StammnormPublikationsorgan?: string;
   readonly Typ?: string;
 }
 
@@ -253,12 +258,16 @@ export interface RawJudikaturAppNode {
   readonly EntscheidendeBehoerde?: string;
   readonly Entscheidungsart?: string;
   readonly Fundstelle?: string;
-  readonly Gericht?: string;
   readonly Indizes?: RawWrappedList<string>;
   readonly Kommission?: string;
   readonly Kurzinformation?: string;
   readonly Leitsatz?: string;
   readonly Rechtsgebiete?: RawWrappedList<string>;
+  /**
+   * Justiz Rechtssatz numbers ("RS0022961", "RW0001127") — on headnotes only. An LVwG headnote
+   * carries the key too, holding its ordinal within the decision ("12"), which is not read.
+   */
+  readonly Rechtssatznummern?: RawWrappedList<string>;
   readonly Sammlungsnummer?: string;
   readonly Senat?: string;
   readonly Titel?: string;
@@ -427,12 +436,27 @@ export interface RisConsolidatedFields {
   readonly inForceUntil?: string;
   /** Keywords (Schlagworte), HTML remnants stripped. */
   readonly keywords?: string;
+  /**
+   * Gazette cite of the latest change to this version of this provision (NovellenPublikationsorgan
+   * + NovellenBgblnummer, "BGBl. I Nr. 70/2024"), in RIS's spelling; absent unless RIS sends both.
+   */
+  readonly latestChangeGazette?: string;
+  /**
+   * What the latest-change gazette did (NovellenBeziehung, verbatim: "zuletzt geändert durch",
+   * "aufgehoben durch", "wiederverlautbart durch"); RIS's placeholder `Undefined` reads as absent.
+   */
+  readonly latestChangeRelation?: string;
   /** Law-level grouping key (Gesetzesnummer). */
   readonly lawId?: string;
   /** RIS web view of the whole law (GesamteRechtsvorschriftUrl). */
   readonly lawUrl?: string;
   /** Norm type code (Typ — BG, V, K, …). */
   readonly normType?: string;
+  /**
+   * Gazette cite that first promulgated the law (StammnormPublikationsorgan + StammnormBgblnummer,
+   * "BGBl. I Nr. 165/1999", "LGBl Nr 27/2022"), in RIS's spelling; absent unless RIS sends both.
+   */
+  readonly originalGazette?: string;
   /**
    * Number and year of the gazette entry that first promulgated the law (StammnormBgblnummer,
    * "33/2013" — a BGBl. number on BrKons, an LGBl. number on LrKons).
@@ -516,8 +540,6 @@ export interface RisJudikaturMetadata {
   /** Official collection number (Sammlungsnummer — VfSlg/VwSlg/UVS), where present. */
   readonly collectionNumber?: string;
   readonly controller: 'Judikatur';
-  /** Deciding court name (Gericht), where the court node carries it. */
-  readonly courtName?: string;
   /** Decision date (Entscheidungsdatum). */
   readonly decisionDate?: string;
   /** Rechtssatz vs Text (Dokumenttyp). */
@@ -537,7 +559,7 @@ export interface RisJudikaturMetadata {
   readonly issuingBody?: string;
   /** Keywords (Schlagworte), HTML remnants stripped. */
   readonly keywords?: string;
-  /** Justiz legal areas (Rechtsgebiete). */
+  /** Justiz legal areas (Rechtsgebiete — Zivilrecht, Strafrecht); RIS's `Undefined` dropped. */
   readonly legalAreas: readonly string[];
   /** Challenge/legal-force note (Dsk Anfechtung). */
   readonly legalForceNote?: string;
@@ -547,6 +569,11 @@ export interface RisJudikaturMetadata {
   readonly normType?: string;
   /** Annotation (Anmerkung), HTML remnants stripped. */
   readonly note?: string;
+  /**
+   * Justiz Rechtssatz numbers (Rechtssatznummern), absent when RIS sends none — decision texts
+   * carry Textnummern instead, and other courts number their headnotes differently.
+   */
+  readonly rechtssatzNumbers?: readonly string[];
   /** Norm reference (Normenliste Fundstelle). */
   readonly reference?: string;
   /** Bundesland (Lvwg/Uvs). */

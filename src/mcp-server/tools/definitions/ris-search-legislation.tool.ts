@@ -132,7 +132,27 @@ export const LegislationRecordSchema = z
     promulgation: z
       .string()
       .optional()
-      .describe('Promulgation reference (Kundmachungsorgan), e.g. "BGBl. I Nr. 165/1999".'),
+      .describe(
+        'Promulgation reference (Kundmachungsorgan), e.g. "BGBl. I Nr. 165/1999 zuletzt geändert durch BGBl. I Nr. 70/2024" — the join of original_gazette, latest_change_relation, and latest_change_gazette on consolidated law.',
+      ),
+    original_gazette: z
+      .string()
+      .optional()
+      .describe(
+        'Gazette that first promulgated the law (Stammnorm), organ and number in RIS’s spelling, e.g. "BGBl. I Nr. 165/1999", "LGBl Nr 27/2022". Pass it to ris_lookup_citation for the gazette entry: a BGBl., RGBl., or StGBl. cite resolves as written, as does a state gazette whose organ carries its Bundesland ("LGBlNÖ Nr. 72/2016", "LGBlBgld. Nr. 3/1976"); a plain LGBl. cite needs state set to the record’s Bundesland; other organs RIS records (dRGBl., GZ, VBl. Tirol, ABl., GVBlTirVbg., Niederösterreich’s systematic LGBl. 6075-1) do not resolve there. Consolidated federal and state law only.',
+      ),
+    latest_change_gazette: z
+      .string()
+      .optional()
+      .describe(
+        'Gazette of the latest change to this version of this provision (Novelle) — not of the whole law — organ and number in RIS’s spelling, e.g. "BGBl. I Nr. 70/2024". latest_change_relation says what it did. Pass it to ris_lookup_citation for the gazette entry that made the change: a BGBl., RGBl., or StGBl. cite resolves as written, as does a state gazette whose organ carries its Bundesland ("LGBlNÖ Nr. 72/2016"); a plain LGBl. cite needs state set to the record’s Bundesland; other organs do not resolve there. Absent when RIS records no change.',
+      ),
+    latest_change_relation: z
+      .string()
+      .optional()
+      .describe(
+        'What latest_change_gazette did to this version, verbatim from RIS: "zuletzt geändert durch" (last amended by), "aufgehoben durch" (repealed by), or "wiederverlautbart durch" (republished by). Absent when RIS records none.',
+      ),
     type: z
       .string()
       .optional()
@@ -147,7 +167,9 @@ export const LegislationRecordSchema = z
     eli: z
       .string()
       .optional()
-      .describe('European Legislation Identifier, where assigned (federal coverage is best).'),
+      .describe(
+        'European Legislation Identifier of this provision, where RIS assigns one (consolidated federal and state law). Pass it to ris_get_document as document_url to read the provision.',
+      ),
     celex_references: z
       .array(z.string().describe('One CELEX number of a transposed EU act.'))
       .describe(
@@ -212,8 +234,15 @@ export function toRecord(
       ...(md.inForceUntil !== undefined && { in_force_until: md.inForceUntil }),
       indexes: [...md.indexes],
       ...(md.keywords !== undefined && { keywords: md.keywords }),
+      ...(md.latestChangeGazette !== undefined && {
+        latest_change_gazette: md.latestChangeGazette,
+      }),
+      ...(md.latestChangeRelation !== undefined && {
+        latest_change_relation: md.latestChangeRelation,
+      }),
       ...(md.lawId !== undefined && { law_id: md.lawId }),
       ...(md.lawUrl !== undefined && { law_url: md.lawUrl }),
+      ...(md.originalGazette !== undefined && { original_gazette: md.originalGazette }),
       ...(md.promulgation !== undefined && { promulgation: md.promulgation }),
       ...(md.sectionLabel !== undefined && { section_label: md.sectionLabel }),
       ...(md.shortTitle !== undefined && { short_title: md.shortTitle }),
@@ -290,7 +319,10 @@ export const risSearchLegislation = tool('ris_search_legislation', {
       .describe(
         'Title search (Titel) — matches title, short title, and official abbreviation ("ABGB", "DSG"). Phrase field: * allowed leading or trailing with ≥2 characters beside it. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    scope: foldStateNames(z.enum(SCOPE_VALUES).default('federal')).describe(
+    scope: foldStateNames(z.enum(SCOPE_VALUES).default('federal'), {
+      definition: 'ris_search_legislation',
+      field: 'scope',
+    }).describe(
       'Jurisdiction: federal (default) searches consolidated federal law; a Bundesland searches that state’s consolidated law (or, with municipality set, its municipal law).',
     ),
     municipality: filterText
@@ -672,6 +704,13 @@ export const risSearchLegislation = tool('ris_search_legislation', {
         lines.push(`**In force:** ${from} → ${until}`);
       }
       if (r.promulgation !== undefined) lines.push(`**Promulgated:** ${esc(r.promulgation)}`);
+      if (r.original_gazette !== undefined) {
+        lines.push(`**Original gazette:** ${esc(r.original_gazette)}`);
+      }
+      const latestChange: string[] = [];
+      if (r.latest_change_relation !== undefined) latestChange.push(esc(r.latest_change_relation));
+      if (r.latest_change_gazette !== undefined) latestChange.push(esc(r.latest_change_gazette));
+      if (latestChange.length > 0) lines.push(`**Latest change:** ${latestChange.join(' ')}`);
       if (r.municipality !== undefined) lines.push(`**Municipality:** ${esc(r.municipality)}`);
       if (r.translation !== undefined) {
         if (r.translation.source !== undefined) {

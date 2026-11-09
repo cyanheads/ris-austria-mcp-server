@@ -2,7 +2,8 @@
  * @fileoverview ris_lookup_citation — the deterministic citation resolver. Parses one
  * Austrian legal citation, classifies it into one of four routes (norm, gazette, case
  * number, collection number), and routes it to the owning search application with a
- * deterministic filter, returning the single best-matching document.
+ * deterministic filter, returning the single best-matching document. An RIS ELI link names its
+ * document outright, so it is read ahead of classification into the norm or gazette route.
  *
  * The core contract: unparseable OR unresolvable input is a `{ found: false, kind, guidance }`
  * RESULT, never a throw — the agent self-corrects from structured guidance better than from
@@ -21,6 +22,7 @@ import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
 
+import { type DocumentLink, readDocumentLink } from '@/services/ris/document-link.js';
 import { RIS_COURTS, RIS_STATES } from '@/services/ris/reference/index.js';
 import type {
   GazetteApplication,
@@ -33,7 +35,7 @@ import type {
 import { getRisService, type SharedSearchBudget } from '@/services/ris/ris-service.js';
 import type { RisHit, RisSearchResult } from '@/services/ris/types.js';
 
-import { foldStateNames, isoDateString } from './_shared.js';
+import { foldCodeCase, foldStateNames, isoDateString } from './_shared.js';
 import { toRecord as toCaseLawRecord } from './ris-search-case-law.tool.js';
 import { toRecord as toGazetteRecord } from './ris-search-gazette.tool.js';
 import { toRecord as toLegislationRecord } from './ris-search-legislation.tool.js';
@@ -70,8 +72,32 @@ type CitationKind = 'case_number' | 'collection_number' | 'gazette' | 'norm';
  */
 const LINE_BREAKS = /[\n\r\p{Zl}\p{Zp}]+/gu;
 
+/**
+ * The Bundesland suffix RIS writes on a state gazette cited in a federal record's Stammnorm or
+ * Novellen organ ("LGBlNÖ Nr. 72/2016", "LGBlBgld. Nr. 3/1976", "LGBlW. Nr. 10/1970"), per state —
+ * probed on BrKons 2026-11-09. Keyed lowercase; the suffix matches in any case.
+ */
+const STATE_BY_ORGAN_SUFFIX = new Map<string, RisStateCode>([
+  ['bgld', 'burgenland'],
+  ['ktn', 'kaernten'],
+  ['nö', 'niederoesterreich'],
+  ['oö', 'oberoesterreich'],
+  ['sbg', 'salzburg'],
+  ['stmk', 'steiermark'],
+  ['tir', 'tirol'],
+  ['vbg', 'vorarlberg'],
+  ['w', 'wien'],
+]);
+/** A state gazette whose organ carries its Bundesland — a suffix ending before any letter. */
+const STATE_ORGAN = new RegExp(
+  String.raw`\bLGBl(${[...STATE_BY_ORGAN_SUFFIX.keys()].join('|')})(?![A-Za-zÄÖÜäöüß])`,
+  'i',
+);
 /** Gazette prefixes that signal a promulgation citation (federal, imperial, or state). */
-const GAZETTE_PREFIX = /\b(?:BGBl|RGBl|StGBl|LGBl)\b|GBl[ÖO]/i;
+const GAZETTE_PREFIX = new RegExp(
+  String.raw`\b(?:BGBl|RGBl|StGBl|LGBl)\b|GBl[ÖO]|${STATE_ORGAN.source}`,
+  'i',
+);
 /** A letter, optionally after an ordinal — digits and a dot ("1. COVID-19-JuBG", "7.ZPMRK"). */
 const ORDINAL_LED_WORD = String.raw`(?:\d+\.\s?)?[A-Za-zÄÖÜäöüß]`;
 /**
@@ -758,6 +784,8 @@ const SERIES_BY_PREFIX: readonly (readonly [string, GazetteSeries])[] = [
   ['Bundesgesetzblatt', 'BGBl'],
   ['RGBl.', 'RGBl'],
   ['Reichsgesetzblatt', 'RGBl'],
+  // The older title some volumes carry: "Reichs-Gesetz-Blatt für das Kaiserthum Österreich" (1868).
+  ['Reichs-Gesetz-Blatt', 'RGBl'],
   ['Gesetzblatt für das Land Österreich', 'GBlÖ'],
 ];
 
@@ -781,9 +809,16 @@ interface GazetteParse {
   /** True when a state gazette (LGBl.) was given without the state hint needed to resolve it. */
   readonly needsState: boolean;
   readonly number: string;
+  /** The state hint a state organ's own Bundesland overrode, when the two disagree. */
+  readonly overriddenStateHint?: RisStateCode;
   readonly part?: 'part1' | 'part2' | 'part3';
   /** The cited federal or imperial gazette; absent on a state (LGBl.) citation. */
   readonly series?: GazetteSeries;
+  /**
+   * The Bundesland a state route searches: the one its organ names ("LGBlNÖ"), else the state
+   * hint. Absent on a federal route, which never takes a state.
+   */
+  readonly state?: RisStateCode;
 }
 
 /** Bundesländer RIS carries in the historical non-authentic Lgbl gazette. */
@@ -813,60 +848,169 @@ function isGazetteYear(digits: string): boolean {
 /**
  * Read the number and year from the first "A/B" pair, number-first ("Nr. 24/2018") or
  * year-first ("BGBl I 2018/24", the order commentaries cite in). B stays the year when it is a
- * four-digit year from 1848 on; otherwise a four-digit A in that range is the year. B is checked
- * first because pre-1997 numbers ran past 999 — "BGBl. Nr. 1005/1994" is number 1005, not a
- * year. The lookbehind starts the match only at the head of a digit run, which keeps the scan
- * linear over a long run of digits.
+ * four-digit year from 1848 on; otherwise a four-digit A from 1848 to the current year in
+ * Austria is the year. B is checked first because pre-1997 numbers ran past 999 — "BGBl. Nr.
+ * 1005/1994" is number 1005, not a year. A year-first A past the current year names no year:
+ * Niederösterreich's systematic "LGBl. 8240/2-0" is a Gliederungszahl, not number 2 of 8240.
+ * The lookbehind starts the match only at the head of a digit run, which keeps the scan linear
+ * over a long run of digits.
  */
 function readGazetteNumber(s: string): { number: string; year: number } | null {
   const pair = /(?<!\d)(\d+)\s*\/\s*(\d+)/.exec(s);
   const [, a, b] = pair ?? [];
   if (a === undefined || b === undefined) return null;
   if (isGazetteYear(b)) return { number: `${a}/${b}`, year: Number.parseInt(b, 10) };
-  if (isGazetteYear(a)) return { number: `${b}/${a}`, year: Number.parseInt(a, 10) };
+  const year = Number.parseInt(a, 10);
+  if (isGazetteYear(a) && year <= Number(todayInAustria().slice(0, 4))) {
+    return { number: `${b}/${a}`, year };
+  }
   return null;
 }
 
-/** The federal or imperial gazette a citation names by its prefix, or `undefined` for none. */
+/**
+ * The federal or imperial gazette a citation names by its prefix, or `undefined` for none.
+ * "BGBI", a capital I for the l, is the BGBl. as RIS itself sometimes misspells it.
+ */
 function citedSeries(s: string): GazetteSeries | undefined {
   if (/\bStGBl\b/i.test(s)) return 'StGBl';
   if (/\bRGBl\b/i.test(s)) return 'RGBl';
-  if (/GBl[ÖO]/i.test(s)) return 'GBlÖ';
-  return /\bBGBl\b/i.test(s) ? 'BGBl' : undefined;
+  if (/\bGBl[ÖO]/i.test(s)) return 'GBlÖ';
+  return /\bBGB[lI]\b/i.test(s) ? 'BGBl' : undefined;
+}
+
+/** Every number/year pair, the shape `readGazetteNumber` reads one of. */
+const NUMBER_PAIRS = /(?<!\d)(\d+)\s*\/\s*(\d+)/g;
+/** A gazette prefix inside a word — "dRGBl." is an organ, though it opens in lowercase. */
+const ORGAN_IN_WORD = /BGB[lI]|RGBl|StGBl|LGBl|GBl[ÖO]/i;
+/** What a linking phrase opens with that is not part of it — a comma, a stray slash. */
+const LEADING_NON_LETTERS = /^[^\p{L}]+/u;
+
+/**
+ * True for a word linking two cites ("zuletzt geändert durch", "aufgehoben durch", "idF"): one
+ * opening in lowercase that holds no gazette prefix, or one of punctuation only. A gazette's
+ * organ and number words ("BGBl.", "I", "Nr.", "VBl. Tirol") open in uppercase.
+ */
+function isLinkingWord(word: string): boolean {
+  return (/^\p{Ll}/u.test(word) && !ORGAN_IN_WORD.test(word)) || !/[\p{L}\p{N}]/u.test(word);
 }
 
 /**
- * Parse a gazette citation and route it to the owning application: federal BGBl. by year
- * (BgblAuth 2004+, BgblPdf 1945–2003, BgblAlt before 1945), the StGBl. by year too — RIS files
- * the 1918–1920 Staatsgesetzblatt in BgblAlt and the 1945 one in BgblPdf, beside the BGBl. —
- * RGBl./GBlÖ to BgblAlt, and LGBl. to the state Landesgesetzblatt (LgblAuth) when a state hint
- * is present — carrying that state's legacy series alongside, since a pre-switch citation
- * lives there.
+ * Where the cite whose number pair starts at `to` begins, after `from` (the end of the cite
+ * before it): `start` is the earliest word of the run of non-linking words right before the
+ * pair — with none, the cite is its pair alone — `linkStart` the earliest word of the run of
+ * linking words before that, and `wordBefore` the word before those linking words.
  */
-function parseGazette(input: string, stateHint: RisStateCode | undefined): GazetteParse | null {
-  const s = input.trim();
-  const isState = /\bLGBl\b/i.test(s);
-  const series = isState ? undefined : citedSeries(s);
+function citeBounds(
+  s: string,
+  from: number,
+  to: number,
+): { linkStart: number; start: number; wordBefore?: string } {
+  const words = [...s.slice(from, to).matchAll(/\S+/g)];
+  let i = words.length - 1;
+  let start = to;
+  for (; i >= 0; i--) {
+    const word = words[i];
+    if (word === undefined || isLinkingWord(word[0])) break;
+    start = from + word.index;
+  }
+  let linkStart = start;
+  for (; i >= 0; i--) {
+    const word = words[i];
+    if (word === undefined || !isLinkingWord(word[0])) break;
+    linkStart = from + word.index;
+  }
+  const wordBefore = words[i]?.[0];
+  return { linkStart, start, ...(wordBefore !== undefined && { wordBefore }) };
+}
+
+/** A later cite as named: as written, the words linking it in parentheses when there are any. */
+function namedCite(cite: string, linking: string): string {
+  const words = linking.replace(LEADING_NON_LETTERS, '').trimEnd();
+  return words === '' ? cite.trim() : `${cite.trim()} (${words})`;
+}
+
+/**
+ * A gazette string split into its cites. A consolidated record's promulgation joins two
+ * ("BGBl. Nr. 267/1967 zuletzt geändert durch BGBl. I Nr. 17/2026"), and a commentary cite names
+ * the version read ("BGBl II 278/2021 idF BGBl II 394/2021"). The first cite is the text through
+ * the first number/year pair; each later one runs from its organ through its pair, named as
+ * written with the words linking it in parentheses, as RIS writes them rather than matched
+ * against a list: "BGBl. I Nr. 17/2026 (zuletzt geändert durch)". A first cite carrying a number
+ * but no pair — Niederösterreich's systematic "LGBl. 6075-1 zuletzt geändert durch LGBl. Nr.
+ * 4/2020" — is the gazette text before the first pair's linking words, so that pair stays a later
+ * cite; a gazette title the words merely run through ("LGBl. für Wien Nr. 5/2020") ends in no
+ * number and stays one cite. Each pair's words are read once, so the split stays linear in the
+ * citation's length.
+ */
+function splitGazetteCites(s: string): { first: string; others: string[] } | undefined {
+  let first: string | undefined;
+  const others: string[] = [];
+  let previousEnd = 0;
+  for (const pair of s.matchAll(NUMBER_PAIRS)) {
+    const end = pair.index + pair[0].length;
+    const { linkStart, start, wordBefore } = citeBounds(s, previousEnd, pair.index);
+    if (first !== undefined) {
+      others.push(namedCite(s.slice(start, end), s.slice(previousEnd, start)));
+    } else {
+      const lead = s.slice(0, linkStart).trim();
+      if (linkStart < start && /^\d/.test(wordBefore ?? '') && namesGazette(lead)) {
+        first = lead;
+        others.push(namedCite(s.slice(start, end), s.slice(linkStart, start)));
+      } else {
+        first = s.slice(0, end);
+      }
+    }
+    previousEnd = end;
+  }
+  return first === undefined ? undefined : { first, others };
+}
+
+/** True when a citation names a gazette this lookup reads, by its prefix. */
+function namesGazette(s: string): boolean {
+  return /\bLGBl\b/i.test(s) || STATE_ORGAN.test(s) || citedSeries(s) !== undefined;
+}
+
+/**
+ * Route one gazette cite to the owning application: federal BGBl. by year (BgblAuth 2004+,
+ * BgblPdf 1945–2003, BgblAlt before 1945), the StGBl. by year too — RIS files the 1918–1920
+ * Staatsgesetzblatt in BgblAlt and the 1945 one in BgblPdf, beside the BGBl. — RGBl./GBlÖ to
+ * BgblAlt, and LGBl. to the state Landesgesetzblatt (LgblAuth) when a state hint is present —
+ * carrying that state's legacy series alongside, since a pre-switch citation lives there. An
+ * organ naming its Bundesland ("LGBlNÖ") routes to that state, whatever the hint says, and keeps
+ * a hint naming another so the answer can say it was not applied. `null`
+ * when the cite names no gazette or carries no number and year.
+ */
+function routeGazette(cite: string, stateHint: RisStateCode | undefined): GazetteParse | null {
+  const suffix = STATE_ORGAN.exec(cite)?.[1];
+  const organState =
+    suffix === undefined ? undefined : STATE_BY_ORGAN_SUFFIX.get(suffix.toLowerCase());
+  const isState = organState !== undefined || /\bLGBl\b/i.test(cite);
+  const series = isState ? undefined : citedSeries(cite);
   if (!isState && series === undefined) return null;
 
-  const numYear = readGazetteNumber(s);
+  const numYear = readGazetteNumber(cite);
   if (!numYear) return null;
   const { number, year } = numYear;
 
   let part: GazetteParse['part'];
-  const partMatch = /\bBGBl\.?\s*(I{1,3})\b/i.exec(s);
+  const partMatch = /\bBGB[lI]\.?\s*(I{1,3})\b/i.exec(cite);
   if (partMatch?.[1] !== undefined) {
     const romanLength = partMatch[1].length;
     part = romanLength === 1 ? 'part1' : romanLength === 2 ? 'part2' : 'part3';
   }
 
   if (isState) {
-    const legacy = stateHint === undefined ? undefined : legacyStateSeries(stateHint);
+    const state = organState ?? stateHint;
+    const legacy = state === undefined ? undefined : legacyStateSeries(state);
     return {
       application: 'LgblAuth',
-      needsState: stateHint === undefined,
+      needsState: state === undefined,
       number,
       ...(legacy !== undefined && { legacyApplication: legacy }),
+      ...(state !== undefined && { state }),
+      ...(organState !== undefined &&
+        stateHint !== undefined &&
+        stateHint !== organState && { overriddenStateHint: stateHint }),
     };
   }
   if (series === 'RGBl' || series === 'GBlÖ' || (series === 'StGBl' && year < 1945)) {
@@ -885,6 +1029,32 @@ function parseGazette(input: string, stateHint: RisStateCode | undefined): Gazet
     series: 'BGBl',
     ...(part !== undefined && application !== 'BgblAlt' && { part }),
   };
+}
+
+/**
+ * A gazette string as read: its first cite routed, or why it was not, with the later cites it
+ * names either way. `unread` is a first cite in a gazette this lookup does not read
+ * ("ABl.Nr. 52/2006 zuletzt geändert durch BGBl. I Nr. 14/2019"), which no later cite stands in
+ * for (#82, #86); `unreadable` is a gazette string with no number and year to search by.
+ */
+type GazetteReading =
+  | { readonly others: readonly string[]; readonly parsed: GazetteParse; readonly status: 'parsed' }
+  | { readonly cite: string; readonly others: readonly string[]; readonly status: 'unread' }
+  | { readonly others: readonly string[]; readonly status: 'unreadable' };
+
+/**
+ * Read a gazette citation by its first cite alone — prefix, part, number, and state — so a
+ * later cite's part or series never filters the first one's search and a later cite never
+ * resolves in its place. A string naming no gazette at all stays unreadable, as it was.
+ */
+function parseGazette(input: string, stateHint: RisStateCode | undefined): GazetteReading {
+  const s = input.trim();
+  const cites = splitGazetteCites(s);
+  const others = cites?.others ?? [];
+  if (cites === undefined || !namesGazette(s)) return { others, status: 'unreadable' };
+  if (!namesGazette(cites.first)) return { cite: cites.first, others, status: 'unread' };
+  const parsed = routeGazette(cites.first, stateHint);
+  return parsed === null ? { others, status: 'unreadable' } : { others, parsed, status: 'parsed' };
 }
 
 /**
@@ -1008,6 +1178,32 @@ function parseEcli(input: string): EcliParse | null {
   const upper = segment.toUpperCase();
   const court = ECLI_COURTS.find(([re]) => re.test(upper))?.[1];
   return { segment, status: 'austrian', ...(court !== undefined && { court }) };
+}
+
+/**
+ * A Justiz Rechtssatz number as cited: "RS0022961", "RIS-Justiz RS0022961", "RS0022961 [T3, T7]".
+ * RS numbers the OGH's headnotes; the OLGs and LGs number theirs with an R plus their own one- or
+ * two-letter code (RW OLG Wien, RLI LG Linz, RWZ LG für ZRS Wien), always seven digits. Anchored
+ * at both ends, so no other citation shape reads as one.
+ */
+const RECHTSSATZ_NUMBER =
+  /^(?:RIS-Justiz\s+)?(R[A-Z]{1,2}\d{7})(?:\s*(\[\s*T\d+(?:\s*,\s*T\d+)*\s*\]))?$/i;
+
+/**
+ * A Rechtssatz-number citation as read: the number RIS files it under (uppercased), and the
+ * bracket of T numbers after it as cited. A T number counts a Beisatz — an addition a later
+ * decision made — inside the same Rechtssatz document (RS0022961's T3 came with 7 Ob 58/70), so
+ * the bracket names no document of its own and is never searched.
+ */
+interface RechtssatzParse {
+  readonly beisatz?: string;
+  readonly number: string;
+}
+
+function parseRechtssatzNumber(input: string): RechtssatzParse | null {
+  const m = RECHTSSATZ_NUMBER.exec(input);
+  if (m?.[1] === undefined) return null;
+  return { number: m[1].toUpperCase(), ...(m[2] !== undefined && { beisatz: m[2] }) };
 }
 
 /* ------------------------------------------------------------------------------------ */
@@ -1218,9 +1414,11 @@ function ecliRank(cited: string): (hit: RisHit) => number {
  * idF BGBl II 394/2021 §11") — by its number alone too, since that prefix is sometimes misspelled
  * ("BGBI II 58/2021"), or when the provision cited is a Roman-numbered Artikel of the amending act
  * (`citesAmendingActArtikel`). A cite whose law before the clause is a bare name is that law, as
- * the bare name is.
+ * the bare name is. A Rechtssatz number is read first: a court hint would otherwise send it to a
+ * Geschäftszahl search, and "RIS-Justiz RS0022961" reads as a bare law title.
  */
 function classify(input: string, courtHint: RisCourtCode | undefined): CitationKind | null {
+  if (RECHTSSATZ_NUMBER.test(input)) return 'case_number';
   if (parseCollection(input)) return 'collection_number';
   if (parseEcli(input) !== null) return 'case_number';
   if (COURT_PREFIX.test(input) && CASE_NUMBER_SHAPE.test(input)) return 'case_number';
@@ -1249,7 +1447,79 @@ function classify(input: string, courtHint: RisCourtCode | undefined): CitationK
 /* ------------------------------------------------------------------------------------ */
 
 function unknownGuidance(input: string): string {
-  return `Could not classify '${input}'. Expected forms — norm: '§ 6 DSG' / 'Art 10 B-VG'; gazette: 'BGBl. I Nr. 165/1999' or year-first 'BGBl I 2018/24' (also pre-2004 and RGBl/StGBl forms, and LGBl with a state hint); case number: 'Ro 2026/03/0016', court-prefixed 'VfGH G 13/2025', or an ECLI 'ECLI:AT:VFGH:2026:G13.2025'; collection: 'VfSlg 19.632/2012'. Formats: ris_list_reference topic citation_formats. Or set kind explicitly; for keyword search use ris_search_legislation / ris_search_case_law.`;
+  return `Could not classify '${input}'. Expected forms — norm: '§ 6 DSG' / 'Art 10 B-VG'; gazette: 'BGBl. I Nr. 165/1999' or year-first 'BGBl I 2018/24' (also pre-2004 and RGBl/StGBl forms, and LGBl with a state hint); case number: 'Ro 2026/03/0016', court-prefixed 'VfGH G 13/2025', an ECLI 'ECLI:AT:VFGH:2026:G13.2025', or a Rechtssatz number 'RS0022961'; collection: 'VfSlg 19.632/2012'; an RIS ELI link: 'https://www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR12029618'. Formats: ris_list_reference topic citation_formats. Or set kind explicitly; for keyword search use ris_search_legislation / ris_search_case_law.`;
+}
+
+type ConsolidatedLink = Extract<DocumentLink, { kind: 'consolidated' }>;
+type GazetteLink = Extract<DocumentLink, { kind: 'gazette' }>;
+
+/** An RIS ELI copied without its scheme, read as the https link it is. */
+const SCHEMELESS_RIS_ELI = /^(?:www\.|ogd\.)?ris\.bka\.gv\.at\/eli\//i;
+
+/** The citation as the ELI reader takes it: an RIS ELI without its scheme gains `https://`. */
+function eliLinkText(citation: string): string {
+  const trimmed = citation.trim();
+  return SCHEMELESS_RIS_ELI.test(trimmed) ? `https://${trimmed}` : citation;
+}
+
+/**
+ * An `/eli/` path whose segments spell a gazette cite — series, the part or state where it has
+ * one, year, number — followed only by segments that are all digits (a date) or all letters (a
+ * language or format), and an optional `/`: a work-level ELI without its date
+ * ("/eli/bgbl/II/2026/317"), a federal ELI before 1997, which has no part ("/eli/bgbl/1974/60"),
+ * or an older gazette's ("/eli/rgbl/1868/33"). 0.6.1 classified every ELI as the cite its path
+ * spells, which answers these right, so one the reader refuses is still classified. A segment
+ * mixing letters and digits is a provision's ("/eli/bgbl/i/1999/165/A2P4"), whose cite would
+ * name the whole act, so that path stays refused.
+ */
+const GAZETTE_CITE_ELI =
+  /^\/eli\/(?:bgbl(?:\/i{1,3})?|lgbl(?:\/[a-z]{2})?|rgbl|stgbl|gbloe)\/\d{4}\/\d+(?:\/(?:\d+|[a-z]+))*\/?$/i;
+
+/**
+ * Read a citation that is an `/eli/` link on an RIS host (#110): the document it names, or the
+ * reader's refusal. `null`, leaving the citation to classification, for any other citation and
+ * for a refused path that spells a gazette cite ({@link GAZETTE_CITE_ELI}).
+ */
+function readEliCitation(citation: string): DocumentLink | { error: string } | null {
+  const linkText = eliLinkText(citation);
+  const path = URL.parse(linkText)?.pathname;
+  if (path === undefined || !path.startsWith('/eli/')) return null;
+  const read = readDocumentLink(linkText);
+  if (read === null || !('error' in read)) return read;
+  return GAZETTE_CITE_ELI.test(path) ? null : read;
+}
+
+/**
+ * Guidance for an `/eli/` link the reader refused — nothing was searched. The reader's reason
+ * names the layouts or origins it reads and never echoes the link, so neither does this.
+ */
+function eliLinkGuidance(error: string): string {
+  return `Could not read the ELI link — ${error} Nothing was searched. Pass the eli of a ris_search_legislation or ris_search_gazette record, or cite the document as a provision ('§ 6 DSG') or a gazette number ('BGBl. I Nr. 165/1999').`;
+}
+
+/** Guidance for a consolidated ELI whose document number no version carries. */
+function eliNormGuidance({ application, documentNumber }: ConsolidatedLink): string {
+  return `No consolidated provision in ${application} carries document number "${documentNumber}", the one the ELI ends in — a search for it across every version found none. Verify the ELI against the eli of a ris_search_legislation record, or resolve the provision by its cite ('§ 6 DSG').`;
+}
+
+/** The filters a gazette ELI names, as a note phrase and as the ris_search_gazette inputs. */
+function eliGazetteFilters(link: GazetteLink): { phrase: string; recipe: string } {
+  const number = JSON.stringify(link.number);
+  return link.application === 'BgblAuth'
+    ? {
+        phrase: `number ${number}, part ${link.part.slice(-1)}`,
+        recipe: `number: ${number}, part: ${link.part}`,
+      }
+    : {
+        phrase: `number ${number}, scope: ${link.state}`,
+        recipe: `number: ${number}, scope: ${link.state}`,
+      };
+}
+
+/** Guidance for a gazette ELI whose document number no entry for its number carries. */
+function eliGazetteGuidance(link: GazetteLink): string {
+  const { phrase, recipe } = eliGazetteFilters(link);
+  return `No entry in ${link.application} for ${phrase} carries document number "${link.documentNumber}", the one the ELI names. Verify the ELI against the eli or document_url of a ris_search_gazette record; list the entries for that number with ris_search_gazette ${recipe}.`;
 }
 
 /** The ECLI court segments this lookup maps, as listed in guidance. */
@@ -1270,6 +1540,11 @@ function ecliParseGuidance(citation: string, parsed: EcliParse): string {
 /** Guidance for an ECLI whose court was searched without a hit carrying it. */
 function ecliGuidance(citation: string, court: RisCourtCode): string {
   return `No decision in ${courtApplication(court)} carries ECLI '${citation}' — a full-text search for it found no document with that identifier. Verify the ECLI against the cite, or resolve the decision by its Geschäftszahl with court: ${court}. Keyword fallback: ris_search_case_law court: ${court} with query.`;
+}
+
+/** Guidance for a Rechtssatz number no Justiz headnote carries. */
+function rechtssatzGuidance(number: string): string {
+  return `No Rechtssatz in Justiz carries Rechtssatznummer "${number}" — verify the number against the cite. Keyword fallback, which lists the decisions citing it: ris_search_case_law court: justiz, query: ${JSON.stringify(number)}.`;
 }
 
 /**
@@ -1386,7 +1661,10 @@ function euCaseLawGuidance(citation: string, celex: string): string {
   return `'${citation}' cites EU case law: a decision of ${court}, CELEX ${celex}. RIS holds Austrian law and decisions only, so nothing was searched. Read it on EUR-Lex: https://eur-lex.europa.eu/legal-content/DE/TXT/?uri=CELEX:${celex}.`;
 }
 
-/** The sentence naming a comma-joined entry's other provisions; empty for a single provision. */
+/**
+ * The sentence naming an entry's other cites — a comma-joined entry's other provisions, a
+ * gazette string's later cites — empty when it names one.
+ */
 function othersPhrase(others: readonly string[] | undefined): string {
   if (others === undefined || others.length === 0) return '';
   return ` The entry also cites ${joinCites(others)} — look ${others.length === 1 ? 'it' : 'each'} up as its own citation.`;
@@ -1402,14 +1680,33 @@ function gazetteFormatGuidance(citation: string): string {
 }
 
 /**
+ * Guidance for a gazette string whose first cite is in a gazette this lookup does not read
+ * (`ABl.`, `dRGBl.`). A later cite names another entry — usually the act that amended or
+ * repealed the first — so it is never searched in the first one's place.
+ */
+function unreadGazetteGuidance(cite: string): string {
+  return `'${cite}' is not a gazette citation this lookup reads — it resolves BGBl., RGBl., StGBl., and GBlÖ numbers, and LGBl. numbers with a state hint or a Bundesland suffix (LGBlNÖ, LGBlBgld.) — so nothing was searched.`;
+}
+
+/**
+ * The sentence a state route's answer gains when its organ's Bundesland overrode a state hint
+ * naming another, so a caller who set the hint learns it went unused. Empty otherwise.
+ */
+function overriddenHintPhrase({ overriddenStateHint, state }: GazetteParse): string {
+  const organ = RIS_STATES.find((candidate) => candidate.code === state);
+  if (overriddenStateHint === undefined || organ === undefined) return '';
+  return ` The organ names ${organ.name}, so state ${overriddenStateHint} was not applied.`;
+}
+
+/**
  * Guidance for a gazette citation that parsed but did not resolve, composed from the route
  * that missed. Each route gets only the hints that bear on it: the part sentence reaches the
  * two federal tiers that carry a part split, the state-hint sentence only the state route that
  * lacks one, and the legacy-series pointer only a state route that has one. A single shared
  * string sent every route but one somewhere it could not act on.
  */
-function gazetteGuidance(parsed: GazetteParse, state: RisStateCode | undefined): string {
-  const { application, legacyApplication, needsState, number, part } = parsed;
+function gazetteGuidance(parsed: GazetteParse): string {
+  const { application, legacyApplication, needsState, number, part, state } = parsed;
 
   if (needsState) {
     return `Cannot resolve LGBl. Nr. ${number} without a state — each of the nine Bundesländer keeps its own Landesgesetzblatt, so nothing was searched. Set state to the issuing Bundesland and retry; codes: ris_list_reference topic states.`;
@@ -1534,19 +1831,129 @@ function undetectedCourtGuidance(gz: string): string {
   return `Could not tell which court '${gz}' belongs to from its format, so no court was searched. Pass court — Geschäftszahl format examples per court: ris_list_reference topic courts. Keyword fallback: ris_search_case_law with query.`;
 }
 
+/** A collection cite as given: label, number as cited, part letter, and the year after a slash. */
+function citedCollection({ label, number, partLetter, year }: CollectionParse): string {
+  return `${label} ${number}${partLetter === undefined ? '' : ` ${partLetter}`}${year === undefined ? '' : `/${year}`}`;
+}
+
 /**
- * Guidance for an unresolved collection citation. Names the `Sammlungsnummer` value that was
- * actually sent and says it already carries the form that court stores, so the caller narrows
- * the cite rather than re-sending the same filter — the retry that made the old shared string
- * a dead end.
+ * Guidance for a collection citation whose one search matched nothing. A VfSlg miss names the
+ * bare number VfGH stores, so the caller verifies the number rather than re-sending the filter. A
+ * VwSlg cite reaches this without a year to window the second search with (#99), so it names that
+ * search with the window left to the caller, and the cite that runs it here.
  */
 function collectionGuidance(parsed: CollectionParse): string {
-  const { court, filter, label, number } = parsed;
-  const shape =
-    court === 'vwgh'
-      ? 'That filter already carries the labelled undotted form VwGH stores, so the number or the part letter (A administrative, F finance) is the mismatch — verify both against the cite.'
-      : 'That filter is the bare number VfGH stores, matched dotted or undotted, so the number is the mismatch — verify it against the cite.';
-  return `No decision for ${label} ${number} — Sammlungsnummer "${filter}" matched nothing. ${shape} Keyword fallback: ris_search_case_law court: ${court} with query.`;
+  const { filter, label, number, partLetter } = parsed;
+  if (parsed.court === 'vfgh') {
+    return `No decision for ${label} ${number} — Sammlungsnummer "${filter}" matched nothing. That filter is the bare number VfGH stores, matched dotted or undotted, so the number is the mismatch — verify it against the cite. Keyword fallback: ris_search_case_law court: vfgh with query.`;
+  }
+  const contains = containsFilter(number);
+  const withYear = `${label} ${number}${partLetter === undefined ? '' : ` ${partLetter}`}/<year>`;
+  return `No decision for ${citedCollection(parsed)} — Sammlungsnummer "${filter}" matched nothing. VwGH stores some older cites in other shapes ("VwSlg 0017 F/1947", "VwSlg. 1485 A/1950", "VwSlg 10414/A") that only "${contains}" reaches, and on its own that filter matches every number holding those digits: cite the decision year ("${withYear}"), which runs it here, or run it for that year — ris_search_case_law court: vwgh, collection_number: "${contains}", decided_from: "<year>-01-01", decided_to: "<year>-12-31".`;
+}
+
+/**
+ * The second search of a VwSlg cite with a year, after the first found no decision of that year
+ * (#99): the contains filter within the cited year's decision dates.
+ */
+interface CollectionFallback {
+  /** The year as cited, compared against each row's years. */
+  readonly citedYear: string;
+  readonly filter: string;
+  readonly from: string;
+  readonly to: string;
+  /** The four-digit year the window spans. */
+  readonly year: string;
+}
+
+/** The fallback search as `ris_search_case_law` inputs, so a recipe reproduces it. */
+function fallbackInputs({ filter, from, to }: CollectionFallback): string[] {
+  return [
+    'court: vwgh',
+    `collection_number: ${JSON.stringify(filter)}`,
+    `decided_from: ${JSON.stringify(from)}`,
+    `decided_to: ${JSON.stringify(to)}`,
+  ];
+}
+
+/**
+ * Guidance for a VwSlg cite neither search found: the first matched nothing, the second no row
+ * naming it. A second-search row naming the cited number and year under a part letter the cite
+ * contradicts is never picked — the A and F series reuse numbers — but it is the likeliest
+ * decision meant, so the guidance names it and the cite carrying its letter, as the year-mismatch
+ * guidance names the cite of another year.
+ */
+function collectionFallbackGuidance(
+  parsed: CollectionParse,
+  fallback: CollectionFallback,
+  hits: readonly RisHit[],
+): string {
+  const searched = `No decision for ${citedCollection(parsed)} — Sammlungsnummer "${parsed.filter}" matched nothing, and "${fallback.filter}" decided ${fallback.from} to ${fallback.to}`;
+  const otherLetter = otherLetterCites(parsed, fallback, hits);
+  if (otherLetter.length === 0) {
+    return `${searched}, which finds the number in any shape VwGH stores it, matched no row naming that cite. Verify the number, the part letter (A administrative, F finance), and the year against the cite. Keyword fallback: ris_search_case_law court: vwgh with query.`;
+  }
+  const names = otherLetter.length === 1 ? 'which names' : 'each naming';
+  return `${searched} matched ${joinCites(otherLetter.map(({ cite }) => cite))}, ${names} the cited number and year under another part letter. Verify the part letter (A administrative, F finance) against the cite; ${otherLetterRetry(parsed, otherLetter)}. All matches: ris_search_case_law ${fallbackInputs(fallback).join(', ')}.`;
+}
+
+/**
+ * The sentence the year-mismatch guidance gains when the second search found the cited number
+ * and year under another part letter — the first search's other years and that row are both
+ * candidates for the decision meant. Empty when it found none, leaving that guidance as it was.
+ */
+function otherLetterAlsoPhrase(
+  parsed: CollectionParse,
+  fallback: CollectionFallback,
+  hits: readonly RisHit[],
+): string {
+  const otherLetter = otherLetterCites(parsed, fallback, hits);
+  if (otherLetter.length === 0) return '';
+  const each = otherLetter.length === 1 ? '' : 'each ';
+  return ` The second search also matched ${joinCites(otherLetter.map(({ cite }) => cite))}, ${each}the cited number and year under another part letter — ${otherLetterRetry(parsed, otherLetter)}.`;
+}
+
+/** The retry an other-letter miss names: the cite carrying that letter, when all rows carry one. */
+function otherLetterRetry(
+  parsed: CollectionParse,
+  otherLetter: readonly { cite: string; letter: string }[],
+): string {
+  return retryWithCite([
+    ...new Set(otherLetter.map(({ letter }) => citedCollection({ ...parsed, partLetter: letter }))),
+  ]);
+}
+
+/** The retry a miss names: the one cite that may be the decision meant, else any of them. */
+function retryWithCite(cites: readonly string[]): string {
+  return cites.length === 1
+    ? `if ${cites[0]} is the decision meant, retry with that cite`
+    : 'retry with the cite of the decision meant';
+}
+
+/**
+ * Guidance for a VwSlg cite whose second search kept rows naming more than one decision. A cite
+ * without its part letter spans both series; with one, a row stored without a letter does not
+ * rule its decision out — so each is named and none picked.
+ */
+function collectionFallbackAmbiguityGuidance(
+  parsed: CollectionParse,
+  fallback: CollectionFallback,
+  matched: readonly string[],
+): string {
+  const picks =
+    parsed.partLetter === undefined
+      ? 'VwGH runs two collection series that reuse numbers (A administrative, F finance), so the part letter is what picks one — retry with the full cite.'
+      : 'None of them contradicts the cited number, part letter, or year as VwGH stores it, so compare each against the cite.';
+  return `${citedCollection(parsed)} names more than one decision — Sammlungsnummer "${parsed.filter}" matched no decision of ${fallback.year}, and "${fallback.filter}" decided ${fallback.from} to ${fallback.to} matched ${joinCites(matched)}. ${picks} All matches: ris_search_case_law ${fallbackInputs(fallback).join(', ')}.`;
+}
+
+/** The sentence a miss gains when RIS failed the second search, which might have found the cite. */
+function fallbackFailurePhrase(
+  fallback: CollectionFallback,
+  failure: 'timeout' | 'unavailable',
+): string {
+  const why = failure === 'timeout' ? 'RIS did not answer in time' : 'RIS was unavailable';
+  return ` The second search for the other shapes VwGH stores old cites in, Sammlungsnummer "${fallback.filter}" decided ${fallback.from} to ${fallback.to}, failed — ${why} — so retry the same citation shortly.`;
 }
 
 /**
@@ -1570,18 +1977,19 @@ function collectionAmbiguityGuidance(parsed: CollectionParse, matched: readonly 
  * is right and the year is the mismatch, so the retry names each cite the number does match.
  */
 function collectionYearGuidance(parsed: CollectionParse, cites: readonly string[]): string {
-  const { court, filter, label, number, partLetter, year } = parsed;
-  const cited = `${label} ${number}${partLetter === undefined ? '' : ` ${partLetter}`}${year === undefined ? '' : `/${year}`}`;
+  const { court, filter } = parsed;
+  const cited = citedCollection(parsed);
   const each = cites.length === 1 ? '' : 'each ';
   const dated =
     court === 'vwgh'
       ? `${each}dated another year by both its decision date and its Sammlungsnummer`
       : `${each}decided in another year (VfSlg volumes run by decision year)`;
-  const retry =
-    cites.length === 1
-      ? `if ${cites[0]} is the decision meant, retry with that cite`
-      : 'retry with the cite of the decision meant';
-  return `No decision for ${cited} — Sammlungsnummer "${filter}" matched ${joinCites(cites)}, ${dated}. Verify the year against the cite; ${retry}. All matches: ris_search_case_law court: ${court}, collection_number: ${JSON.stringify(filter)}.`;
+  return `No decision for ${cited} — Sammlungsnummer "${filter}" matched ${joinCites(cites)}, ${dated}. Verify the year against the cite; ${retryWithCite(cites)}. All matches: ris_search_case_law court: ${court}, collection_number: ${JSON.stringify(filter)}.`;
+}
+
+/** The matches beyond the one resolved; undefined when it was the only match. */
+function matchesBeyondFirst(total: number): number | undefined {
+  return total > 1 ? total - 1 : undefined;
 }
 
 /**
@@ -1599,21 +2007,55 @@ function alternativesRecipe(
   return ` ${alternatives} more matched — list them with ${searchTool} ${inputs.join(', ')}.`;
 }
 
-/** The number a stored `Sammlungsnummer` leads with, thousands dots inside. */
+/** The number a stored VfGH `Sammlungsnummer` leads with, thousands dots inside. */
 const STORED_COLLECTION_NUMBER = /\d[\d.]*\d|\d/;
-/** The year after the slash of a stored VwGH label ("VwSlg 18000 A/2010", "VwSlg 1809 F/1958"). */
-const LABEL_YEAR = /\/\s*(\d+)/;
+
+/** A collection number as compared: no thousands dots, no leading zeros ("17" for "0017"). */
+function collectionDigits(number: string): string {
+  return number.replace(/\./g, '').replace(/^0+(?=\d)/, '');
+}
+
+/** The second search's filter for a cited number: its digits, wildcarded on both sides. */
+function containsFilter(number: string): string {
+  return `*${collectionDigits(number)}*`;
+}
+
+/**
+ * A stored VwGH `Sammlungsnummer`, read from its start: an optional "VwSlg" label (dotted or not),
+ * the number, a part letter before or after the slash, and the year after it. VwGH stores most as
+ * "VwSlg 18000 A/2010", and some, decided up to 1987, as "VwSlg 0017 F/1947", "VwSlg. 1485 A/1950",
+ * "VwSlg 544 /F1952", "VwSlg 64  A/1947", "VwSlg 10414/A", "VwSlg 7775/A/1970", or "VwSlg 9766/79".
+ * Every part after the number is optional, so the first match attempt that reaches it succeeds.
+ */
+const STORED_VWSLG =
+  /^\s*(?:VwSlg\.?\s*)?(\d[\d.]*\d|\d)\s*([AF])?\s*(?:\/\s*([AF])?\s*\/?\s*(\d+)?)?/i;
+
+/** A stored VwGH `Sammlungsnummer` as read; undefined when it opens with no label or number. */
+function readStoredVwSlg(
+  stored: string,
+): { letter?: string; number: string; year?: string } | undefined {
+  const m = STORED_VWSLG.exec(stored);
+  if (m?.[1] === undefined) return;
+  const letter = (m[2] ?? m[3])?.toUpperCase();
+  return {
+    number: collectionDigits(m[1]),
+    ...(letter !== undefined && { letter }),
+    ...(m[4] !== undefined && { year: m[4] }),
+  };
+}
 
 /**
  * What one hit says about the cited decision: the cite it names and the years it is dated by.
- * A hit speaks for the cited decision only when its `Sammlungsnummer` leads with the cited
- * number — a VfGH Rechtssatz listing several ("17330 - 17898") carries the decision date of
- * its first number's decision (2004-10-13, while 17.898 was decided 2006) and confirms only
- * that one. VfSlg volumes run by decision year, so a VfGH hit is dated by its decision year and
- * named as the number plus that year. A VwGH hit is also dated by the year its stored label
- * carries, which RIS sometimes sets to the Geschäftszahl year ("VwSlg 6843 A/1964", decided
- * 1966) or misprints ("VwSlg 2524 A/19852"), so a cite under either year resolves; it is named
- * by that label.
+ * A VfGH hit speaks for the cited decision only when its `Sammlungsnummer` leads with the cited
+ * number — a Rechtssatz listing several ("17330 - 17898") carries the decision date of its first
+ * number's decision (2004-10-13, while 17.898 was decided 2006) and confirms only that one. VfSlg
+ * volumes run by decision year, so a VfGH hit is dated by its decision year and named as the
+ * number plus that year. A VwGH hit speaks for it when its stored value, read by
+ * `readStoredVwSlg`, names the cited number and a part letter that does not contradict the cited
+ * one — a row stored without a letter contradicts none. It is also dated by the year its stored
+ * value carries, which RIS sometimes sets to the Geschäftszahl year ("VwSlg 6843 A/1964", decided
+ * 1966) or misprints ("VwSlg 2524 A/19852"), so a cite under either year resolves; it is named by
+ * that stored value.
  */
 function citedDecision(
   parsed: CollectionParse,
@@ -1621,18 +2063,53 @@ function citedDecision(
 ): { cite: string; years: string[] } | undefined {
   if (metadata.controller !== 'Judikatur' || metadata.collectionNumber === undefined) return;
   const stored = metadata.collectionNumber;
-  const lead = STORED_COLLECTION_NUMBER.exec(stored)?.[0];
-  if (lead?.replace(/\./g, '') !== parsed.number.replace(/\./g, '')) return;
   const decided = /^\d{4}/.exec(metadata.decisionDate ?? '')?.[0];
   if (parsed.court === 'vfgh') {
-    return decided === undefined
-      ? undefined
-      : { cite: `VfSlg ${parsed.number}/${decided}`, years: [decided] };
+    const lead = STORED_COLLECTION_NUMBER.exec(stored)?.[0];
+    if (lead?.replace(/\./g, '') !== parsed.number.replace(/\./g, '') || decided === undefined) {
+      return;
+    }
+    return { cite: `VfSlg ${parsed.number}/${decided}`, years: [decided] };
   }
-  const years = [decided, LABEL_YEAR.exec(stored)?.[1]].filter(
-    (year): year is string => year !== undefined,
-  );
+  const read = readStoredVwSlg(stored);
+  if (read === undefined || read.number !== collectionDigits(parsed.number)) return;
+  if (
+    read.letter !== undefined &&
+    parsed.partLetter !== undefined &&
+    read.letter !== parsed.partLetter
+  ) {
+    return;
+  }
+  const years = [decided, read.year].filter((year): year is string => year !== undefined);
   return years.length === 0 ? undefined : { cite: stored, years };
+}
+
+/**
+ * The second search for a VwSlg cite with a year whose first search found no decision of that
+ * year (#99). The labelled prefix never reaches the other shapes VwGH stores (`readStoredVwSlg`) —
+ * nor a two-space one, since RIS collapses repeated spaces in the filter value — but RIS takes a
+ * wildcard on either side, so "*<n>*" reaches every one. On its own it matches every number
+ * holding those digits, so the cited year's decision dates bound it; a two-digit year windows the
+ * latest year ending in those digits, up to this one. The window keys on the decision year, so a
+ * variant row labelled with another year resolves under its decision year only. Undefined for a
+ * VfSlg cite (VfGH stores the bare number), a cite without a year, and a year of neither four nor
+ * two digits, which names no window.
+ */
+function collectionFallback(
+  parsed: CollectionParse,
+  today: string,
+): CollectionFallback | undefined {
+  const { court, number, year } = parsed;
+  if (court !== 'vwgh' || year === undefined || (year.length !== 4 && year.length !== 2)) return;
+  const thisYear = Number(today.slice(0, 4));
+  const spanned = year.length === 4 ? year : String(thisYear - ((thisYear - Number(year)) % 100));
+  return {
+    citedYear: year,
+    filter: containsFilter(number),
+    from: `${spanned}-01-01`,
+    to: `${spanned}-12-31`,
+    year: spanned,
+  };
 }
 
 /** A cited year against a hit's; a two-digit year on either side compares on its last two digits. */
@@ -1669,6 +2146,35 @@ function distinctCites(parsed: CollectionParse, hits: readonly RisHit[]): string
   return [...seen];
 }
 
+/**
+ * The second search's rows naming the cited number and year under a part letter the cite
+ * contradicts, each as its stored value with that letter, in hit order. A row is dated as
+ * `citedDecision` dates it — its decision year or the year its stored value carries. Empty for
+ * a cite without a letter, which no row contradicts.
+ */
+function otherLetterCites(
+  parsed: CollectionParse,
+  fallback: CollectionFallback,
+  hits: readonly RisHit[],
+): { cite: string; letter: string }[] {
+  const { partLetter, ...anyLetter } = parsed;
+  if (partLetter === undefined) return [];
+  const found = new Map<string, string>();
+  for (const hit of hits) {
+    const decision = citedDecision(anyLetter, hit);
+    if (decision === undefined) continue;
+    const letter = readStoredVwSlg(decision.cite)?.letter;
+    if (
+      letter !== undefined &&
+      letter !== partLetter &&
+      decision.years.some((year) => sameYear(fallback.citedYear, year))
+    ) {
+      found.set(decision.cite, letter);
+    }
+  }
+  return [...found].map(([cite, letter]) => ({ cite, letter }));
+}
+
 /* ------------------------------------------------------------------------------------ */
 /* Output shape                                                                          */
 /* ------------------------------------------------------------------------------------ */
@@ -1684,7 +2190,9 @@ const LookupResultSchema = z.object({
     .describe('True when the citation resolved to a single best-matching document.'),
   kind: z
     .enum(['unknown', 'norm', 'gazette', 'case_number', 'collection_number'])
-    .describe('What the citation parsed as — "unknown" when it did not classify into any route.'),
+    .describe(
+      'What the citation parsed as — "unknown" when it did not classify into any route, or is an RIS ELI link in a layout this lookup does not read whose path is no gazette cite followed only by date, language, or format segments, such as a provision’s path cut before its document number ("/eli/bgbl/i/1999/165/A2P4").',
+    ),
   resolution_note: z
     .string()
     .optional()
@@ -1764,33 +2272,36 @@ function todayInAustria(): string {
 export const risLookupCitation = tool('ris_lookup_citation', {
   title: 'Resolve Austrian Legal Citation',
   description:
-    'Resolve a single Austrian legal citation to its canonical RIS document deterministically — no keyword search. Four routes are auto-detected from the citation shape (or forced with kind): a norm citation — section-first ("§ 6 DSG", "Art 10 B-VG"), abbreviation-first ("DSG §1", "EMRK Art8", the shape ris_search_case_law returns in norms_cited; a comma-joined entry like "DSG §1, §24", or one joining full norms with ". " like "ZPO §179. ZPO §275 Abs2", resolves its first provision and names the rest), or a bare abbreviation like "ABGB" or "1. COVID-19-JuBG", with sub-provisions (Abs, Z, lit, "(1)"), the version a law is cited in ("ABGB idF 2. ErwSchG §254", "ABGB aF §140"), and a terminal ";" dropped, and a long title read by its short form after the dash ("StaatsanwaltschaftsG - StAG §35") — resolves through consolidated federal law, or a Bundesland with a state hint, as in force today or on in_force_as_of, while an EU act RIS does not consolidate (DSGVO, the Charter, EuGVVO, the EC Treaty as EG, EGV, or EG-Vertrag), or an EU act cited by its number ("RL 2006/123/EG", "VO (EG) 178/2002"), returns found: false pointing to EUR-Lex without a search; a gazette citation ("BGBl. I Nr. 165/1999", year-first "BGBl I 2018/24", pre-2004 "BGBl. Nr. 194/1961", imperial "RGBl. Nr. 189/1902", "StGBl. Nr. 1/1945", or "LGBl. Nr. 61/2026" with a state hint) routes to the right federal era tier by year — the 1945 Staatsgesetzblatt sits in the 1945–2003 tier beside the BGBl. — or to a state Landesgesetzblatt — falling back to that Bundesland’s pre-e-Recht series when the citation predates its switch; a case number ("Ro 2026/03/0016", "G 287/2022", "14Os49/26a", "2025-0.934.677", "W256 …") is matched to its court — a leading VfGH, VwGH, OGH, BVwG, or DSB names it ("VfGH G 13/2025"), court skips detection, and ambiguous formats probe up to two courts; an ECLI ("ECLI:AT:VFGH:2026:G13.2025") resolves to the decision that carries it; a collection number ("VfSlg 19.632/2012", "VwSlg 18.000 A/2010") resolves through the VfGH/VwGH collection to a decision of the year cited, matched against its decision year or, on VwGH, also the year its Sammlungsnummer carries (a two-digit year compares on its last two digits); a number that matched only other years comes back as found: false naming each cite it does match, and a cite naming more than one decision — a VwSlg cite without its part letter (the A and F series reuse numbers), or a VfSlg number from the 1919–1920 volumes without its year (VfSlg numbering restarted in 1921) — comes back as ambiguous with each cite named rather than resolved to one of them. Matches are ranked before one is picked: a norm resolves to the hit whose abbreviation is the cited one, then the cited one plus a year ("EStG" → EStG 1988), then the cited one without a year RIS’s abbreviation omits, when the law’s short title carries it ("AlVG 1977" → AlVG), the exact §/Artikel label ahead of a prefixed one ("§ 1" before "Art. 2 § 1"), and a cite whose year matches nothing ("VwGVG 2014 §28") is searched once more without it, taking only the law filed under the cited abbreviation without that year and first promulgated no later than it ("VwGVG 2014" → VwGVG, not "AVG 1950" → the AVG of 1991), for a year no later than in_force_as_of’s; a case number resolves to the decision text, then to a Rechtssatz that decision leads; a gazette cite resolves only to an entry of the gazette it names (StGBl. and BGBl. share numbers in 1945, as the older gazettes do in their changeover years); and a "BGBl. Nr." cite without its part that matches more than one of parts I/II/III (from 1997 they reuse numbers) comes back as ambiguous with each part named. Returns the single best-matching document in the same shape as the corresponding search tool, with alternatives_count when more than one matched. A citation that cannot be classified or resolved returns found: false with next-step guidance — it never throws for a miss; only an upstream RIS outage is an error. For keyword rather than citation lookup, use ris_search_legislation or ris_search_case_law.',
+    'Resolve a single Austrian legal citation to its canonical RIS document deterministically — no keyword search. Four routes are auto-detected from the citation shape (or forced with kind): a norm citation — section-first ("§ 6 DSG", "Art 10 B-VG"), abbreviation-first ("DSG §1", "EMRK Art8", the shape ris_search_case_law returns in norms_cited; a comma-joined entry like "DSG §1, §24", or one joining full norms with ". " like "ZPO §179. ZPO §275 Abs2", resolves its first provision and names the rest), or a bare abbreviation like "ABGB" or "1. COVID-19-JuBG", with sub-provisions (Abs, Z, lit, "(1)"), the version a law is cited in ("ABGB idF 2. ErwSchG §254", "ABGB aF §140"), and a terminal ";" dropped, and a long title read by its short form after the dash ("StaatsanwaltschaftsG - StAG §35") — resolves through consolidated federal law, or a Bundesland with a state hint, as in force today or on in_force_as_of, while an EU act RIS does not consolidate (DSGVO, the Charter, EuGVVO, the EC Treaty as EG, EGV, or EG-Vertrag), or an EU act cited by its number ("RL 2006/123/EG", "VO (EG) 178/2002"), returns found: false pointing to EUR-Lex without a search; a gazette citation ("BGBl. I Nr. 165/1999", year-first "BGBl I 2018/24", pre-2004 "BGBl. Nr. 194/1961", imperial "RGBl. Nr. 189/1902", "StGBl. Nr. 1/1945", or "LGBl. Nr. 61/2026" with a state hint) routes to the right federal era tier by year — the 1945 Staatsgesetzblatt sits in the 1945–2003 tier beside the BGBl. — or to a state Landesgesetzblatt — falling back to that Bundesland’s pre-e-Recht series when the citation predates its switch — and a string of several cites, as a consolidated record’s promulgation joins them ("BGBl. Nr. 267/1967 zuletzt geändert durch BGBl. I Nr. 17/2026"), resolves by its first cite alone, its prefix, part, and number read from that cite, and names each later cite with its linking words without searching it, while a first cite in a gazette this lookup does not read ("ABl.Nr. 52/2006 …") returns found: false without a search; a case number ("Ro 2026/03/0016", "G 287/2022", "14Os49/26a", "2025-0.934.677", "W256 …") is matched to its court — a leading VfGH, VwGH, OGH, BVwG, or DSB names it ("VfGH G 13/2025"), court skips detection, and ambiguous formats probe up to two courts; an ECLI ("ECLI:AT:VFGH:2026:G13.2025") resolves to the decision that carries it; a Justiz Rechtssatz number — RS for an OGH headnote ("RS0022961", "RIS-Justiz RS0022961 [T3, T7]"), an OLG’s or LG’s own prefix for theirs ("RW0001127") — resolves to that headnote through Justiz whatever the court hint, its bracketed T numbers (Beisätze inside the same Rechtssatz) not searched; a collection number ("VfSlg 19.632/2012", "VwSlg 18.000 A/2010") resolves through the VfGH/VwGH collection to a decision of the year cited, matched against its decision year or, on VwGH, also the year its Sammlungsnummer carries (a two-digit year compares on its last two digits); a VwSlg cite with a year whose first search finds no decision of that year is searched once more as "*1485*" within that year’s decision dates (a two-digit year spans the latest year ending in it), which reaches the other shapes VwGH stores older cites in ("VwSlg 0017 F/1947", "VwSlg. 1485 A/1950", "VwSlg 10414/A"), taking only a row that names the cited number, a part letter not contradicting the cited one, and the year; a number that matched only other years, or on that second search only rows under another part letter, comes back as found: false naming each cite it does match, and a cite naming more than one decision — a VwSlg cite without its part letter (the A and F series reuse numbers), or a VfSlg number from the 1919–1920 volumes without its year (VfSlg numbering restarted in 1921) — comes back as ambiguous with each cite named rather than resolved to one of them. Matches are ranked before one is picked: a norm resolves to the hit whose abbreviation is the cited one, then the cited one plus a year ("EStG" → EStG 1988), then the cited one without a year RIS’s abbreviation omits, when the law’s short title carries it ("AlVG 1977" → AlVG), the exact §/Artikel label ahead of a prefixed one ("§ 1" before "Art. 2 § 1"), and a cite whose year matches nothing ("VwGVG 2014 §28") is searched once more without it, taking only the law filed under the cited abbreviation without that year and first promulgated no later than it ("VwGVG 2014" → VwGVG, not "AVG 1950" → the AVG of 1991), for a year no later than in_force_as_of’s; a case number resolves to the decision text, then to a Rechtssatz that decision leads; a gazette cite resolves only to an entry of the gazette it names (StGBl. and BGBl. share numbers in 1945, as the older gazettes do in their changeover years); and a "BGBl. Nr." cite without its part that matches more than one of parts I/II/III (from 1997 they reuse numbers) comes back as ambiguous with each part named. An RIS ELI link — the eli or document_url a consolidated-law or authentic-gazette record carries ("https://www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR12029618", "https://www.ris.bka.gv.at/eli/bgbl/II/2026/317/20261103") — is read first under kind auto, before any cite shape: a consolidated provision’s ELI resolves as a norm to the provision whose document number it ends in, in force or not, with in_force_as_of and state not applied, and an authentic gazette’s ELI resolves as a gazette to the entry it names; an /eli/ path in another layout that spells a gazette cite (/eli/bgbl/{I|II|III}/{year}/{number}, /eli/lgbl/{state}/{year}/{number}, or /eli/{bgbl|rgbl|stgbl|gbloe}/{year}/{number} with no part, as before 1997) followed by nothing but date, language, or format segments ("/eli/bgbl/II/2026/317", "/eli/bgbl/1974/60") is classified as that cite, and any other /eli/ layout, such as a provision’s path cut before its document number, returns found: false with kind unknown, nothing searched. Returns the single best-matching document in the same shape as the corresponding search tool, with alternatives_count when more than one matched. A citation that cannot be classified or resolved returns found: false with next-step guidance — it never throws for a miss; only an upstream RIS outage is an error. For keyword rather than citation lookup, use ris_search_legislation or ris_search_case_law.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     citation: z
       .string()
       .describe(
-        'The legal citation to resolve, e.g. "§ 6 DSG" or "DSG §1", "Art 10 B-VG", "BGBl. I Nr. 165/1999" or "BGBl I 2018/24", "Ro 2026/03/0016" or "VfGH G 13/2025", "ECLI:AT:VFGH:2026:G13.2025", or "VfSlg 19.632/2012".',
+        'The legal citation to resolve, e.g. "§ 6 DSG" or "DSG §1", "Art 10 B-VG", "BGBl. I Nr. 165/1999" or "BGBl I 2018/24", "Ro 2026/03/0016" or "VfGH G 13/2025", "ECLI:AT:VFGH:2026:G13.2025", "RS0022961", "VfSlg 19.632/2012", or an RIS ELI link like "https://www.ris.bka.gv.at/eli/bgbl/1974/60/P75/NOR12029618".',
       ),
     kind: z
       .enum(['auto', 'norm', 'gazette', 'case_number', 'collection_number'])
       .default('auto')
       .describe(
-        'Force a route, or auto (default) to classify by shape. Set explicitly when the citation shape is ambiguous.',
+        'Force a route, or auto (default) to classify by shape; only auto reads an RIS ELI link. Set explicitly when the citation shape is ambiguous.',
       ),
-    court: z
-      .enum(CASE_NUMBER_COURT_CODES)
-      .optional()
-      .describe(
-        'Court hint for a case number — short-circuits court detection, and a leading court name, to this court. An ECLI’s own court segment takes precedence; the hint is searched only for a segment this lookup does not map. Codes: ris_list_reference topic courts, minus normenliste (a norm index, which carries no case numbers).',
-      ),
-    state: foldStateNames(z.enum(STATE_CODES).optional()).describe(
-      'Bundesland hint — routes a norm to that state’s consolidated law (LrKons) and an LGBl. gazette to that state’s Landesgesetzblatt (LgblAuth, then the legacy Lgbl series for a citation predating the state’s e-Recht switch).',
+    court: foldCodeCase(z.enum(CASE_NUMBER_COURT_CODES).optional(), {
+      definition: 'ris_lookup_citation',
+      field: 'court',
+    }).describe(
+      'Court hint for a case number — short-circuits court detection, and a leading court name, to this court. An ECLI’s own court segment takes precedence; the hint is searched only for a segment this lookup does not map. A Rechtssatz number (RS0022961) always searches justiz, whatever the hint. Codes: ris_list_reference topic courts, minus normenliste (a norm index, which carries no case numbers).',
+    ),
+    state: foldStateNames(z.enum(STATE_CODES).optional(), {
+      definition: 'ris_lookup_citation',
+      field: 'state',
+    }).describe(
+      'Bundesland hint — routes a norm to that state’s consolidated law (LrKons) and an LGBl. gazette to that state’s Landesgesetzblatt (LgblAuth, then the legacy Lgbl series for a citation predating the state’s e-Recht switch). Not applied to an ELI, which names its own, or to a state gazette organ carrying its Bundesland ("LGBlNÖ Nr. 72/2016", "LGBlBgld. Nr. 3/1976"), which is searched in the state it names.',
     ),
     in_force_as_of: isoDateString
       .optional()
       .describe(
-        'For a norm, resolve the version in force on this date (YYYY-MM-DD). Defaults to today in Austria.',
+        'For a norm, resolve the version in force on this date (YYYY-MM-DD). Defaults to today in Austria. Not applied to an ELI, which names one version.',
       ),
   }),
   output: LookupResultSchema,
@@ -1871,6 +2382,77 @@ export const risLookupCitation = tool('ris_lookup_citation', {
      */
     const budget: SharedSearchBudget = {};
 
+    /*
+     * An ELI on an RIS host names one document, so under kind auto it is read before the
+     * citation is classified (#110): its path carries gazette-shaped segments
+     * ("/eli/bgbl/1974/60/P75/NOR12029618") the gazette classifier would take for a cite. It is
+     * read from the citation as given, which the URL parser trims itself, or as the https link
+     * when it was copied without its scheme. A refused path that spells a gazette cite is
+     * classified as that cite, as before; a forced kind parses the link as a citation, and a
+     * Dokument.wxe web view, which is no ELI, is classified as before.
+     */
+    const eli = input.kind === 'auto' ? readEliCitation(input.citation) : null;
+    if (eli !== null && 'error' in eli) {
+      return { found: false, kind: 'unknown', guidance: eliLinkGuidance(eli.error) };
+    }
+    if (eli?.kind === 'consolidated') {
+      /*
+       * The document number names one version of one provision. RIS finds it by full text, and
+       * a version no longer in force only when no in-force date is sent, so neither
+       * in_force_as_of nor a state flag goes with it.
+       */
+      const result = await runSearch(() =>
+        getRisService().searchLegislation(
+          { application: eli.application, pageSize: RANKED_PAGE_SIZE, query: eli.documentNumber },
+          ctx,
+          budget,
+        ),
+      );
+      const hit = result?.hits.find((candidate) => candidate.documentNumber === eli.documentNumber);
+      if (!result || hit === undefined) {
+        return { found: false, kind: 'norm', guidance: eliNormGuidance(eli) };
+      }
+      const unapplied =
+        input.in_force_as_of !== undefined || stateHint !== undefined
+          ? ' in_force_as_of and state do not apply to an ELI, which names one version of one provision.'
+          : '';
+      ctx.log.info('Citation resolved', {
+        application: eli.application,
+        kind: 'norm',
+        total: result.total,
+      });
+      return {
+        found: true,
+        kind: 'norm',
+        record: toLegislationRecord(hit, eli.application),
+        resolution_note: `Resolved via ris_search_legislation (${eli.application}) — query "${eli.documentNumber}", the document number the ELI ends in, across every version.${unapplied}`,
+      };
+    }
+    if (eli?.kind === 'gazette') {
+      const params: GazetteSearchParams = {
+        application: eli.application,
+        number: eli.number,
+        pageSize: RANKED_PAGE_SIZE,
+        ...(eli.application === 'BgblAuth' ? { part: eli.part } : { state: eli.state }),
+      };
+      const result = await runSearch(() => getRisService().searchGazette(params, ctx, budget));
+      const hit = result?.hits.find((candidate) => candidate.documentNumber === eli.documentNumber);
+      if (!result || hit === undefined) {
+        return { found: false, kind: 'gazette', guidance: eliGazetteGuidance(eli) };
+      }
+      ctx.log.info('Citation resolved', {
+        application: eli.application,
+        kind: 'gazette',
+        total: result.total,
+      });
+      return {
+        found: true,
+        kind: 'gazette',
+        record: toGazetteRecord(hit, eli.application),
+        resolution_note: `Resolved via ris_search_gazette (${eli.application}) — ${eliGazetteFilters(eli).phrase}, from the ELI, which names entry ${eli.documentNumber}.`,
+      };
+    }
+
     const route =
       input.kind !== 'auto'
         ? input.kind
@@ -1893,31 +2475,116 @@ export const risLookupCitation = tool('ris_lookup_citation', {
       }
       const result = await runSearch(() =>
         getRisService().searchCaseLaw(
-          { collectionNumber: parsed.filter, court: parsed.court },
+          { collectionNumber: parsed.filter, court: parsed.court, pageSize: RANKED_PAGE_SIZE },
           ctx,
           budget,
         ),
       );
-      if (!result || result.hits.length === 0) {
-        return {
-          found: false,
-          kind: 'collection_number',
-          guidance: collectionGuidance(parsed),
-        };
-      }
+      const hits = result?.hits ?? [];
       /*
        * The cited year narrows the page before the ambiguity check and the pick: one number can
        * name decisions of several years — VfSlg 8 a 1919 decision and a 1921 one, VwSlg 8000
        * an A/1971 and an F/2005 — and a number that matched only other years is a miss naming
-       * those cites, never a wrong-year hit. The page is the one request's; no year is sent.
+       * those cites, never a wrong-year hit. The first search sends no year.
        */
-      const eligible = hitsOfCitedYear(parsed, result.hits);
+      const eligible = hitsOfCitedYear(parsed, hits);
       const hit = pickRanked(eligible, caseLawRank(undefined));
-      if (hit === undefined) {
+      if (!result || hit === undefined) {
+        const missed =
+          hits.length === 0
+            ? undefined
+            : collectionYearGuidance(parsed, distinctCites(parsed, hits));
+        const fallback = collectionFallback(parsed, todayInAustria());
+        if (fallback === undefined) {
+          return {
+            found: false,
+            kind: 'collection_number',
+            guidance: missed ?? collectionGuidance(parsed),
+          };
+        }
+        /*
+         * The second search only corrects a miss, so RIS failing it — unavailable, or out of the
+         * lookup's one budget — leaves the first search's answer standing with the failure named,
+         * rather than failing a lookup that already has one. A caller cancellation stays one.
+         */
+        let second: RisSearchResult | null;
+        try {
+          second = await runSearch(() =>
+            getRisService().searchCaseLaw(
+              {
+                collectionNumber: fallback.filter,
+                court: 'vwgh',
+                decidedFrom: fallback.from,
+                decidedTo: fallback.to,
+                pageSize: RANKED_PAGE_SIZE,
+              },
+              ctx,
+              budget,
+            ),
+          );
+        } catch (err: unknown) {
+          if (
+            ctx.signal.aborted ||
+            !(err instanceof McpError) ||
+            (err.code !== JsonRpcErrorCode.Timeout &&
+              err.code !== JsonRpcErrorCode.ServiceUnavailable)
+          ) {
+            throw err;
+          }
+          const failure = fallbackFailurePhrase(
+            fallback,
+            err.code === JsonRpcErrorCode.Timeout ? 'timeout' : 'unavailable',
+          );
+          return {
+            found: false,
+            kind: 'collection_number',
+            guidance:
+              missed === undefined
+                ? `No decision for ${citedCollection(parsed)} — Sammlungsnummer "${parsed.filter}" matched nothing.${failure} Keyword fallback: ris_search_case_law court: vwgh with query.`
+                : `${missed}${failure}`,
+          };
+        }
+        /*
+         * A contains filter matches other numbers holding the cited digits ("VwSlg 170 A/1947"
+         * for 17), so a row counts only when its stored value names the cited number, a part
+         * letter that does not contradict the cited one, and an agreeing year — and rows naming
+         * more than one decision are reported, never picked from.
+         */
+        const kept = (second?.hits ?? []).filter((candidate) =>
+          citedDecision(parsed, candidate)?.years.some((year) =>
+            sameYear(fallback.citedYear, year),
+          ),
+        );
+        const matched = distinctCites(parsed, kept);
+        if (matched.length > 1) {
+          return {
+            found: false,
+            kind: 'collection_number',
+            guidance: collectionFallbackAmbiguityGuidance(parsed, fallback, matched),
+          };
+        }
+        const picked = pickRanked(kept, caseLawRank(undefined));
+        if (!second || picked === undefined) {
+          const secondHits = second?.hits ?? [];
+          return {
+            found: false,
+            kind: 'collection_number',
+            guidance:
+              missed === undefined
+                ? collectionFallbackGuidance(parsed, fallback, secondHits)
+                : `${missed}${otherLetterAlsoPhrase(parsed, fallback, secondHits)}`,
+          };
+        }
+        const application = courtApplication('vwgh');
+        // The count is the second search's matches, bleed included — what its recipe lists.
+        const alternatives = matchesBeyondFirst(second.total);
+        ctx.log.info('Citation resolved', { application, kind: route, total: second.total });
         return {
-          found: false,
+          found: true,
           kind: 'collection_number',
-          guidance: collectionYearGuidance(parsed, distinctCites(parsed, result.hits)),
+          record: toCaseLawRecord(picked, application),
+          resolution_note: `Resolved via ris_search_case_law (${application}) — Sammlungsnummer "${fallback.filter}" decided ${fallback.from} to ${fallback.to}, after "${parsed.filter}" matched no decision of ${fallback.year}.${alternativesRecipe(alternatives, 'ris_search_case_law', fallbackInputs(fallback))}`,
+          ...(alternatives !== undefined && { alternatives_count: alternatives }),
         };
       }
       /*
@@ -1938,7 +2605,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
         }
       }
       const application = courtApplication(parsed.court);
-      const alternatives = result.total > 1 ? result.total - 1 : undefined;
+      const alternatives = matchesBeyondFirst(result.total);
       ctx.log.info('Citation resolved', { kind: route, application, total: result.total });
       return {
         found: true,
@@ -2037,7 +2704,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
           guidance: `${normGuidance(parsed, asOf, stateHint)}${othersPhrase(parsed.others)}`,
         };
       }
-      const alternatives = result.total > 1 ? result.total - 1 : undefined;
+      const alternatives = matchesBeyondFirst(result.total);
       const title = yearlessTitle ?? parsed.abbreviation;
       const sectionPhrase =
         parsed.section !== undefined
@@ -2074,13 +2741,20 @@ export const risLookupCitation = tool('ris_lookup_citation', {
     }
 
     if (route === 'gazette') {
-      const parsed = parseGazette(citation, stateHint);
-      if (!parsed) {
-        return { found: false, kind: 'gazette', guidance: gazetteFormatGuidance(citation) };
-      }
-      if (parsed.needsState) {
-        return { found: false, kind: 'gazette', guidance: gazetteGuidance(parsed, stateHint) };
-      }
+      const reading = parseGazette(citation, stateHint);
+      // A gazette string's later cites are named on every answer, never searched (#106).
+      const alsoCites = othersPhrase(reading.others);
+      // So is a state hint the organ's own Bundesland overrode.
+      const hintNote = reading.status === 'parsed' ? overriddenHintPhrase(reading.parsed) : '';
+      const miss = (guidance: string): LookupResult => ({
+        found: false,
+        kind: 'gazette',
+        guidance: `${guidance}${hintNote}${alsoCites}`,
+      });
+      if (reading.status === 'unreadable') return miss(gazetteFormatGuidance(citation));
+      if (reading.status === 'unread') return miss(unreadGazetteGuidance(reading.cite));
+      const { parsed } = reading;
+      if (parsed.needsState) return miss(gazetteGuidance(parsed));
       /*
        * Applications probed in order. A state citation predating that Bundesland's e-Recht
        * switch lives in the legacy Lgbl series rather than LgblAuth, and the switch year
@@ -2097,8 +2771,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
           application,
           number: parsed.number,
           ...(parsed.part !== undefined && { part: parsed.part }),
-          ...(stateHint !== undefined &&
-            (application === 'LgblAuth' || application === 'Lgbl') && { state: stateHint }),
+          ...(parsed.state !== undefined && { state: parsed.state }),
         };
         const result = await runSearch(() => getRisService().searchGazette(params, ctx, budget));
         if (result && result.hits.length > 0) {
@@ -2106,56 +2779,39 @@ export const risLookupCitation = tool('ris_lookup_citation', {
           break;
         }
       }
-      if (resolved === undefined) {
-        return { found: false, kind: 'gazette', guidance: gazetteGuidance(parsed, stateHint) };
-      }
-      const { eligible, otherHits, others } = splitBySeries(
-        resolved.hits,
-        parsed.series,
-        parsed.number,
-      );
+      if (resolved === undefined) return miss(gazetteGuidance(parsed));
+      const {
+        eligible,
+        otherHits,
+        others: otherSeries,
+      } = splitBySeries(resolved.hits, parsed.series, parsed.number);
       const hit = pickRanked(eligible, (candidate) =>
         hitSeries(candidate) === parsed.series ? 0 : 1,
       );
       if (hit === undefined) {
-        return {
-          found: false,
-          kind: 'gazette',
-          guidance: gazetteSeriesGuidance(parsed, resolved.application, others),
-        };
+        return miss(gazetteSeriesGuidance(parsed, resolved.application, otherSeries));
       }
       if (
         parsed.part === undefined &&
         (resolved.application === 'BgblAuth' || resolved.application === 'BgblPdf')
       ) {
         const parts = distinctGazetteParts(eligible);
-        if (parts.length > 1) {
-          return {
-            found: false,
-            kind: 'gazette',
-            guidance: gazetteAmbiguityGuidance(parsed.number, parts),
-          };
-        }
+        if (parts.length > 1) return miss(gazetteAmbiguityGuidance(parsed.number, parts));
       }
       // An entry of another gazette is a different document that shares the number, not an
       // alternative reading of this cite — it is named, and kept out of the count.
-      const sameSeries = resolved.total - otherHits;
-      const alternatives = sameSeries > 1 ? sameSeries - 1 : undefined;
-      const othersPhrase =
-        others.length > 0
-          ? ` Number "${parsed.number}" also names ${joinCites(others)}, ${otherSeriesPhrase(others)} — ${others.length === 1 ? 'not an alternative' : 'not alternatives'}.`
+      const alternatives = matchesBeyondFirst(resolved.total - otherHits);
+      const otherSeriesNote =
+        otherSeries.length > 0
+          ? ` Number "${parsed.number}" also names ${joinCites(otherSeries)}, ${otherSeriesPhrase(otherSeries)} — ${otherSeries.length === 1 ? 'not an alternative' : 'not alternatives'}.`
           : '';
       const partPhrase = parsed.part !== undefined ? `, part ${parsed.part.slice(-1)}` : '';
       /*
        * Both halves of the state recipe — a number alone reproduces nothing without the scope.
-       * Only the two state series took the hint, so a stray state on a federal citation must
-       * not be reported as a filter that was applied.
+       * Only a state route carries a state, so a stray hint on a federal citation is never
+       * reported as a filter that was applied.
        */
-      const stateScope =
-        stateHint !== undefined &&
-        (resolved.application === 'LgblAuth' || resolved.application === 'Lgbl')
-          ? `scope: ${stateHint}`
-          : undefined;
+      const stateScope = parsed.state !== undefined ? `scope: ${parsed.state}` : undefined;
       const scopePhrase = stateScope !== undefined ? `, ${stateScope}` : '';
       const eraPhrase = resolved.application === 'Lgbl' ? ', state_era: legacy' : '';
       // A federal number routes ris_search_gazette to the same era tier by its year.
@@ -2174,12 +2830,47 @@ export const risLookupCitation = tool('ris_lookup_citation', {
         found: true,
         kind: 'gazette',
         record: toGazetteRecord(hit, resolved.application),
-        resolution_note: `Resolved via ris_search_gazette (${resolved.application}) — number "${parsed.number}"${partPhrase}${scopePhrase}${eraPhrase}.${othersPhrase}${alternativesRecipe(alternatives, 'ris_search_gazette', recipe)}`,
+        resolution_note: `Resolved via ris_search_gazette (${resolved.application}) — number "${parsed.number}"${partPhrase}${scopePhrase}${eraPhrase}.${hintNote}${otherSeriesNote}${alsoCites}${alternativesRecipe(alternatives, 'ris_search_gazette', recipe)}`,
         ...(alternatives !== undefined && { alternatives_count: alternatives }),
       };
     }
 
     // route === 'case_number'
+    const rechtssatz = parseRechtssatzNumber(citation);
+    if (rechtssatz !== null) {
+      /*
+       * The number names one Justiz headnote, so a court hint does not redirect it, as an ECLI's
+       * mapped court segment outranks one. RIS honors Rechtssatznummer on Justiz only.
+       */
+      const result = await runSearch(() =>
+        getRisService().searchCaseLaw(
+          { court: 'justiz', rechtssatzNumber: rechtssatz.number },
+          ctx,
+          budget,
+        ),
+      );
+      const hit = result?.hits[0];
+      if (!result || hit === undefined) {
+        return {
+          found: false,
+          kind: 'case_number',
+          guidance: rechtssatzGuidance(rechtssatz.number),
+        };
+      }
+      const application = courtApplication('justiz');
+      const beisatzPhrase =
+        rechtssatz.beisatz === undefined
+          ? ''
+          : ` The bracket ${rechtssatz.beisatz} was not searched: a T number counts a Beisatz added inside this Rechtssatz, not a document of its own.`;
+      ctx.log.info('Citation resolved', { application, kind: route, total: result.total });
+      return {
+        found: true,
+        kind: 'case_number',
+        record: toCaseLawRecord(hit, application),
+        resolution_note: `Resolved via ris_search_case_law (${application}) — Rechtssatznummer "${rechtssatz.number}".${beisatzPhrase}`,
+      };
+    }
+
     const ecli = parseEcli(citation);
     if (ecli !== null) {
       /*
@@ -2204,7 +2895,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
         return { found: false, kind: 'case_number', guidance: ecliGuidance(citation, court) };
       }
       const application = courtApplication(court);
-      const alternatives = result.total > 1 ? result.total - 1 : undefined;
+      const alternatives = matchesBeyondFirst(result.total);
       ctx.log.info('Citation resolved', { application, kind: route, total: result.total });
       return {
         found: true,
@@ -2252,7 +2943,7 @@ export const risLookupCitation = tool('ris_lookup_citation', {
       return { found: false, kind: 'case_number', guidance: caseGuidance(caseNumber, candidates) };
     }
     const application = courtApplication(resolved.court);
-    const alternatives = resolved.total > 1 ? resolved.total - 1 : undefined;
+    const alternatives = matchesBeyondFirst(resolved.total);
     ctx.log.info('Citation resolved', { application, kind: route, total: resolved.total });
     return {
       found: true,

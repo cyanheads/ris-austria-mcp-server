@@ -1,6 +1,6 @@
 /**
  * @fileoverview Server-specific environment configuration for ris-austria-mcp-server.
- * All three variables are optional — the RIS OGD API is keyless.
+ * Every variable is optional — the RIS OGD API is keyless.
  * @module config/server-config
  */
 
@@ -24,6 +24,12 @@ const ServerConfigSchema = z.object({
     .describe(
       'Contact string appended to the User-Agent (RIS netiquette asks integrators to be identifiable).',
     ),
+  foldInputSpellings: z
+    .stringbool()
+    .default(true)
+    .describe(
+      'Fold a code-valued argument sent in another spelling to its code before validation — a court or application code in any letter case, a state by its German or English name. false restores strict validation for every such field.',
+    ),
 });
 
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;
@@ -40,6 +46,7 @@ export function getServerConfig(): ServerConfig {
     apiBaseUrl: 'RIS_API_BASE_URL',
     contentBaseUrl: 'RIS_CONTENT_BASE_URL',
     contact: 'RIS_CONTACT',
+    foldInputSpellings: 'RIS_FOLD_INPUT_SPELLINGS',
   });
   return _config;
 }

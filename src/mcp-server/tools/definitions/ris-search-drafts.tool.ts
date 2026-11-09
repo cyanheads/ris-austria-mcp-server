@@ -127,7 +127,9 @@ const DraftRecordSchema = z
     document_url: z
       .string()
       .optional()
-      .describe('RIS web view of the draft document (DokumentUrl) — for humans.'),
+      .describe(
+        'RIS web view of the draft (DokumentUrl). Pass it to ris_get_document as document_url to read the draft itself; its explanatory notes and redline are in materials.',
+      ),
     materials: z
       .array(MaterialSchema)
       .describe(

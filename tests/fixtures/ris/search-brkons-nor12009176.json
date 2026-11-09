@@ -1,0 +1,82 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "1"
+      },
+      "OgdDocumentReference": {
+        "Data": {
+          "Metadaten": {
+            "Technisch": {
+              "ID": "NOR12009176",
+              "Applikation": "BrKons",
+              "Organ": "BKA (Bundeskanzleramt)",
+              "ImportTimestamp": {
+                "@xsi:nil": "true",
+                "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+              }
+            },
+            "Allgemein": {
+              "Geaendert": "2026-09-22",
+              "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/bgbl/1978/565/A2P4/NOR12009176"
+            },
+            "Bundesrecht": {
+              "Kurztitel": "Datenschutzgesetz",
+              "Eli": "https://ris.bka.gv.at/eli/bgbl/1978/565/A2P4/NOR12009176",
+              "BrKons": {
+                "Kundmachungsorgan": "BGBl. Nr. 565/1978",
+                "Typ": "BG",
+                "Dokumenttyp": "Paragraph",
+                "ArtikelParagraphAnlage": "Art. 2 § 4",
+                "Artikelnummer": "2",
+                "Paragraphnummer": "4",
+                "StammnormPublikationsorgan": "BGBl. Nr.",
+                "StammnormBgblnummer": "565/1978",
+                "Inkrafttretensdatum": "1980-01-01",
+                "Ausserkrafttretensdatum": "1987-06-30",
+                "Abkuerzung": "DSG",
+                "Indizes": {
+                  "item": "10/10 Grundrechte, Datenschutz, Auskunftspflicht"
+                },
+                "Aenderung": "",
+                "Anmerkung": "V: BGBl. Nr. 572/1979<br/>",
+                "Schlagworte": "Ausnahmeregelungen für den öffentlichen Bereich<br/>",
+                "Gesetzesnummer": "10000633",
+                "AlteDokumentnummer": "N11978161100",
+                "GesamteRechtsvorschriftUrl": "https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=Bundesnormen&Gesetzesnummer=10000633"
+              }
+            }
+          },
+          "Dokumentliste": {
+            "ContentReference": {
+              "ContentType": "MainDocument",
+              "Name": "Hauptdokument",
+              "Urls": {
+                "ContentUrl": [
+                  {
+                    "DataType": "Xml",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12009176/NOR12009176.xml"
+                  },
+                  {
+                    "DataType": "Html",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12009176/NOR12009176.html"
+                  },
+                  {
+                    "DataType": "Rtf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12009176/NOR12009176.rtf"
+                  },
+                  {
+                    "DataType": "Pdf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12009176/NOR12009176.pdf"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

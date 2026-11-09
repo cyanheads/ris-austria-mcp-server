@@ -7,8 +7,15 @@
 import type { TypedFail } from '@cyanheads/mcp-ts-core';
 import { z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError, validationError } from '@cyanheads/mcp-ts-core/errors';
-import { markdownLink } from '@cyanheads/mcp-ts-core/utils';
+import {
+  createCounter,
+  escapeMarkdownInline,
+  logger,
+  markdownLink,
+  requestContextService,
+} from '@cyanheads/mcp-ts-core/utils';
 
+import { getServerConfig } from '@/config/server-config.js';
 import { foldStateName } from '@/services/ris/reference/index.js';
 import { type RisPageSize, UNRESOLVED_MINISTRY_REASON } from '@/services/ris/request-builder.js';
 import type { RisContentFormat } from '@/services/ris/ris-service.js';
@@ -167,20 +174,209 @@ export function reversedWindowNotice(windows: readonly DateWindow[]): string | u
 }
 
 /**
- * A state-valued enum parameter that also accepts the state's German or English name in any
- * capitalization ({@link foldStateName}), folded to the code before the enum validates it.
+ * The `enrichmentTrailer.notice` entry for a tool whose notice can quote caller text. The
+ * framework writes a notice into `content[]` as authored Markdown, so this escapes the whole
+ * notice, then quotes every line: `content[]` reads back what `structuredContent.notice` holds,
+ * and a one-line notice with nothing to escape renders exactly as the framework's default.
+ * Escaping writes each line break as a hard break, so no quoted line is blank. Escaping where
+ * the notice is built would put the backslashes into `structuredContent` too.
+ */
+export const escapedNoticeTrailer = {
+  render: (notice: string) =>
+    escapeMarkdownInline(notice)
+      .split('\n')
+      .map((line) => `> ${line}`)
+      .join('\n'),
+};
+
+/**
+ * An article token in a `norm` value: `Art` or `Art.` with optional whitespace, or `Artikel`
+ * with whitespace, in any case and as a whole word; then a number with at most one attached
+ * letter (`6`, `15a`) or an uppercase Roman numeral (`IX`), ending at a word boundary. A joined
+ * `Artikel6` is not a token, since no arm would equal it. The keyword is matched letter by letter
+ * so only the numeral is case-sensitive, and as one literal prefix, so a failed match never
+ * re-reads the text after it under another alternative. Group 1 is the separator, which names
+ * the token's spelling ({@link spellingOf}); group 2 is the number.
+ */
+const ARTICLE_TOKEN =
+  /(?<![\p{L}\p{N}_])[Aa][Rr][Tt](\.?\s*|[Ii][Kk][Ee][Ll]\s+)(\d+[A-Za-z]?|[IVXLCDM]+)(?![\p{L}\p{N}_])/gu;
+
+/** The three spellings RIS indexes an article under, in the order the expression lists them. */
+const ARTICLE_SPELLINGS = [
+  (number: string) => `Art${number}`,
+  (number: string) => `Art ${number}`,
+  (number: string) => `Artikel ${number}`,
+] as const;
+
+const SPELLING_LIST = new Intl.ListFormat('en', { type: 'disjunction' });
+
+/** The sentence naming how RIS indexes article `number`: "Art57, Art 57, or Artikel 57". */
+function spellingsSentence(number: string): string {
+  return `RIS indexes an article as ${SPELLING_LIST.format(ARTICLE_SPELLINGS.map((spell) => spell(number)))}, and each spelling matches only entries indexed that way.`;
+}
+
+/**
+ * The spelling a token's separator writes: none is joined, `ikel…` is Artikel, and a period or
+ * whitespace is spaced — RIS reads `Art.6` and `Art 6` alike.
+ */
+function spellingOf(separator: string): 'artikel' | 'joined' | 'spaced' {
+  if (separator === '') return 'joined';
+  return /^[Ii]/u.test(separator) ? 'artikel' : 'spaced';
+}
+
+/** A `norm` value rewritten to search its articles under every spelling RIS indexes. */
+export interface NormRewrite {
+  /**
+   * The `Norm` expression to send: one parenthesized arm per spelling, then the value as written
+   * when its articles mix spellings, joined by ODER.
+   */
+  readonly expression: string;
+  /** The sentence naming the expression, quoting caller text — escape it when rendering. */
+  readonly notice: string;
+}
+
+/**
+ * Rewrite the article tokens in a `norm` value so RIS searches every spelling it indexes an
+ * article under. RIS matches a norm's tokens in any order and reads a period as nothing, yet
+ * `Art6`, `Art 6`, and `Artikel 6` never match one another, so `Art. 6 DSGVO` is sent as
+ * `(Art6 DSGVO) ODER (Art 6 DSGVO) ODER (Artikel 6 DSGVO)`, and so is `DSGVO Art6`: each arm
+ * the value with every token in one spelling. The result is a superset of the value as written
+ * by construction. When every token shares one spelling, one arm reproduces the value: a joined
+ * value is its own joined arm, the spaced arm matches whatever an `Art.` spelling did, and an
+ * `Artikel` value is its own Artikel arm. When the tokens mix spellings (`Art6 DSGVO UND Art. 7
+ * DSGVO`) no arm does, so the value as written is sent as a fourth arm. RIS evaluates `ODER` in
+ * this filter (`OR` is a literal word there), and a caller's own UND, ODER, or NICHT keeps its
+ * meaning inside each arm.
+ *
+ * Undefined, so the value is sent as written, when it holds no token or carries `(`, `)`, or
+ * `"`: those are the grammar's only pairing delimiters, and an arm wrapped around one could
+ * pair the caller's delimiter with another arm's.
+ */
+export function rewriteNormArticles(norm: string): NormRewrite | undefined {
+  if (/[()"]/u.test(norm)) return undefined;
+  const value = norm.trim();
+  const tokens = Array.from(value.matchAll(ARTICLE_TOKEN));
+  const first = tokens[0]?.[2];
+  if (first === undefined) return undefined;
+  const spellings = new Set(tokens.map(([, separator = '']) => spellingOf(separator)));
+  const arms: string[] = ARTICLE_SPELLINGS.map((spell) =>
+    value.replace(ARTICLE_TOKEN, (_token: string, _separator: string, number: string) =>
+      spell(number),
+    ),
+  );
+  if (spellings.size > 1) arms.push(value);
+  const expression = arms.map((arm) => `(${arm})`).join(' ODER ');
+  // Spelled out for the first article; the expression shows every article's arms.
+  return { expression, notice: `norm searched as ${expression} — ${spellingsSentence(first)}` };
+}
+
+/**
+ * The zero-hit advice for a `norm` value sent as written although it holds an article token,
+ * because it carries `(`, `)`, or `"` ({@link rewriteNormArticles}): RIS matched each article in
+ * that one spelling. Undefined for any other value.
+ */
+export function delimitedArticleAdvice(norm: string): string | undefined {
+  if (!/[()"]/u.test(norm)) return;
+  const number = norm.matchAll(ARTICLE_TOKEN).next().value?.[2];
+  if (number === undefined) return;
+  return `norm carries ( ) or ", so it was sent as written and each article matched only as spelled — ${spellingsSentence(number)} Drop the ( ) and " to search every spelling, or copy the exact string from a result's norms_cited.`;
+}
+
+/** Where a pre-validation fold sits: the tool or resource, and the field it serves. */
+export interface FoldSite {
+  /** Tool or resource name, e.g. `ris_search_case_law` or `ris_document`. */
+  readonly definition: string;
+  /** Input field or URI template variable, e.g. `court`. */
+  readonly field: string;
+}
+
+/** An enum field as a definition declares it: required, optional, or defaulted. */
+type EnumField = z.ZodEnum | z.ZodOptional<z.ZodEnum> | z.ZodDefault<z.ZodEnum>;
+
+/** The codes an {@link EnumField} accepts. */
+function enumCodes(field: EnumField): string[] {
+  return (field instanceof z.ZodEnum ? field : field.unwrap()).options.map(String);
+}
+
+/**
+ * Argument values a fold rewrote. Attributes are the definition and field names, both
+ * author-defined, never the caller's text.
+ */
+const foldedValues = createCounter(
+  'ris.input.folded',
+  'Argument values a pre-validation fold rewrote to the code their field takes',
+  '{values}',
+);
+
+/**
+ * `field` behind a fold that rewrites a string argument before the enum validates it, unless
+ * `RIS_FOLD_INPUT_SPELLINGS` is false. A rewrite writes one log line naming the definition, the
+ * field, and the code, and adds one to `ris.input.folded`; a value already its code does
+ * neither. The fold has no request context, so the line goes through the global logger, and it
+ * runs once per parse: a call the framework repairs and parses again folds again.
  *
  * Pass the enum with its `.default()` or `.optional()` already applied and chain `.describe()`
- * on the result: the advertised JSON Schema is the inner enum's, so `enum`, `default`, and the
- * absence from `required` stay as before — a `.default()` outside the preprocess is dropped from
- * the schema, and a `.describe()` only inside it trips the `describe-on-fields` lint. The
- * description keeps offering only the codes, since that is what the schema advertises.
+ * on the result: the advertised JSON Schema is the inner enum's, so `enum`, `default`, and
+ * `required` stay as before — a `.default()` outside the preprocess is dropped from the schema,
+ * and a `.describe()` only inside it trips the `describe-on-fields` lint. The description keeps
+ * offering only the codes, since that is what the schema advertises.
+ */
+function foldBeforeValidation<T extends EnumField>(
+  field: T,
+  site: FoldSite,
+  fold: (value: string) => unknown,
+) {
+  return z.preprocess((value) => {
+    if (typeof value !== 'string' || !getServerConfig().foldInputSpellings) return value;
+    const folded = fold(value);
+    if (folded !== value) {
+      foldedValues.add(1, {
+        'ris.input.definition': site.definition,
+        'ris.input.field': site.field,
+      });
+      logger.info(
+        `Folded ${site.definition} ${site.field} to ${JSON.stringify(folded)} before validation.`,
+        requestContextService.createRequestContext({
+          operation: 'FoldInputSpelling',
+          additionalContext: { ...site, folded },
+        }),
+      );
+    }
+    return folded;
+  }, field);
+}
+
+/**
+ * A code-valued enum parameter that also accepts its code in any letter case and with
+ * surrounding whitespace — `Vfgh`, `VFGH`, ` vfgh ` — folded to the code before the enum
+ * validates it ({@link foldBeforeValidation}). Matching ignores case only while no two codes
+ * share a lowercase form, so the fold names one code or none; any other value reaches the enum
+ * as sent and is rejected as before.
+ */
+export function foldCodeCase<T extends EnumField>(field: T, site: FoldSite) {
+  const codes = enumCodes(field);
+  const byLowercase = new Map(codes.map((code) => [code.toLowerCase(), code]));
+  if (byLowercase.size !== codes.length) {
+    throw new Error(`${site.definition} ${site.field}: two codes differ only in letter case.`);
+  }
+  return foldBeforeValidation(
+    field,
+    site,
+    (value) => byLowercase.get(value.trim().toLowerCase()) ?? value,
+  );
+}
+
+/**
+ * A state-valued enum parameter that also accepts the state's German or English name in any
+ * capitalization ({@link foldStateName}), folded to the code before the enum validates it
+ * ({@link foldBeforeValidation}).
  */
 export function foldStateNames<T extends z.ZodDefault<z.ZodEnum> | z.ZodOptional<z.ZodEnum>>(
   field: T,
+  site: FoldSite,
 ) {
-  const accepted = new Set(field.unwrap().options.map(String));
-  return z.preprocess((value) => foldStateName(value, accepted), field);
+  const accepted = new Set(enumCodes(field));
+  return foldBeforeValidation(field, site, (value) => foldStateName(value, accepted));
 }
 
 /**

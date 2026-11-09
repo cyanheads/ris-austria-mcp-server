@@ -24,7 +24,7 @@ import {
   risSearchLegislation,
 } from '@/mcp-server/tools/definitions/ris-search-legislation.tool.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
-import type { RisSearchResult } from '@/services/ris/types.js';
+import type { RisBundesrechtMetadata, RisSearchResult } from '@/services/ris/types.js';
 
 import {
   contentText,
@@ -743,6 +743,127 @@ describe('risSearchLegislation — record mapping and format() parity', () => {
       if (record.promulgation !== undefined) expect(text).toContain(record.promulgation);
       for (const idx of record.indexes) expect(text).toContain(idx);
       for (const celex of record.celex_references) expect(text).toContain(celex);
+    }
+  });
+});
+
+describe('risSearchLegislation — original and latest-change gazette cites (#109)', () => {
+  /** Run one call over the wire; return the parsed records by id and each id's text block. */
+  async function callWire(page: unknown, input: Record<string, unknown>) {
+    searchLegislation.mockResolvedValue(page);
+    const result = await runToolContract(risSearchLegislation, input as never);
+    expect(result.isError).not.toBe(true);
+    const { results } = risSearchLegislation.output.parse(result.structuredContent);
+    const text = contentText(result);
+    const blockFor = (documentNumber: string) =>
+      text.split('\n\n').find((block) => block.includes(`**Document:** ${documentNumber}`)) ?? '';
+    return { blockFor, byId: new Map(results.map((r) => [r.document_number, r])), results, text };
+  }
+  const page = (name: string) => parseSearchResponse(fixture(name));
+  const NEW_FIELDS = ['original_gazette', 'latest_change_gazette', 'latest_change_relation'];
+
+  it('carries the DSG § 0 cites on both surfaces', async () => {
+    const { blockFor, byId } = await callWire(page('search-brkons-celex.json'), {
+      title: 'Datenschutzgesetz',
+    });
+    expect(byId.get('NOR40262691')).toMatchObject({
+      latest_change_gazette: 'BGBl. I Nr. 70/2024',
+      latest_change_relation: 'zuletzt geändert durch',
+      original_gazette: 'BGBl. I Nr. 165/1999',
+      promulgation: 'BGBl. I Nr. 165/1999 zuletzt geändert durch BGBl. I Nr. 70/2024',
+    });
+    expect(blockFor('NOR40262691')).toContain('\n**Original gazette:** BGBl. I Nr. 165/1999\n');
+    expect(blockFor('NOR40262691')).toContain(
+      '\n**Latest change:** zuletzt geändert durch BGBl. I Nr. 70/2024\n',
+    );
+  });
+
+  it("keeps each state organ in RIS's spelling, and adds nothing where RIS records no change", async () => {
+    const { blockFor, byId } = await callWire(page('search-lrkons-abkuerzung.json'), {
+      scope: 'wien',
+    });
+    expect(byId.get('LWI40016426')).toMatchObject({
+      latest_change_gazette: 'LGBl. Nr. 37/2023',
+      original_gazette: 'LGBl. Nr. 11/1930',
+    });
+    expect(byId.get('LSB40028116')).toMatchObject({
+      latest_change_gazette: 'LGBl Nr 42/2024',
+      latest_change_relation: 'zuletzt geändert durch',
+      original_gazette: 'LGBl Nr 27/2022',
+    });
+    expect(blockFor('LSB40028116')).toContain('**Original gazette:** LGBl Nr 27/2022');
+    expect(blockFor('LSB40028116')).toContain(
+      '**Latest change:** zuletzt geändert durch LGBl Nr 42/2024',
+    );
+    const unchanged = byId.get('LWI40000588')!;
+    expect(unchanged.original_gazette).toBe('LGBl. Nr. 49/2009');
+    expect(unchanged).not.toHaveProperty('latest_change_gazette');
+    expect(unchanged).not.toHaveProperty('latest_change_relation');
+    expect(blockFor('LWI40000588')).not.toContain('**Latest change:**');
+  });
+
+  it('reads RIS’s "Undefined" relation as absent, never defaulting a latest change', async () => {
+    const { blockFor, byId } = await callWire(page('search-brkons-bvwgg-section-1.json'), {
+      title: 'BVwGG',
+    });
+    const record = byId.get('NOR40146336')!;
+    expect(record.original_gazette).toBe('BGBl. I Nr. 10/2013');
+    expect(record).not.toHaveProperty('latest_change_gazette');
+    expect(record).not.toHaveProperty('latest_change_relation');
+    expect(blockFor('NOR40146336')).toContain('**Original gazette:** BGBl. I Nr. 10/2013');
+    expect(blockFor('NOR40146336')).not.toContain('**Latest change:**');
+    expect(blockFor('NOR40146336')).not.toContain('Undefined');
+  });
+
+  it('renders a latest-change gazette and relation each on its own', async () => {
+    const [hit] = page('search-brkons-celex.json').hits;
+    const md = hit!.metadata as RisBundesrechtMetadata;
+    const { blockFor, byId } = await callWire(
+      {
+        hits: [
+          {
+            ...hit!,
+            documentNumber: 'NOR_GAZETTE_ONLY',
+            metadata: { ...md, latestChangeRelation: undefined },
+          },
+          {
+            ...hit!,
+            documentNumber: 'NOR_RELATION_ONLY',
+            metadata: { ...md, latestChangeGazette: undefined },
+          },
+        ],
+        page: 1,
+        pageSize: 20,
+        total: 2,
+      },
+      { title: 'Datenschutzgesetz' },
+    );
+    expect(byId.get('NOR_GAZETTE_ONLY')).not.toHaveProperty('latest_change_relation');
+    expect(blockFor('NOR_GAZETTE_ONLY')).toContain('\n**Latest change:** BGBl. I Nr. 70/2024\n');
+    expect(byId.get('NOR_RELATION_ONLY')).not.toHaveProperty('latest_change_gazette');
+    expect(blockFor('NOR_RELATION_ONLY')).toContain(
+      '\n**Latest change:** zuletzt geändert durch\n',
+    );
+  });
+
+  it.each([
+    ['an English translation (Erv)', 'search-erv-translations.json', { language: 'english' }],
+    ['a municipal norm (Gr)', 'search-gra.json', { scope: 'steiermark', municipality: 'Graz' }],
+  ] as const)('gives %s none of the three fields', async (_label, name, input) => {
+    const { results, text } = await callWire(page(name), input);
+    expect(results.length).toBeGreaterThan(0);
+    for (const record of results) {
+      for (const field of NEW_FIELDS) expect(record).not.toHaveProperty(field);
+    }
+    expect(text).not.toContain('**Original gazette:**');
+    expect(text).not.toContain('**Latest change:**');
+  });
+
+  it('describes what ris_lookup_citation does with each cite, the state limit included', () => {
+    const { shape } = risSearchLegislation.output.shape.results.element;
+    for (const field of ['original_gazette', 'latest_change_gazette'] as const) {
+      expect(shape[field].description).toContain('ris_lookup_citation');
+      expect(shape[field].description).toMatch(/LGBl\. cite needs state/u);
     }
   });
 });

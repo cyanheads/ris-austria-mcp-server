@@ -26,7 +26,8 @@
         "NODE_ENV": "production",
         "RIS_CONTACT": "${user_config.ris_contact}",
         "RIS_API_BASE_URL": "${user_config.ris_api_base_url}",
-        "RIS_CONTENT_BASE_URL": "${user_config.ris_content_base_url}"
+        "RIS_CONTENT_BASE_URL": "${user_config.ris_content_base_url}",
+        "RIS_FOLD_INPUT_SPELLINGS": "${user_config.ris_fold_input_spellings}"
       }
     }
   },
@@ -58,6 +59,13 @@
       "description": "RIS document content host that rendition URLs are built on and documents are fetched from. document_url also accepts www. and ogd.ris.bka.gv.at. Leave blank for the default, https://ogd.ris.bka.gv.at — www.ris.bka.gv.at answers automated clients with a bot-check page.",
       "required": false,
       "default": ""
+    },
+    "ris_fold_input_spellings": {
+      "type": "boolean",
+      "title": "Fold Input Spellings",
+      "description": "Accept a court or application code in any letter case, and a state by its German or English name, folding it to the code before validation. Turn off for strict validation.",
+      "required": false,
+      "default": true
     }
   }
 }

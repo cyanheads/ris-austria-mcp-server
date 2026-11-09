@@ -23,6 +23,7 @@ import type { RisChange } from '@/services/ris/types.js';
 
 import {
   failSearchError,
+  foldCodeCase,
   isoDateString,
   joinNotices,
   pageSizeParam,
@@ -114,7 +115,9 @@ const ChangeRecordSchema = z
     document_url: z
       .string()
       .optional()
-      .describe('RIS web view of the document (Allgemein.DokumentUrl) — for humans.'),
+      .describe(
+        'RIS link to the document (Allgemein.DokumentUrl): an ELI on BrKons, LrKons, BgblAuth, and LgblAuth, a Dokument.wxe web view elsewhere. Pass it to ris_get_document as document_url to read the document.',
+      ),
     binding_status: z
       .enum(BINDING_STATUSES)
       .describe(
@@ -198,11 +201,12 @@ export const risTrackChanges = tool('ris_track_changes', {
     'Track every document added or changed in one RIS application within an exact date window (changed_from/changed_to), optionally including deletions (include_deleted) — the delta-sync and monitoring primitive for mirrors and watchers, and the only surface that reports removals. Unlike the search tools’ coarse, additive-only changed_since intervals, this is exact-dated and deletion-aware. application accepts every RIS application code listed by ris_list_reference topic applications, including BrKons, LrKons, Dsk, and BgblAuth. Each changed document comes back in a compact cross-class record — document_number (for ris_get_document), title, the section_label, law_id, and in-force window (in_force_from/in_force_until) of a consolidated-law row or the case_numbers and decision_date of a court decision, dates, binding_status, and rendition URLs — plus its last-changed date; removed documents come back as deleted records with a deletion timestamp. One application per call; page explicitly for large windows.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
-    application: z
-      .enum(APPLICATION_CODES)
-      .describe(
-        'RIS application whose change feed to read, e.g. BrKons, LrKons, Dsk, or BgblAuth. All supported codes: ris_list_reference topic applications.',
-      ),
+    application: foldCodeCase(z.enum(APPLICATION_CODES), {
+      definition: 'ris_track_changes',
+      field: 'application',
+    }).describe(
+      'RIS application whose change feed to read, e.g. BrKons, LrKons, Dsk, or BgblAuth. All supported codes: ris_list_reference topic applications.',
+    ),
     changed_from: isoDateString
       .optional()
       .describe(

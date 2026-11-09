@@ -379,10 +379,21 @@ function normalizeContentReferences(
 /* Controller-class metadata maps                                                        */
 /* ------------------------------------------------------------------------------------ */
 
+/**
+ * A gazette cite from RIS's organ and number fields ("BGBl. I Nr." + "165/1999"), each trimmed and
+ * joined by one space in RIS's own spelling. Both parts are required: from 1997 BGBl. parts I–III
+ * reuse numbers, and an organ alone names no entry.
+ */
+function gazetteCite(organ: string | undefined, number: string | undefined): string | undefined {
+  const parts = [rawText(organ)?.trim(), rawText(number)?.trim()];
+  return parts.every(Boolean) ? parts.join(' ') : undefined;
+}
+
 /** Map the shared consolidated-law node (BrKons / LrKons). */
 function mapConsolidated(kons: RawBundesrechtMeta['BrKons']): {
   [K in keyof RisConsolidatedFields]: RisConsolidatedFields[K] | undefined;
 } {
+  const relation = rawText(kons?.NovellenBeziehung);
   return {
     abbreviation: cleanText(kons?.Abkuerzung),
     amendment: cleanText(kons?.Aenderung),
@@ -390,9 +401,13 @@ function mapConsolidated(kons: RawBundesrechtMeta['BrKons']): {
     inForceUntil: rawText(kons?.Ausserkrafttretensdatum),
     indexes: coerceWrappedList(kons?.Indizes),
     keywords: keywordList(kons?.Schlagworte),
+    latestChangeGazette: gazetteCite(kons?.NovellenPublikationsorgan, kons?.NovellenBgblnummer),
+    // `Undefined` is RIS's no-value member, sent where it records no relation.
+    latestChangeRelation: relation === 'Undefined' ? undefined : relation,
     lawId: rawText(kons?.Gesetzesnummer),
     lawUrl: rawText(kons?.GesamteRechtsvorschriftUrl),
     normType: rawText(kons?.Typ),
+    originalGazette: gazetteCite(kons?.StammnormPublikationsorgan, kons?.StammnormBgblnummer),
     originalGazetteNumber: rawText(kons?.StammnormBgblnummer),
     promulgation: cleanText(kons?.Kundmachungsorgan),
     sectionLabel: rawText(kons?.ArtikelParagraphAnlage),
@@ -546,14 +561,17 @@ function mapJudikatur(raw: RawJudikaturMeta): RisJudikaturMetadata {
     (key) => raw[key] !== undefined && typeof raw[key] === 'object',
   );
   const node: RawJudikaturAppNode = (appKey !== undefined ? raw[appKey] : undefined) ?? {};
+  // Justiz only: an LVwG headnote's Rechtssatznummern is its ordinal within the decision ("12"),
+  // not a number decisions cite it by.
+  const justiz = appKey === 'Justiz';
+  const rechtssatzNumbers = justiz ? coerceWrappedList(node.Rechtssatznummern) : [];
   return prune<RisJudikaturMetadata>({
     // The VwGH short form is on every Normenliste record and is the form its citations use;
     // `Abkuerzung` is sparse and frequently repeats the full title instead.
     abbreviation: rawText(node.AbkuerzungDesVerwaltungsgerichtshofes) ?? rawText(node.Abkuerzung),
-    caseNumbers: splitCaseNumbers(coerceWrappedList(raw.Geschaeftszahl), appKey === 'Justiz'),
+    caseNumbers: splitCaseNumbers(coerceWrappedList(raw.Geschaeftszahl), justiz),
     collectionNumber: rawText(node.Sammlungsnummer),
     controller: 'Judikatur',
-    courtName: rawText(node.Gericht),
     decisionDate: rawText(raw.Entscheidungsdatum),
     decisionDocumentType: rawText(raw.Dokumenttyp),
     decisionKind: rawText(node.Entscheidungsart),
@@ -564,11 +582,15 @@ function mapJudikatur(raw: RawJudikaturMeta): RisJudikaturMetadata {
     indexes: coerceWrappedList(node.Indizes),
     issuingBody: rawText(node.EntscheidendeBehoerde),
     keywords: keywordList(raw.Schlagworte),
-    legalAreas: coerceWrappedList(node.Rechtsgebiete),
+    // `Undefined` is RIS's no-value member of the Rechtsgebiet enum, not a legal area.
+    legalAreas: justiz
+      ? coerceWrappedList(node.Rechtsgebiete).filter((area) => area !== 'Undefined')
+      : [],
     legalForceNote: cleanText(node.Anfechtung),
     normType: rawText(node.Typ),
     normsCited: coerceWrappedList(raw.Normen),
     note: cleanText(node.Anmerkung),
+    rechtssatzNumbers: rechtssatzNumbers.length > 0 ? rechtssatzNumbers : undefined,
     reference: cleanText(node.Fundstelle),
     state: rawText(node.Bundesland),
     summary: cleanText(node.Kurzinformation),

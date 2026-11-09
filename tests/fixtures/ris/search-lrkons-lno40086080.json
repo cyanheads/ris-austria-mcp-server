@@ -1,0 +1,77 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "1"
+      },
+      "OgdDocumentReference": {
+        "Data": {
+          "Metadaten": {
+            "Technisch": {
+              "ID": "LNO40086080",
+              "Applikation": "LrKons",
+              "Organ": "LReg Niederösterreich",
+              "ImportTimestamp": {
+                "@xsi:nil": "true",
+                "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+              }
+            },
+            "Allgemein": {
+              "Veroeffentlicht": "2026-03-16",
+              "Geaendert": "2026-03-16",
+              "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/lgbl/NI/0824/A13/LNO40086080"
+            },
+            "Landesrecht": {
+              "Kurztitel": "Vereinbarung gemäß Art. 15a B-VG Niederösterreich und Wien zur Errichtung und zum Betrieb eines Biosphärenpark Wienerwald",
+              "Bundesland": "Niederösterreich",
+              "LrKons": {
+                "Kundmachungsorgan": "LGBl. 0824-0",
+                "Typ": "S",
+                "Dokumenttyp": "Paragraph",
+                "ArtikelParagraphAnlage": "Art. 13",
+                "Artikelnummer": "13",
+                "StammnormPublikationsorgan": "LGBl.",
+                "StammnormBgblnummer": "0824-0",
+                "Indizes": {
+                  "item": "08 Vereinbarungen gemäß Art. 15a B-VG"
+                },
+                "Aenderung": "",
+                "Gesetzesnummer": "20000085",
+                "GesamteRechtsvorschriftUrl": "https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=LrNO&Gesetzesnummer=20000085",
+                "Eli": "https://ris.bka.gv.at/eli/lgbl/NI/0824/A13/LNO40086080"
+              }
+            }
+          },
+          "Dokumentliste": {
+            "ContentReference": {
+              "ContentType": "MainDocument",
+              "Name": "Hauptdokument",
+              "Urls": {
+                "ContentUrl": [
+                  {
+                    "DataType": "Xml",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LNO40086080/LNO40086080.xml"
+                  },
+                  {
+                    "DataType": "Html",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LNO40086080/LNO40086080.html"
+                  },
+                  {
+                    "DataType": "Rtf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LNO40086080/LNO40086080.rtf"
+                  },
+                  {
+                    "DataType": "Pdf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LNO40086080/LNO40086080.pdf"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "1"
+      },
+      "OgdDocumentReference": {
+        "Data": {
+          "Metadaten": {
+            "Technisch": {
+              "ID": "NOR12017691",
+              "Applikation": "BrKons",
+              "Organ": "BKA (Bundeskanzleramt)",
+              "ImportTimestamp": {
+                "@xsi:nil": "true",
+                "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+              }
+            },
+            "Allgemein": {
+              "Geaendert": "2015-04-08",
+              "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/jgs/1811/946/P1/NOR12017691"
+            },
+            "Bundesrecht": {
+              "Kurztitel": "Allgemeines bürgerliches Gesetzbuch",
+              "Eli": "https://www.ris.bka.gv.at/eli/jgs/1811/946/P1/NOR12017691",
+              "BrKons": {
+                "Kundmachungsorgan": "JGS Nr. 946/1811",
+                "Typ": "BG",
+                "Dokumenttyp": "Paragraph",
+                "ArtikelParagraphAnlage": "§ 1",
+                "Paragraphnummer": "1",
+                "StammnormPublikationsorgan": "JGS Nr.",
+                "StammnormBgblnummer": "946/1811",
+                "Inkrafttretensdatum": "1812-01-01",
+                "Abkuerzung": "ABGB",
+                "Indizes": {
+                  "item": "20/01 Allgemeines bürgerliches Gesetzbuch (ABGB)"
+                },
+                "Aenderung": "",
+                "Schlagworte": "Privatrecht",
+                "Gesetzesnummer": "10001622",
+                "AlteDokumentnummer": "N2181110171Z",
+                "GesamteRechtsvorschriftUrl": "https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=Bundesnormen&Gesetzesnummer=10001622"
+              }
+            }
+          },
+          "Dokumentliste": {
+            "ContentReference": {
+              "ContentType": "MainDocument",
+              "Name": "Hauptdokument",
+              "Urls": {
+                "ContentUrl": [
+                  {
+                    "DataType": "Xml",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12017691/NOR12017691.xml"
+                  },
+                  {
+                    "DataType": "Html",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12017691/NOR12017691.html"
+                  },
+                  {
+                    "DataType": "Rtf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12017691/NOR12017691.rtf"
+                  },
+                  {
+                    "DataType": "Pdf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Bundesnormen/NOR12017691/NOR12017691.pdf"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

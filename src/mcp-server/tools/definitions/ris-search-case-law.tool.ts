@@ -32,8 +32,11 @@ import { getRisService } from '@/services/ris/ris-service.js';
 import type { RisHit, RisJudikaturMetadata } from '@/services/ris/types.js';
 
 import {
+  delimitedArticleAdvice,
+  escapedNoticeTrailer,
   failSearchError,
   filterText,
+  foldCodeCase,
   foldStateNames,
   isoDateString,
   joinNotices,
@@ -41,6 +44,7 @@ import {
   pageSizeParam,
   renditionLinks,
   reversedWindowNotice,
+  rewriteNormArticles,
   rewriteUnsupportedParam,
   servePageSize,
   type UnsupportedParam,
@@ -192,6 +196,18 @@ export const CaseLawRecordSchema = z
       .string()
       .optional()
       .describe('Official collection number (VfSlg/VwSlg/UVS Sammlungsnummer), where assigned.'),
+    rechtssatz_numbers: z
+      .array(z.string().describe('One Rechtssatz number, e.g. "RS0022961".'))
+      .optional()
+      .describe(
+        'Rechtssatz numbers (Rechtssatznummern) of a justiz headnote — RS… for the OGH; RW…, RI…, RL…, RG…, and longer prefixes for the Oberlandesgerichte and Landesgerichte — the number decisions and commentaries cite it by ("RIS-Justiz RS0022961"). Pass one as query with court justiz and decision_type full_text to find the decision texts citing it. Present only on justiz Rechtssatz records; decision texts and other courts carry none.',
+      ),
+    legal_areas: z
+      .array(z.string().describe('One legal area, e.g. "Zivilrecht".'))
+      .optional()
+      .describe(
+        'Legal area (Rechtsgebiet) of a justiz record as RIS writes it: Zivilrecht (civil) or Strafrecht (criminal), the values the legal_area filter selects. Present only on justiz records that carry one.',
+      ),
     ecli: z.string().optional().describe('European Case Law Identifier, where assigned.'),
     decision_url: z
       .string()
@@ -264,10 +280,14 @@ export function toRecord(hit: RisHit, fallbackApplication: string): CaseLawRecor
       ...(md.headnotesUrl !== undefined && { headnotes_url: md.headnotesUrl }),
       indexes: [...md.indexes],
       ...(md.keywords !== undefined && { keywords: md.keywords }),
+      ...(md.legalAreas.length > 0 && { legal_areas: [...md.legalAreas] }),
       ...(md.legalForceNote !== undefined && { legal_force_note: md.legalForceNote }),
       ...(md.note !== undefined && { note: md.note }),
       ...(normIndex !== undefined && { norm_index: normIndex }),
       norms_cited: [...md.normsCited],
+      ...(md.rechtssatzNumbers !== undefined && {
+        rechtssatz_numbers: [...md.rechtssatzNumbers],
+      }),
       ...(md.state !== undefined && { state: md.state }),
       ...(md.summary !== undefined && { summary: md.summary }),
       ...(md.guidingPrinciple !== undefined && { guiding_principle: md.guidingPrinciple }),
@@ -293,11 +313,12 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
     'Search Austrian case law (Judikatur) in ONE court or tribunal per call — court is required: vfgh (Constitutional Court), vwgh (Supreme Administrative Court), justiz (ordinary courts incl. OGH, selected decisions), bvwg (federal administrative), lvwg (state administrative), dsk (data protection authority), normenliste (VwGH norm index), dok, pvak, gbk, verg, upts (party transparency), and the historical uvs, asylgh, ubas, umse, bks. Cross-court research is one call per court (calls are cheap); historical bodies are closed windows with successors — codes, windows, and Geschäftszahl examples: ris_list_reference topic courts. Filter by full-text query, cited norm ("DSG §1", "DSGVO Art32" — the highest-value filter), exact case_number (Geschäftszahl), decision date range, decision_type (headnote vs full text), decision_kind, or the court-conditional filters: issuing_body (dsk/dok/pvak/verg), court_name/legal_area/subject_area (justiz), state (lvwg/uvs), party (upts), commission/senate/discrimination_ground (gbk), subject_law (bks), collection_number (vfgh/vwgh/uvs). For a known Geschäftszahl, ECLI, or VfSlg/VwSlg cite, ris_lookup_citation resolves it directly.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
-    court: z
-      .enum(COURT_CODES)
-      .describe(
-        'Which court/tribunal application to search — one per call. Codes, coverage windows, and successor mapping: ris_list_reference topic courts.',
-      ),
+    court: foldCodeCase(z.enum(COURT_CODES), {
+      definition: 'ris_search_case_law',
+      field: 'court',
+    }).describe(
+      'Which court/tribunal application to search — one per call. Codes, coverage windows, and successor mapping: ris_list_reference topic courts.',
+    ),
     query: filterText
       .optional()
       .describe(
@@ -306,7 +327,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
     norm: filterText
       .optional()
       .describe(
-        'Cited-provision filter (Norm) — "DSG §1", "DSGVO Art32", "GewO 1994 §129", matching the format returned in norms_cited. The highest-value case-law filter. Omit to leave unfiltered; a blank value is rejected.',
+        'Cited-provision filter (Norm) — "DSG §1", "DSGVO Art32", "GewO 1994 §129", matching the format returned in norms_cited; token order and periods do not matter. An article in any spelling ("DSGVO Art6", "Art. 6 DSGVO", "Artikel 6 MRK") is searched under all three RIS indexes (Art6, Art 6, Artikel 6), joined by ODER, and the notice names that expression; a value carrying ( ) or " is sent as written. Combine terms with UND/ODER/NICHT (AND and OR match as words here). The highest-value case-law filter. Omit to leave unfiltered; a blank value is rejected.',
       ),
     case_number: filterText
       .optional()
@@ -331,7 +352,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
     collection_number: filterText
       .optional()
       .describe(
-        'Official collection number (Sammlungsnummer). vfgh, vwgh, and uvs only, and the accepted form differs: vfgh and uvs store the bare number and match it dotted or undotted ("19632", "19.632"), while vwgh stores the full labelled undotted cite — pass "VwSlg 18000 A/2010", or the space-anchored prefix "VwSlg 18000 *" when the part letter or year is unknown. A bare or dotted number matches nothing under vwgh. Omit to leave unfiltered; a blank value is rejected.',
+        'Official collection number (Sammlungsnummer). vfgh, vwgh, and uvs only, and the accepted form differs: vfgh and uvs store the bare number and match it dotted or undotted ("19632", "19.632"), while vwgh stores the full labelled undotted cite — pass "VwSlg 18000 A/2010", or the space-anchored prefix "VwSlg 18000 *" when the part letter or year is unknown. A bare or dotted number matches nothing under vwgh. Some older vwgh rows are stored in other shapes the prefix misses ("VwSlg 0017 F/1947", "VwSlg. 1485 A/1950", "VwSlg 10414/A"): a wildcard on both sides, "*1485*", reaches them, with decided_from/decided_to spanning the decision year so it does not match every number holding those digits. Omit to leave unfiltered; a blank value is rejected.',
       ),
     issuing_body: filterText
       .optional()
@@ -354,7 +375,10 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       .describe(
         'Subject-area taxonomy filter (Fachgebiet, justiz only) — 39 exact German values like "Datenschutzrecht", validated locally: ris_list_reference topic justiz_subject_areas. The corpus carries no tagged documents yet (every value returns 0 hits, verified 2026-07-05) — filter with query or norm instead until RIS populates the tags. Omit to leave unfiltered; a blank value is rejected.',
       ),
-    state: foldStateNames(z.enum(STATE_CODES).optional()).describe(
+    state: foldStateNames(z.enum(STATE_CODES).optional(), {
+      definition: 'ris_search_case_law',
+      field: 'state',
+    }).describe(
       'Which of the nine state administrative courts/senates to search (lvwg and uvs only).',
     ),
     party: filterText
@@ -426,9 +450,12 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       .string()
       .optional()
       .describe(
-        'The served page size when it differs from page_size, then zero-hit guidance — the likely cause and the concrete next call. A reversed window (decided_from later than decided_to) is answered without a RIS request: 0 documents, and the swapped bounds to retry with in place of the guidance.',
+        'The served page size when it differs from page_size; then, when norm names an article, the expression it was searched as; then zero-hit guidance — the likely cause and the concrete next call. A reversed window (decided_from later than decided_to) is answered without a RIS request: 0 documents, and the swapped bounds to retry with in place of the guidance.',
       ),
   },
+  // The notice quotes the caller's norm, which can carry Markdown-active characters (the *
+  // wildcard, _, <), so content[] escapes it at render time and reads back structuredContent's.
+  enrichmentTrailer: { notice: escapedNoticeTrailer },
   errors: [
     {
       reason: 'court_filter_mismatch',
@@ -586,10 +613,12 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       return { results: [] };
     }
 
+    // An article token is searched under every spelling RIS indexes it by.
+    const normRewrite = norm === undefined ? undefined : rewriteNormArticles(norm);
     const params: CaseLawSearchParams = {
       court,
       ...(query !== undefined && { query }),
-      ...(norm !== undefined && { norm }),
+      ...(norm !== undefined && { norm: normRewrite?.expression ?? norm }),
       ...(caseNumber !== undefined && { caseNumber }),
       decisionType: input.decision_type,
       ...(decidedFrom !== undefined && { decidedFrom }),
@@ -651,7 +680,10 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       }
       if (norm !== undefined) {
         fragments.push(
-          "norm must match RIS's cited-norm format ('DSG §1', 'DSGVO Art32' style as returned in norms_cited) — run a broader search first and copy the exact string from a result's norms_cited.",
+          normRewrite === undefined
+            ? (delimitedArticleAdvice(norm) ??
+                "norm must match RIS's cited-norm format ('DSG §1', 'DSGVO Art32' style as returned in norms_cited) — run a broader search first and copy the exact string from a result's norms_cited.")
+            : "norm matched no norms_cited entry under any of the three spellings — run a broader search first and copy the exact string from a result's norms_cited.",
         );
       }
       const startYear = coverageStartYear(courtEntry?.window ?? null);
@@ -681,7 +713,7 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       }
       zeroHit = fragments.join(' ');
     }
-    const notice = joinNotices(served.notice, zeroHit);
+    const notice = joinNotices(served.notice, normRewrite?.notice, zeroHit);
     if (notice !== undefined) ctx.enrich.notice(notice);
 
     return { results: result.hits.map((hit) => toRecord(hit, courtEntry?.application ?? court)) };
@@ -712,6 +744,9 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       if (r.decision_date !== undefined) facts.push(labeled('Decided', r.decision_date));
       if (r.decision_type !== undefined) facts.push(labeled('Type', r.decision_type));
       if (r.decision_kind !== undefined) facts.push(labeled('Kind', r.decision_kind));
+      if (r.legal_areas !== undefined) {
+        facts.push(`**Legal areas:** ${joined(r.legal_areas, ', ')}`);
+      }
       if (facts.length > 0) lines.push(facts.join(' | '));
       if (r.norm_index !== undefined) {
         const norm: string[] = [];
@@ -728,6 +763,9 @@ export const risSearchCaseLaw = tool('ris_search_case_law', {
       const identifiers: string[] = [];
       if (r.collection_number !== undefined) {
         identifiers.push(labeled('Collection', r.collection_number));
+      }
+      if (r.rechtssatz_numbers !== undefined) {
+        identifiers.push(`**Rechtssatz numbers:** ${joined(r.rechtssatz_numbers, ', ')}`);
       }
       if (r.ecli !== undefined) identifiers.push(labeled('ECLI', r.ecli));
       if (r.party !== undefined) identifiers.push(labeled('Party', r.party));

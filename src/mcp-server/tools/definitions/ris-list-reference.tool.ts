@@ -330,7 +330,7 @@ const TOPIC_BUILDERS: Record<Topic, () => TopicPayload> = {
   }),
   citation_formats: () => ({
     summary:
-      'The citation shapes ris_lookup_citation parses — norm cites, gazette numbers across all era tiers, case numbers, and official collection numbers — with the deterministic route each resolves through.',
+      'The citation shapes ris_lookup_citation parses — norm cites, gazette numbers across all era tiers, case numbers, official collection numbers, and RIS ELI links — with the deterministic route each resolves through.',
     entries: RIS_CITATION_FORMATS.map((f) => ({
       value: f.kind,
       label: f.description,

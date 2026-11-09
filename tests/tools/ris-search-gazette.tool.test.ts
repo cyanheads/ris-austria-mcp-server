@@ -1107,6 +1107,52 @@ describe('risSearchGazette — each entry names the gazette that carried it (#65
   });
 });
 
+describe('risSearchGazette — every entry names its application (#105)', () => {
+  // search-lgblauth.json is an LgblAuth page; served under state_era: legacy it stands in for
+  // Lgbl, so that row also proves the value comes from the routing, not the hit.
+  it.each([
+    ['BgblAuth', 'search-bgblauth-celex.json', { number: '8/2026', part: 'part1' }],
+    ['BgblPdf', 'search-bgblpdf-1-1945.json', { number: '1/1945' }],
+    [
+      'BgblAlt',
+      'search-bgblalt.json',
+      { published_from: '1940-01-01', published_to: '1940-12-31' },
+    ],
+    ['LgblAuth', 'search-lgblauth.json', { scope: 'salzburg' }],
+    ['Lgbl', 'search-lgblauth.json', { scope: 'salzburg', state_era: 'legacy' }],
+    ['LgblNO', 'search-lgblno.json', { scope: 'niederoesterreich', state_era: 'legacy' }],
+    ['Vbl', 'search-vbl.json', { scope: 'tirol', series: 'ordinance_gazette' }],
+    ['Bvb', 'search-bvb.json', { scope: 'district' }],
+    ['GrA', 'search-gra.json', { scope: 'municipal' }],
+  ] as const)(
+    'gives every %s row application equal to servedApplication, on both surfaces',
+    async (application, name, input) => {
+      searchGazette.mockResolvedValue(parseSearchResponse(fixture(name)));
+      const result = await runToolContract(risSearchGazette, input as never);
+      expect(result.isError).not.toBe(true);
+      const structured = result.structuredContent as { servedApplication: string };
+      expect(structured.servedApplication).toBe(application);
+      const { results } = risSearchGazette.output.parse(result.structuredContent);
+      expect(results.length).toBeGreaterThan(0);
+      const read = readCommonMark(contentText(result));
+      for (const record of results) {
+        expect(record.application).toBe(application);
+        expect(read).toContain(
+          `⟨strong⟩Document:⟨/strong⟩ ${record.document_number} (${application})`,
+        );
+      }
+    },
+  );
+
+  it('points document_number at the record’s own application field', () => {
+    const { shape } = risSearchGazette.output.shape.results.element;
+    expect(shape.document_number.description).toContain(
+      'pass together with application to ris_get_document',
+    );
+    expect(shape.application.description).toContain('ris_get_document');
+  });
+});
+
 describe('risSearchGazette — content[] reads back RIS text verbatim (#79)', () => {
   it('reads back every hostile-shaped field of federal, historical, state, district, and municipal entries', async () => {
     const pick = (name: string) => parseSearchResponse(fixture(name)).hits[0]!;

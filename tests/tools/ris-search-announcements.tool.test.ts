@@ -37,6 +37,7 @@ import {
   linkDestinations,
   readCommonMark,
   stringLeaves,
+  type ToolResult,
   WEB_URL,
   type WireError,
 } from './_wire.js';
@@ -223,6 +224,134 @@ describe('risSearchAnnouncements — zero-hit notices', () => {
     const notice = getEnrichment(ctx).notice as string;
     expect(notice).toContain('0 documents in court_rules.');
     expect(notice).toContain('KmGer currently carries LVwG Tirol and Vorarlberg rules only.');
+  });
+});
+
+// The spelling rules are tabled once in _shared.test.ts; these prove the tool's wiring: what
+// reaches the service, where the sentence sits in the notice, and how content[] renders it.
+describe('risSearchAnnouncements — a norm article searched under every spelling (#108)', () => {
+  const EXPRESSION = '(Art57 B-VG) ODER (Art 57 B-VG) ODER (Artikel 57 B-VG)';
+  const REWRITE = `norm searched as ${EXPRESSION} — RIS indexes an article as Art57, Art 57, or Artikel 57, and each spelling matches only entries indexed that way.`;
+
+  /** The notice structuredContent carries, asserted to read back as one block quote in content[]. */
+  function expectNoticeReadBack(result: ToolResult): string {
+    expect(result.isError).not.toBe(true);
+    const { notice } = result.structuredContent as { notice?: string };
+    if (notice === undefined) throw new Error('expected a notice in structuredContent');
+    const trailer = result.content.at(-1);
+    if (trailer?.type !== 'text') throw new Error('expected a text trailer in content[]');
+    expect(readCommonMark(trailer.text)).toContain(
+      ['⟨blockquote_open⟩', notice, '⟨blockquote_close⟩'].join('\n\n'),
+    );
+    return notice;
+  }
+
+  it('sends a spaced article as the three-spelling expression and names it in the notice', async () => {
+    searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-erlaesse.json')));
+    const result = await runToolContract(risSearchAnnouncements, {
+      collection: 'ministerial_decrees',
+      norm: 'Art. 57 B-VG',
+    });
+
+    expect(searchAnnouncements.mock.calls[0]![0]).toMatchObject({ norm: EXPRESSION });
+    expect(expectNoticeReadBack(result)).toBe(REWRITE);
+  });
+
+  it('sends a joined article as the three-spelling expression too', async () => {
+    searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-erlaesse.json')));
+    const result = await runToolContract(risSearchAnnouncements, {
+      collection: 'ministerial_decrees',
+      norm: 'B-VG Art57',
+    });
+    const expression = '(B-VG Art57) ODER (B-VG Art 57) ODER (B-VG Artikel 57)';
+
+    expect(searchAnnouncements.mock.calls[0]![0]).toMatchObject({ norm: expression });
+    expect(expectNoticeReadBack(result)).toBe(
+      `norm searched as ${expression} — RIS indexes an article as Art57, Art 57, or Artikel 57, and each spelling matches only entries indexed that way.`,
+    );
+  });
+
+  it('advises dropping the delimiters when a value sent as written finds nothing', async () => {
+    searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
+    const result = await runToolContract(risSearchAnnouncements, {
+      collection: 'ministerial_decrees',
+      norm: '"Art. 57 B-VG"',
+    });
+
+    expect(searchAnnouncements.mock.calls[0]![0]).toMatchObject({ norm: '"Art. 57 B-VG"' });
+    expect(expectNoticeReadBack(result)).toBe(
+      '0 documents in ministerial_decrees. norm carries ( ) or ", so it was sent as written and each article matched only as spelled — RIS indexes an article as Art57, Art 57, or Artikel 57, and each spelling matches only entries indexed that way. Drop the ( ) and " to search every spelling, or copy the exact string from a result\'s norms_cited.',
+    );
+  });
+
+  it('sends a value with no article as written, with the format guidance on zero hits', async () => {
+    searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
+    const result = await runToolContract(risSearchAnnouncements, {
+      collection: 'veterinary',
+      norm: 'DSG §1',
+    });
+
+    expect(searchAnnouncements.mock.calls[0]![0]).toMatchObject({ norm: 'DSG §1' });
+    expect(expectNoticeReadBack(result)).toBe(
+      "0 documents in veterinary. norm must match RIS's cited-norm format — copy from a result's norms_cited.",
+    );
+  });
+
+  it('puts the expression after the page size and before zero-hit guidance, naming it once', async () => {
+    searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-zero-hits.json')));
+    const result = await runToolContract(risSearchAnnouncements, {
+      collection: 'ministerial_decrees',
+      norm: 'Art. 57 B-VG',
+      page_size: 50,
+    });
+
+    expect(expectNoticeReadBack(result)).toBe(
+      [
+        'page_size 50 served as 20 — this server serves pages of 10 or 20 documents, so page steps through pages of 20.',
+        REWRITE,
+        '0 documents in ministerial_decrees.',
+        "norm matched no norms_cited entry under any of the three spellings — copy the exact string from a result's norms_cited.",
+      ].join(' '),
+    );
+  });
+
+  it('puts the expression before the undated-rows sentence of an in-force filter', async () => {
+    searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-erlaesse.json')));
+    const result = await runToolContract(risSearchAnnouncements, {
+      collection: 'ministerial_decrees',
+      norm: 'Art. 57 B-VG',
+      in_force_as_of: '2026-07-01',
+    });
+
+    expect(expectNoticeReadBack(result)).toBe(
+      `${REWRITE} 3 of 5 on this page have no in_force_from — RIS returns all documents with no recorded entry-into-force date under in_force_as_of, entered_force_from, or entered_force_to, whatever the date, so totalCount counts them too.`,
+    );
+  });
+
+  it('answers a reversed window without a request or a rewrite', async () => {
+    const result = await runToolContract(risSearchAnnouncements, {
+      collection: 'ministerial_decrees',
+      norm: 'Art. 57 B-VG',
+      entered_force_from: '2026-07-01',
+      entered_force_to: '2026-01-01',
+    });
+
+    expect(searchAnnouncements).not.toHaveBeenCalled();
+    expect(expectNoticeReadBack(result)).toBe(
+      'entered_force_from 2026-07-01 is after entered_force_to 2026-01-01 — a reversed window holds no dates, so nothing matches and RIS was not queried. Retry with the bounds swapped: entered_force_from 2026-01-01, entered_force_to 2026-07-01.',
+    );
+  });
+
+  it('escapes the quoted norm in content[], so a CommonMark parse reads back the notice', async () => {
+    searchAnnouncements.mockResolvedValue(parseSearchResponse(fixture('search-avn.json')));
+    const result = await runToolContract(risSearchAnnouncements, {
+      collection: 'veterinary',
+      norm: 'Art. 6 *TSG* <b>',
+    });
+
+    expect(expectNoticeReadBack(result)).toContain(
+      '(Art6 *TSG* <b>) ODER (Art 6 *TSG* <b>) ODER (Artikel 6 *TSG* <b>)',
+    );
   });
 });
 

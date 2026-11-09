@@ -1,0 +1,79 @@
+{
+  "OgdSearchResult": {
+    "OgdDocumentResults": {
+      "Hits": {
+        "@pageNumber": "1",
+        "@pageSize": "10",
+        "#text": "1"
+      },
+      "OgdDocumentReference": {
+        "Data": {
+          "Metadaten": {
+            "Technisch": {
+              "ID": "LNO40026933",
+              "Applikation": "LrKons",
+              "Organ": "LReg Niederösterreich",
+              "ImportTimestamp": {
+                "@xsi:nil": "true",
+                "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance"
+              }
+            },
+            "Allgemein": {
+              "Veroeffentlicht": "2018-01-31",
+              "Geaendert": "2018-01-31",
+              "DokumentUrl": "https://ogd.ris.bka.gv.at/eli/lgbl/NI/2018/13/P0/LNO40026933"
+            },
+            "Landesrecht": {
+              "Kurztitel": "Authentische Interpretation NÖ Bauordnung 2014 und NÖ Raumordnungsgesetz 2014",
+              "Titel": "Gesetz, mit dem die NÖ Bauordnung 2014 (NÖ BO 2014) und das NÖ Raumordnungsgesetz 2014 (NÖ ROG 2014) authentisch interpretiert werden<br/>StF: LGBl. Nr. 13/2018",
+              "Bundesland": "Niederösterreich",
+              "LrKons": {
+                "Kundmachungsorgan": "LGBl. Nr. 13/2018",
+                "Typ": "LG",
+                "Dokumenttyp": "Norm",
+                "ArtikelParagraphAnlage": "§ 0",
+                "Paragraphnummer": "0",
+                "StammnormPublikationsorgan": "LGBl. Nr.",
+                "StammnormBgblnummer": "13/2018",
+                "Inkrafttretensdatum": "2018-02-01",
+                "Indizes": {
+                  "item": "82 Baurecht"
+                },
+                "Aenderung": "",
+                "Gesetzesnummer": "20001185",
+                "GesamteRechtsvorschriftUrl": "https://ogd.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=LrNO&Gesetzesnummer=20001185",
+                "Eli": "https://www.ris.bka.gv.at/eli/lgbl/NI/2018/13/P0/LNO40026933"
+              }
+            }
+          },
+          "Dokumentliste": {
+            "ContentReference": {
+              "ContentType": "MainDocument",
+              "Name": "Hauptdokument",
+              "Urls": {
+                "ContentUrl": [
+                  {
+                    "DataType": "Xml",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LNO40026933/LNO40026933.xml"
+                  },
+                  {
+                    "DataType": "Html",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LNO40026933/LNO40026933.html"
+                  },
+                  {
+                    "DataType": "Rtf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LNO40026933/LNO40026933.rtf"
+                  },
+                  {
+                    "DataType": "Pdf",
+                    "Url": "https://ogd.ris.bka.gv.at/Dokumente/Landesnormen/LNO40026933/LNO40026933.pdf"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
