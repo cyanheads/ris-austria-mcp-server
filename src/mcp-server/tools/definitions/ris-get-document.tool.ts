@@ -1165,7 +1165,8 @@ export function selectDocumentSections(
     return { name, start, end: cursor };
   });
   const names = new Set(sections.map((section) => section.name));
-  const requested = [...new Set(want)];
+  const wanted = new Set(want);
+  const requested = [...wanted];
   const missing = new Set(requested.filter((name) => !names.has(name)));
   const passages =
     missing.size > 0 ? quotedHeadings(text).filter((heading) => missing.has(heading.name)) : [];
@@ -1182,7 +1183,6 @@ export function selectDocumentSections(
   // not in the document — enough, in a table-heavy RIS body, to split a table at the seam and
   // orphan its rows from their header row. A quoted passage inside a selected entry is already
   // in its text, so the spans are merged rather than concatenated.
-  const wanted = new Set(want);
   const spans = [...entries.filter((entry) => wanted.has(entry.name)), ...passages].sort(
     (a, b) => a.start - b.start,
   );

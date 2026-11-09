@@ -224,6 +224,13 @@ function spellingOf(separator: string): 'artikel' | 'joined' | 'spaced' {
   return /^[Ii]/u.test(separator) ? 'artikel' : 'spaced';
 }
 
+/**
+ * The `norm` grammar's only pairing delimiters: `(`, `)`, and `"`. A value carrying one is sent
+ * as written, since an arm wrapped around it could pair the caller's delimiter with another
+ * arm's ({@link rewriteNormArticles}, {@link delimitedArticleAdvice}).
+ */
+const PAIRING_DELIMITER = /[()"]/u;
+
 /** A `norm` value rewritten to search its articles under every spelling RIS indexes. */
 export interface NormRewrite {
   /**
@@ -248,12 +255,11 @@ export interface NormRewrite {
  * this filter (`OR` is a literal word there), and a caller's own UND, ODER, or NICHT keeps its
  * meaning inside each arm.
  *
- * Undefined, so the value is sent as written, when it holds no token or carries `(`, `)`, or
- * `"`: those are the grammar's only pairing delimiters, and an arm wrapped around one could
- * pair the caller's delimiter with another arm's.
+ * Undefined, so the value is sent as written, when it holds no token or carries a
+ * {@link PAIRING_DELIMITER}.
  */
 export function rewriteNormArticles(norm: string): NormRewrite | undefined {
-  if (/[()"]/u.test(norm)) return undefined;
+  if (PAIRING_DELIMITER.test(norm)) return undefined;
   const value = norm.trim();
   const tokens = Array.from(value.matchAll(ARTICLE_TOKEN));
   const first = tokens[0]?.[2];
@@ -276,7 +282,7 @@ export function rewriteNormArticles(norm: string): NormRewrite | undefined {
  * that one spelling. Undefined for any other value.
  */
 export function delimitedArticleAdvice(norm: string): string | undefined {
-  if (!/[()"]/u.test(norm)) return;
+  if (!PAIRING_DELIMITER.test(norm)) return;
   const number = norm.matchAll(ARTICLE_TOKEN).next().value?.[2];
   if (number === undefined) return;
   return `norm carries ( ) or ", so it was sent as written and each article matched only as spelled — ${spellingsSentence(number)} Drop the ( ) and " to search every spelling, or copy the exact string from a result's norms_cited.`;
