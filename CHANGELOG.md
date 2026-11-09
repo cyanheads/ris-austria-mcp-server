@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.6.2](changelog/0.6.x/0.6.2.md) — 2026-11-09
+
+ris_get_document and ris_lookup_citation read RIS ELI and web-view links, ris_lookup_citation resolves Rechtssatz numbers and multi-cite gazette strings, records gain gazette and Rechtssatz fields, court and application codes fold from any case, and a norm article is searched under every spelling RIS indexes.
+
 ## [0.6.1](changelog/0.6.x/0.6.1.md) — 2026-10-30
 
 ris_get_document reads the text of PDF-only documents and image-only renditions, ris_lookup_citation checks a VfSlg/VwSlg cite's year, and the six search tools answer reversed date windows locally and disclose undated rows.

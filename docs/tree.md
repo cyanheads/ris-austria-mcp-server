@@ -1,6 +1,6 @@
 # ris-austria-mcp-server - Directory Structure
 
-Generated on: 2026-10-31 00:59:33
+Generated on: 2026-11-09 21:26:23
 
 ```text
 ris-austria-mcp-server/
@@ -183,6 +183,7 @@ ris-austria-mcp-server/
 │   │       │   ├── section-types.ts
 │   │       │   ├── stages.ts
 │   │       │   └── states.ts
+│   │       ├── document-link.ts
 │   │       ├── normalizer.ts
 │   │       ├── request-builder.ts
 │   │       ├── ris-service.ts
@@ -196,9 +197,12 @@ ris-austria-mcp-server/
 │   │       ├── document-avsv-images.html
 │   │       ├── document-begut-companion-text-layer.pdf
 │   │       ├── document-begut-nutzdaten.xml
+│   │       ├── document-bgblauth-2012-i-51.html
+│   │       ├── document-bgblauth-2018-i-24.html
 │   │       ├── document-bgblauth-ordinals.html
 │   │       ├── document-brkons-absatz-lists.html
 │   │       ├── document-brkons-sr-only.html
+│   │       ├── document-lgblauth-wi-20261109-40.html
 │   │       ├── document-no-text-layer.pdf
 │   │       ├── document-regv-artikel-sections.html
 │   │       ├── document-regv-image-only-companion.html
@@ -222,17 +226,22 @@ ris-austria-mcp-server/
 │   │       ├── search-begut.json
 │   │       ├── search-bgblalt-1-1918.json
 │   │       ├── search-bgblalt-1-1920.json
+│   │       ├── search-bgblalt-1-1930.json
 │   │       ├── search-bgblalt-1-1938.json
+│   │       ├── search-bgblalt-33-1868.json
 │   │       ├── search-bgblalt.json
 │   │       ├── search-bgblauth-2004-01.json
 │   │       ├── search-bgblauth-24-2018-part1.json
 │   │       ├── search-bgblauth-24-2018-part2.json
+│   │       ├── search-bgblauth-317-2026-part2.json
 │   │       ├── search-bgblauth-50-2025-part1.json
 │   │       ├── search-bgblauth-50-2025.json
 │   │       ├── search-bgblauth-celex.json
 │   │       ├── search-bgblpdf-1-1945.json
+│   │       ├── search-bgblpdf-165-1999-part1.json
 │   │       ├── search-bgblpdf-194-1961.json
 │   │       ├── search-bgblpdf-2003-12.json
+│   │       ├── search-bgblpdf-267-1967.json
 │   │       ├── search-bgblpdf-50-1999.json
 │   │       ├── search-bgblpdf-celex.json
 │   │       ├── search-brkons-alvg-1977.json
@@ -241,6 +250,7 @@ ris-austria-mcp-server/
 │   │       ├── search-brkons-avg-section-1.json
 │   │       ├── search-brkons-bfa-vg-section-21.json
 │   │       ├── search-brkons-bvg-article-10.json
+│   │       ├── search-brkons-bvwgg-section-1.json
 │   │       ├── search-brkons-bwg-section-70.json
 │   │       ├── search-brkons-celex.json
 │   │       ├── search-brkons-dsg-section-1-as-of-1995.json
@@ -252,6 +262,10 @@ ris-austria-mcp-server/
 │   │       ├── search-brkons-kfg-section-1.json
 │   │       ├── search-brkons-kschg-section-5.json
 │   │       ├── search-brkons-multi.json
+│   │       ├── search-brkons-nor12009176.json
+│   │       ├── search-brkons-nor12017691.json
+│   │       ├── search-brkons-nor12029618.json
+│   │       ├── search-brkons-nor40212006.json
 │   │       ├── search-brkons-orf-g.json
 │   │       ├── search-brkons-praemien-section-2.json
 │   │       ├── search-brkons-tkg-section-5.json
@@ -275,11 +289,19 @@ ris-austria-mcp-server/
 │   │       ├── search-justiz-1ob948-52-both.json
 │   │       ├── search-justiz-6ob236-23h-both.json
 │   │       ├── search-justiz-gz-joined.json
+│   │       ├── search-justiz-rli0000012.json
+│   │       ├── search-justiz-rs0022961.json
+│   │       ├── search-justiz-rw0001127.json
 │   │       ├── search-kmger.json
+│   │       ├── search-lgblauth-10-2014-kaernten.json
+│   │       ├── search-lgblauth-103-2026-salzburg.json
 │   │       ├── search-lgblauth.json
 │   │       ├── search-lgblno.json
 │   │       ├── search-lrkons-abkuerzung.json
 │   │       ├── search-lrkons-bo-wien-section-1.json
+│   │       ├── search-lrkons-lno40026933.json
+│   │       ├── search-lrkons-lno40086080.json
+│   │       ├── search-lvwg-rechtssatz.json
 │   │       ├── search-lvwg-tirol.json
 │   │       ├── search-mrp.json
 │   │       ├── search-normenliste-dsg.json
@@ -303,7 +325,20 @@ ris-austria-mcp-server/
 │   │       ├── search-vwgh-vwslg-18000-a.json
 │   │       ├── search-vwgh-vwslg-1809.json
 │   │       ├── search-vwgh-vwslg-2524-a.json
+│   │       ├── search-vwgh-vwslg-296.json
+│   │       ├── search-vwgh-vwslg-544-a.json
 │   │       ├── search-vwgh-vwslg-6843-a.json
+│   │       ├── search-vwgh-vwslg-fallback-10414-1981.json
+│   │       ├── search-vwgh-vwslg-fallback-1485-1950.json
+│   │       ├── search-vwgh-vwslg-fallback-17-1947.json
+│   │       ├── search-vwgh-vwslg-fallback-18000-2020.json
+│   │       ├── search-vwgh-vwslg-fallback-1809-1950.json
+│   │       ├── search-vwgh-vwslg-fallback-296-1948.json
+│   │       ├── search-vwgh-vwslg-fallback-544-1952.json
+│   │       ├── search-vwgh-vwslg-fallback-64-1947.json
+│   │       ├── search-vwgh-vwslg-fallback-8000-1980.json
+│   │       ├── search-vwgh-vwslg-fallback-9766-1979.json
+│   │       ├── search-vwgh-vwslg-fallback-99999-2010.json
 │   │       └── search-zero-hits.json
 │   ├── resources/
 │   │   └── ris-document.resource.test.ts
@@ -311,11 +346,13 @@ ris-austria-mcp-server/
 │   │   └── clean-mcpb.test.ts
 │   ├── services/
 │   │   └── ris/
+│   │       ├── document-link.test.ts
 │   │       ├── normalizer.test.ts
 │   │       ├── reference-examples.test.ts
 │   │       ├── request-builder.test.ts
 │   │       └── ris-service.test.ts
 │   └── tools/
+│       ├── _shared-input-folds.test.ts
 │       ├── _shared.test.ts
 │       ├── _wire.ts
 │       ├── framework-contract.test.ts
