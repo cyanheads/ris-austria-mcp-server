@@ -40,7 +40,7 @@ Austrian law from [RIS](https://www.ris.bka.gv.at/), the government's official l
 | `ris_search_gazette` | Browse the federal, state, district, and municipal gazettes, with federal history auto-routed back to 1848 |
 | `ris_search_drafts` | Search ministerial review drafts (Begutachtungsentwürfe) and government bills (Regierungsvorlagen) |
 | `ris_search_announcements` | Search seven sectoral collections, from social-insurance notices to ministerial decrees and council-of-ministers minutes |
-| `ris_lookup_citation` | Resolve one Austrian legal citation ("§ 6 DSG", "BGBl. I Nr. 165/1999", a Geschäftszahl or ECLI) to its document |
+| `ris_lookup_citation` | Resolve one Austrian legal citation ("§ 6 DSG", "BGBl. I Nr. 165/1999", a Geschäftszahl, ECLI, Rechtssatz number, or RIS ELI link) to its document |
 | `ris_get_document` | Fetch one document as markdown, HTML, or XML, or just its rendition URLs, with its binding status |
 | `ris_track_changes` | List every document added, changed, or deleted in one application within a date window |
 | `ris_list_reference` | Look up RIS vocabularies offline: applications, courts, states, ministries, gazette parts, citation formats, search syntax |
@@ -59,14 +59,15 @@ The resource mirrors `ris_get_document`, so tool-only clients lose nothing.
 
 - Search by `query` (full text) or `title` (title, short title, or abbreviation such as "DSG"). `scope` is `federal` (default) or a Bundesland, `municipality` switches a state scope to municipal law, and `language: english` searches the ~138 English translations
 - `in_force_as_of` defaults to today in Austria and is echoed as `appliedInForceAsOf`; `include_all_versions` and the `entered_force_*` / `left_force_*` windows are mutually exclusive alternatives
-- Records carry `law_id` (filter on it for every section of a law), `section_label`, `abbreviation`, `keywords`, in-force dates, `eli`, `celex_references`, and `content_urls`
+- Records carry `law_id` (filter on it for every section of a law), `section_label`, `abbreviation`, `keywords`, in-force dates, `eli`, `celex_references`, and `content_urls`. Consolidated records carry the cites that make up `promulgation` as `original_gazette`, `latest_change_gazette`, and `latest_change_relation`
 
 ---
 
 ### `ris_search_case_law` <sub>tool</sub>
 
 - `court` is required, one code per call. Filter by `query`, cited `norm` ("DSG §1"), `case_number`, `decided_from`/`decided_to`, and `decision_type` (`headnote`, `full_text`, or `all`, the default). Court-specific filters include `court_name` (justiz), `state` (lvwg/uvs), and `collection_number` (vfgh/vwgh/uvs); one sent to the wrong court fails as `court_filter_mismatch`
-- Records carry `case_numbers` (a headnote lists every decision it covers), `decision_date`, `ecli`, `norms_cited`, and `guiding_principle` on headnotes
+- `norm` searches an article in any spelling ("Art. 6 DSGVO", "DSGVO Art6", "Artikel 6 MRK") under all three spellings RIS indexes, and the notice names the expression sent
+- Records carry `case_numbers` (a headnote lists every decision it covers), `decision_date`, `ecli`, `norms_cited`, and `guiding_principle` on headnotes; justiz records add `legal_areas`, and justiz headnotes `rechtssatz_numbers`
 - `court: normenliste` returns indexed laws under `norm_index` instead of decisions
 
 ---
@@ -75,7 +76,7 @@ The resource mirrors `ris_get_document`, so tool-only clients lose nothing.
 
 - `scope` is `federal` (default), a Bundesland, `district`, or `municipal`. Filter by `number`, `part`, `type`, `published_from`/`published_to`, `issuer`, `district_authority`, or `municipality`; state scopes also take `series` and `state_era`
 - Federal queries are served from one era (BgblAuth 2004+, BgblPdf 1945–2003, BgblAlt 1848–1940), echoed as `servedApplication`; a date range spanning two eras fails as `cross_tier_range` with the dates to split at
-- Records carry `binding` (`authentic`, `historical_record`, `consolidated_informational`), `authentic_pdf_url` where one exists, `alex_url` (ÖNB scan) for 1848–1940, `celex_references` where applicable, and `promulgation` on federal entries from 1848–2003
+- Records carry `application` (the code `ris_get_document` takes with `document_number`, equal to `servedApplication`), `binding` (`authentic`, `historical_record`, `consolidated_informational`), `authentic_pdf_url` where one exists, `alex_url` (ÖNB scan) for 1848–1940, `celex_references` where applicable, and `promulgation` on federal entries from 1848–2003
 
 ---
 
@@ -96,7 +97,7 @@ The resource mirrors `ris_get_document`, so tool-only clients lose nothing.
 
 ### `ris_lookup_citation` <sub>tool</sub>
 
-- One `citation` per call, classified as a norm ("§ 6 DSG"), gazette number ("BGBl. I Nr. 165/1999"), case number ("VfGH G 13/2025") or ECLI, or collection number ("VfSlg 19.632/2012"). `kind` forces a route, `court` and `state` narrow it, and `in_force_as_of` pins a norm's version (default today)
+- One `citation` per call, classified as a norm ("§ 6 DSG"), gazette number ("BGBl. I Nr. 165/1999"), case number ("VfGH G 13/2025"), ECLI, Justiz Rechtssatz number ("RS0022961"), collection number ("VfSlg 19.632/2012"), or RIS ELI link. `kind` forces a route, `court` and `state` narrow it, and `in_force_as_of` pins a norm's version (default today)
 - Returns `found`, `kind`, and a `record` in the matching search tool's shape, with `alternatives_count` when several documents matched. A miss returns `found: false` with `guidance` instead of an error
 - A norm resolves to the cited law:
   - the law is matched as RIS files it ("§ 2 EStG" → EStG 1988 § 2; "AlVG 1977" → the AlVG, filed without its year; "VwGVG 2014 §28" → VwGVG § 28), and a long title is read by its short form ("StaatsanwaltschaftsG - StAG §35" → StAG § 35)
@@ -105,12 +106,16 @@ The resource mirrors `ris_get_document`, so tool-only clients lose nothing.
   - an entry citing several provisions ("DSG §1, §24", "ZPO §179. ZPO §275 Abs2") resolves the first and names the rest
 - An EU act RIS does not consolidate ("DSGVO Art32", "RL 2006/123/EG", "VO (EG) 178/2002 Art3") returns `found: false` with its EUR-Lex link, without a RIS request
 - A gazette number without its part ("BGBl. Nr. 50/2025") comes back ambiguous, naming parts I, II, and III
+- A string of several gazette cites, as a consolidated record's `promulgation` joins them ("BGBl. Nr. 267/1967 zuletzt geändert durch BGBl. I Nr. 17/2026"), resolves by its first cite and names the others; a first cite in a gazette the lookup does not read returns `found: false` without a search. A state organ carrying its Bundesland ("LGBlNÖ Nr. 72/2016") needs no `state` hint, and a disagreeing hint is reported as not applied
+- An RIS ELI link (a consolidated-law or authentic-gazette record's `eli` or `document_url`, over `https` or `http`, with or without the scheme) resolves to the provision or entry it names, whatever version is in force; `in_force_as_of` and `state` don't apply. A path that spells a gazette cite (`/eli/bgbl/{I|II|III}/{year}/{number}`, `/eli/lgbl/{state}/{year}/{number}`, or `/eli/{bgbl|rgbl|stgbl|gbloe}/{year}/{number}` with no part, as before 1997) followed by nothing but date, language, or format segments resolves as that cite (`/eli/bgbl/II/2026/317`, `/eli/bgbl/1974/60`). Other `/eli/` layouts, including a provision's path cut before its document number (`/eli/bgbl/i/1999/165/A2P4`), return `found: false`, `kind: unknown`, without a request
+- A Rechtssatz number ("RS0022961", "RIS-Justiz RS0022961 [T3]", "RW0001127") resolves to that headnote through Justiz whatever the `court` hint; a bracketed T number is not searched
+- A VwSlg cite VwGH stores in another shape ("VwSlg 0017 F/1947", "VwSlg. 1485 A/1950", "VwSlg 1809/50") resolves through one more search within the cited year
 
 ---
 
 ### `ris_get_document` <sub>tool</sub>
 
-- Address by `document_number` + `application`, or by a `document_url` from `content_urls` or a draft's `materials[].url`; `format` is `markdown` (default), `html`, `xml`, or `urls_only`
+- Address by `document_number` + `application`, or by a `document_url`: a record's own `document_url` or `eli` (an ELI or `Dokument.wxe` web view, read for the document it names), a `content_urls` entry, or a draft's `materials[].url`; `format` is `markdown` (default), `html`, `xml`, or `urls_only`
 - Every result carries `binding_status` and `authentic_pdf_url` where one exists. Where a PDF is the only rendition (district and municipal promulgations, court rules, party-transparency decisions, council minutes, and draft companions filed without HTML), `markdown` returns the text extracted from it: plain text with a `--- Page N of M ---` line before each page, `text_source: pdf`, and a notice naming the PDF. A scanned PDF with no text layer, one over 16 MiB, or one that cannot be fetched in time returns a notice with the usable URL instead of failing, as do `html` and `xml` there and the 1848–1940 gazettes, which have no PDF to read
 - Markdown writes image references as absolute URLs on the content host. A rendition that is nothing but page images reads its PDF's text, and keeps the image URLs with a notice when the PDF has none
 - Markdown over 40,000 bytes returns `kind: outline`; re-call with `sections` to fetch entries. `html` and `xml` over 40,000 bytes return `kind: link` with `byte_size` and `content_urls`, so read with `markdown`
@@ -191,6 +196,7 @@ No API key is needed. For Docker or a source build, see [Running the server](#ru
 | `RIS_API_BASE_URL` | RIS OGD REST API base URL. | `https://data.bka.gv.at/ris/api/v2.6` |
 | `RIS_CONTENT_BASE_URL` | Document content host that rendition URLs are built on and documents are fetched from. `https://www.ris.bka.gv.at` answers automated clients with a bot-check page. | `https://ogd.ris.bka.gv.at` |
 | `RIS_CONTACT` | Contact string appended to the User-Agent. | none |
+| `RIS_FOLD_INPUT_SPELLINGS` | Accept a court or application code in any letter case, and a state by its German or English name, folding it to the code before validation. `false` restores strict validation for every such field. | `true` |
 | `MCP_TRANSPORT_TYPE` | Transport: `stdio` or `http`. | `stdio` |
 | `MCP_HTTP_PORT` | HTTP server port. | `3010` |
 | `MCP_SESSION_MODE` | HTTP session mode: `stateless`, `stateful`, or `auto`. | `stateless` |
@@ -204,7 +210,7 @@ See [`.env.example`](./.env.example) for the full list of optional overrides.
 
 ### Local development
 
-Requires [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+).
+Requires [Bun v1.4.4](https://bun.sh/) or higher (or Node.js v24+).
 
 - **Clone and install:**
 
@@ -246,7 +252,7 @@ The image defaults to HTTP transport, stateless session mode, and logs to `/var/
 | Directory | Purpose |
 |:---|:---|
 | `src/index.ts` | `createApp()` entry point — registers tools and resources. |
-| `src/config` | Optional RIS endpoint and contact configuration, parsed with Zod. |
+| `src/config` | Optional RIS endpoint, contact, and input-fold configuration, parsed with Zod. |
 | `src/mcp-server/tools` | Tool definitions (`*.tool.ts`). |
 | `src/mcp-server/resources` | Resource definitions (`*.resource.ts`). |
 | `src/services/ris` | RIS request building, HTTP access, normalization, and static reference data. |

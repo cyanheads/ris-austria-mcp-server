@@ -2,8 +2,8 @@
 
 **Server:** ris-austria-mcp-server
 **Version:** 0.6.1
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.18`
-**Engines:** Bun ≥1.4.0, Node ≥24.0.0
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.22`
+**Engines:** Bun ≥1.4.4, Node ≥24.0.0
 **MCP SDK:** `@modelcontextprotocol/server` ^2.4.0
 **Zod:** ^4.6.7
 
@@ -123,6 +123,7 @@ const ServerConfigSchema = z.object({
   apiBaseUrl: z.url().default('https://data.bka.gv.at/ris/api/v2.6'),
   contentBaseUrl: z.url().default('https://ogd.ris.bka.gv.at'),
   contact: z.string().optional(),
+  foldInputSpellings: z.stringbool().default(true),
 });
 
 let _config: z.infer<typeof ServerConfigSchema> | undefined;
@@ -131,12 +132,14 @@ export function getServerConfig() {
     apiBaseUrl: 'RIS_API_BASE_URL',
     contentBaseUrl: 'RIS_CONTENT_BASE_URL',
     contact: 'RIS_CONTACT',
+    foldInputSpellings: 'RIS_FOLD_INPUT_SPELLINGS',
   });
   return _config;
 }
 ```
 
-All RIS variables are optional because the OGD API is keyless. `parseEnvConfig` maps schema paths
+All RIS variables are optional because the OGD API is keyless. `foldInputSpellings`
+(`RIS_FOLD_INPUT_SPELLINGS`, default `true`) gates every pre-validation fold in `_shared.ts`. `parseEnvConfig` maps schema paths
 to env-var names so a configuration failure names the variable the operator can fix.
 
 ### Server identity and instructions
@@ -150,6 +153,7 @@ await createApp({
   title: 'ris-austria-mcp-server',
   instructions: INSTRUCTIONS, // one paragraph: coverage, entry points, addressing, chains, binding
   sessionMode: 'stateless',
+  decodeResourceParams: true, // a ris://document number may carry a percent-encoded non-ASCII letter
   cacheHints: {
     'tools/list': { ttlMs: 3_600_000, cacheScope: 'public' },
     'resources/list': { ttlMs: 3_600_000, cacheScope: 'public' },
@@ -252,10 +256,11 @@ See framework CLAUDE.md and the `api-errors` skill for the full auto-classificat
 src/
   index.ts                                      # createApp() entry point
   config/
-    server-config.ts                            # Optional RIS endpoint/contact config
+    server-config.ts                            # Optional RIS endpoint/contact/input-fold config
   services/
     ris/
       ris-service.ts                            # Search/content HTTP gateway
+      document-link.ts                          # Reads ELI / Dokument.wxe links into application + number (no fetch)
       request-builder.ts                        # Per-application request mapping
       normalizer.ts                             # Raw RIS envelope normalization
       types.ts                                  # Raw/domain types
@@ -372,7 +377,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 
 ## Bundling
 
-`npm run bundle` produces a `.mcpb` extension bundle for one-click install in Claude Desktop. `mcpb pack` reads `.mcpbignore`, not `.gitignore`, so every root path the bundle must not ship — source, tests, docs, caches, logs, agent docs, plugin manifests, gitignored local files — needs a root-anchored line there (`/docs/`, never `docs/`, which also strips `node_modules/*/docs/`); `lint:packaging` names each missing or unanchored line. Root `skills/` ships on purpose. The pack step is followed by `scripts/clean-mcpb.ts`, which prunes dev dependencies (`mcpb clean`) and strips four classes of `node_modules/**` content that root-anchored `.mcpbignore` patterns cannot reach: dependency-shipped agent docs (`framework-skills/`, `skills/`, `.claude/`, `.agents/`, `SKILL.md`); platform-specific native bindings, which would otherwise lock the bundle to the platform it was packed on; node-gyp build output beside a `binding.gyp` (`config.gypi`, Makefiles, `obj.target/`, `.deps/`, object files and debug symbols), which records the packing machine's paths — compiled `*.node` addons stay; and build-only package files — the framework's `changelog/`, `scripts/`, `templates/`, `CLAUDE.md`, `AGENTS.md`, and config bases (`biome.json`, `vitest.config.base.mjs`, `config/tsconfig.base.json`), and `better-sqlite3`'s `deps/` and `src/` C sources. A server using DataCanvas therefore ships a portable bundle without the DuckDB native — `@duckdb/node-api` is an optional peer loaded lazily, so canvas tools report an actionable install hint and every other tool works normally. MCPB is stdio-only — HTTP and Cloudflare Workers deployments are unaffected. Consumers who don't need it can delete `manifest.json` and `.mcpbignore`; `lint:packaging` skips cleanly.
+`npm run bundle` produces a `.mcpb` extension bundle for one-click install in Claude Desktop. `mcpb pack` reads `.mcpbignore`, not `.gitignore`, so every root path the bundle must not ship — source, tests, docs, caches, logs, agent docs, plugin manifests, gitignored local files — needs a root-anchored line there (`/docs/`, never `docs/`, which also strips `node_modules/*/docs/`); `lint:packaging` names each missing or unanchored line. Root `skills/` ships on purpose. The pack step is followed by `scripts/clean-mcpb.ts`, which prunes dev dependencies (`mcpb clean`) and strips four classes of `node_modules/**` content that root-anchored `.mcpbignore` patterns cannot reach: dependency-shipped agent docs — `framework-skills/`, `skills/`, `.claude/`, `.agents/`, `AGENTS.md`, and `CLAUDE.md` at a package's root, and `SKILL.md` anywhere (a `skills/` deeper in a package is runtime code and stays); platform-specific native bindings, which would otherwise lock the bundle to the platform it was packed on; node-gyp build output beside a `binding.gyp` (`config.gypi`, Makefiles, `obj.target/`, `.deps/`, object files and debug symbols), which records the packing machine's paths — compiled `*.node` addons stay; and build-only package files — the framework's `changelog/`, `scripts/`, `templates/`, and config bases (`biome.json`, `vitest.config.base.mjs`, `config/tsconfig.base.json`), and `better-sqlite3`'s `deps/` and `src/` C sources. A server using DataCanvas therefore ships a portable bundle without the DuckDB native — `@duckdb/node-api` is an optional peer loaded lazily, so canvas tools report an actionable install hint and every other tool works normally. MCPB is stdio-only — HTTP and Cloudflare Workers deployments are unaffected. Consumers who don't need it can delete `manifest.json` and `.mcpbignore`; `lint:packaging` skips cleanly.
 
 **Adding an env var requires both files:** `server.json` (registry discovery, `environmentVariables[]`) and `manifest.json` (bundle install UX, `mcp_config.env` + `user_config`). `lint:packaging` (run by `devcheck`) verifies the env var names match, that every `user_config` option is wired into `mcp_config.env` as `"X": "${user_config.X}"` (the host substitutes nothing else — `"${X}"` reaches the server as that literal string), and that an optional string option carries `"default": ""`.
 
