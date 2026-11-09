@@ -144,10 +144,24 @@ describe('RIS framework tool contract', () => {
       const text = instructions as string;
       // Claude Code truncates server instructions longer than this, mid-sentence.
       expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(2048);
-      // The citation entry point names every cite class ris_lookup_citation resolves, ECLI
-      // included, and the norm chain reflects a default search that returns decision texts too.
-      expect(text).toContain('a Geschäftszahl or ECLI) → ris_lookup_citation');
+      // The citation entry point names every cite class ris_lookup_citation resolves, ECLI and
+      // Rechtssatz numbers included, and the norm chain reflects a default search that returns
+      // decision texts too.
+      expect(text).toContain(
+        'a Geschäftszahl, ECLI, or Rechtssatz number like RS0022961) → ris_lookup_citation',
+      );
       expect(text).toContain('finds the Rechtssatz headnotes and decision texts citing it');
+      // Gazette records name their application in `application`, as legislation records do.
+      expect(text).toContain(
+        'the application code the same result names (application, or court on case law)',
+      );
+      expect(text).not.toContain('servedApplication');
+      // ris_get_document reads a record's own document_url and eli, drafts included.
+      expect(text).toContain(
+        'or pass its document_url, eli, or one of its content_urls as document_url',
+      );
+      expect(text).toContain('(the record’s own document_url reads as the draft itself)');
+      expect(text).not.toContain('rejects');
 
       child.stdin.write(
         `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`,

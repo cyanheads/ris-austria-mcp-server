@@ -17,6 +17,7 @@
 import { resource, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 
+import { foldCodeCase } from '@/mcp-server/tools/definitions/_shared.js';
 import {
   addressableSections,
   exampleSectionNames,
@@ -37,11 +38,12 @@ export const risDocumentResource = resource('ris://document/{application}/{docum
   mimeType: 'text/markdown',
   cacheHint: { ttlMs: 86_400_000, cacheScope: 'public' },
   params: z.object({
-    application: z
-      .enum(APPLICATION_CODES)
-      .describe(
-        'RIS application code the document belongs to (e.g. BrKons, Dsk, BgblAuth). Codes: ris_list_reference topic applications.',
-      ),
+    application: foldCodeCase(z.enum(APPLICATION_CODES), {
+      definition: 'ris_document',
+      field: 'application',
+    }).describe(
+      'RIS application code the document belongs to (e.g. BrKons, Dsk, BgblAuth). Codes: ris_list_reference topic applications.',
+    ),
     documentNumber: z
       .string()
       .describe('Technical RIS document number (Technisch.ID), e.g. NOR40262691.'),

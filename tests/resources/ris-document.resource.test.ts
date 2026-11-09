@@ -8,7 +8,13 @@
  * @module tests/resources/ris-document.resource.test
  */
 
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { createInterface } from 'node:readline';
+import { fileURLToPath } from 'node:url';
 
 import {
   configurationError,
@@ -477,4 +483,91 @@ describe('risDocumentResource — error mapping', () => {
     expect(hint).toContain('https://ogd.ris.bka.gv.at');
     expect(hint).toContain('server operator');
   });
+});
+
+// The fold is tabled in tests/tools/_shared.test.ts; this pins that the resource reads with it.
+describe('risDocumentResource — an application code in another letter case (#107)', () => {
+  it('reads ris://document/brkons/… as BrKons', async () => {
+    serveRendition('<p>Hello</p>');
+    expect(await readDocument('brkons', 'NOR40262691')).toContain('Hello');
+    expect(buildDocumentContentUrl).toHaveBeenCalledWith('BrKons', 'NOR40262691', 'html');
+  });
+});
+
+/**
+ * A URI carries a non-ASCII letter percent-encoded — the SDK encodes a raw `ö` the same way
+ * before matching — so the entry point decodes template variables before `params` validation.
+ * Read through the real server over stdio, with the content host pointed at a loopback stub:
+ * the document number must reach the content URL encoded exactly once.
+ */
+describe('risDocumentResource — a document number with a non-ASCII letter (decodeResourceParams)', () => {
+  /** A PruefGewO document number RIS serves (verified live 2026-11-09). */
+  const DOCUMENT_NUMBER =
+    'PRUEF_20250710_2025_0_362_077_BMWET_Höhere_Berufliche_Bildung_HBB_Gesetz_';
+
+  it('reads it from its percent-encoded URI through the server entry point', async () => {
+    const requested: string[] = [];
+    const host = createServer((request, response) => {
+      requested.push(request.url ?? '');
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end('<html><body><p>Höhere Berufliche Bildung</p></body></html>');
+    });
+    host.listen(0, '127.0.0.1');
+    await once(host, 'listening');
+    const { port } = host.address() as AddressInfo;
+    const child = spawn(
+      'bun',
+      ['run', fileURLToPath(new URL('../../src/index.ts', import.meta.url))],
+      {
+        env: {
+          ...process.env,
+          MCP_TRANSPORT_TYPE: 'stdio',
+          MCP_AUTH_MODE: 'none',
+          MCP_LOG_LEVEL: 'emerg',
+          OTEL_ENABLED: 'false',
+          RIS_CONTENT_BASE_URL: `http://127.0.0.1:${port}`,
+        },
+        stdio: ['pipe', 'pipe', 'inherit'],
+      },
+    );
+    const exited = once(child, 'exit');
+    const lines = createInterface({ input: child.stdout });
+    const replies = lines[Symbol.asyncIterator]();
+    const send = (message: object) => child.stdin.write(`${JSON.stringify(message)}\n`);
+    const encoded = encodeURIComponent(DOCUMENT_NUMBER);
+    try {
+      send({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-11-25',
+          capabilities: {},
+          clientInfo: { name: 'ris-resource-test', version: '1.0.0' },
+        },
+      });
+      await replies.next();
+      send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+      send({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'resources/read',
+        params: { uri: `ris://document/PruefGewO/${encoded}` },
+      });
+      expect(JSON.parse((await replies.next()).value!)).toMatchObject({
+        id: 2,
+        result: {
+          contents: [
+            expect.objectContaining({ text: expect.stringContaining('Höhere Berufliche') }),
+          ],
+        },
+      });
+      expect(requested).toEqual([`/Dokumente/PruefGewO/${encoded}/${encoded}.html`]);
+    } finally {
+      lines.close();
+      child.kill('SIGTERM');
+      await exited;
+      host.close();
+    }
+  }, 15_000);
 });
