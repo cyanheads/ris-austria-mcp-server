@@ -5,9 +5,9 @@
  * checked against the same entries.
  * @module tests/scripts/clean-mcpb.test
  */
-import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { filterAgentDocEntries } from '../../scripts/clean-mcpb.js';
+import { AGENT_DOC_ENTRY } from '../../scripts/lint-packaging.js';
 
 const entries = [
   'skills/ris-austria-guide/SKILL.md',
@@ -38,19 +38,6 @@ describe('MCPB agent-doc pruning', () => {
   });
 
   it('applies the same selector in the post-bundle linter', () => {
-    // The synced linter carries a framework-repo-only import, so load it at run time as its
-    // CLI does rather than statically (a static import breaks `tsc`).
-    const output = execFileSync(
-      process.execPath,
-      [
-        '--eval',
-        'import(process.argv[2]).then(({ AGENT_DOC_ENTRY }) => console.log(JSON.stringify(JSON.parse(process.argv[3]).filter((entry) => AGENT_DOC_ENTRY.test(entry)))));',
-        'mcpb-regression',
-        new URL('../../scripts/lint-packaging.ts', import.meta.url).href,
-        JSON.stringify(entries),
-      ],
-      { encoding: 'utf8' },
-    );
-    expect(JSON.parse(output)).toEqual(documentation);
+    expect(entries.filter((entry) => AGENT_DOC_ENTRY.test(entry))).toEqual(documentation);
   });
 });
