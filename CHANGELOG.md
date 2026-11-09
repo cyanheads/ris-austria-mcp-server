@@ -4,7 +4,7 @@ All notable changes to this project. Each entry links to its full per-version fi
 
 ## [0.6.2](changelog/0.6.x/0.6.2.md) — 2026-11-09
 
-ris_get_document and ris_lookup_citation read RIS ELI and web-view links, ris_lookup_citation resolves Rechtssatz numbers and multi-cite gazette strings, records gain gazette and Rechtssatz fields, court and application codes fold from any case, and a norm article is searched under every spelling RIS indexes.
+ris_get_document reads RIS ELI and web-view links, ris_lookup_citation resolves ELIs, Rechtssatz numbers, and multi-cite gazette strings, records gain gazette and Rechtssatz fields, court and application codes fold from any case, and a norm article is searched under every spelling RIS indexes.
 
 ## [0.6.1](changelog/0.6.x/0.6.1.md) — 2026-10-30
 
