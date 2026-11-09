@@ -32,6 +32,7 @@ import {
   layoutLabelledItem,
   OUTLINE_BUDGET_BYTES,
   parseDocumentUrl,
+  quotedHeadings,
   resolveOrdinalEscapes,
   risGetDocument,
   segmentDocument,
@@ -39,6 +40,7 @@ import {
   toMarkdown,
   windowDocument,
 } from '@/mcp-server/tools/definitions/ris-get-document.tool.js';
+import { readDocumentLink } from '@/services/ris/document-link.js';
 import { parseSearchResponse } from '@/services/ris/normalizer.js';
 import { type RisContentFormat, RisService } from '@/services/ris/ris-service.js';
 
@@ -147,6 +149,18 @@ const ABSATZ_LISTS_HTML = fixture('document-brkons-absatz-lists.html');
  * a table-cell boundary, and amendment Absätze rendered as one-item lists.
  */
 const ORDINALS_HTML = fixture('document-bgblauth-ordinals.html');
+
+/**
+ * Real amending acts (captured 2026-11-09, the stylesheet dropped — the markdown is unchanged)
+ * whose replacement text quotes §/Artikel/Anlage headings inside „…“:
+ * BGBLA_2012_I_51, the Verwaltungsgerichtsbarkeits-Novelle, quoting whole new B-VG articles and
+ * an Anlage; BGBLA_2018_I_24, a DSG amendment whose only headings are quoted; and
+ * LGBLA_WI_20261109_40, a Vienna amendment (Artikel I) followed by a new law of eleven §§
+ * (Artikel II).
+ */
+const B_VG_NOVELLE_HTML = fixture('document-bgblauth-2012-i-51.html');
+const DSG_NOVELLE_HTML = fixture('document-bgblauth-2018-i-24.html');
+const WIEN_NOVELLE_HTML = fixture('document-lgblauth-wi-20261109-40.html');
 
 /**
  * Serve `text` for every rendition fetch, reporting the URL it was asked for as the URL fetched —
@@ -527,6 +541,194 @@ describe('risGetDocument — the content host (#75)', () => {
     expect(text).toContain(error.message);
     expect(text).toContain(hint);
     expect(text).toContain('reason content_host_blocked · not retryable');
+  });
+});
+
+// Records hand out an ELI or a Dokument.wxe web view as document_url (and eli). Each names one
+// document, which the tool reads as that document's application and number — the link itself is
+// never fetched (#111). The reader's grammar is tabled in document-link.test.ts; these prove the
+// wiring on both surfaces.
+describe('risGetDocument — a record’s document_url or eli as document_url (#111)', () => {
+  it.each([
+    [
+      'a Vfgh web view',
+      'https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_20261007_26G00167_01',
+      'Vfgh',
+      'JFR_20261007_26G00167_01',
+    ],
+    [
+      'a web view whose Abfrage is not the application code',
+      'https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Gemeinderecht&Dokumentnummer=GEMRE_KA_20701_000__902__2020_me_',
+      'Gr',
+      'GEMRE_KA_20701_000__902__2020_me_',
+    ],
+    [
+      'a consolidated ELI on ris.bka.gv.at',
+      'https://ris.bka.gv.at/eli/bgbl/i/1999/165/A2P4/NOR40212006',
+      'BrKons',
+      'NOR40212006',
+    ],
+    [
+      'a federal gazette ELI',
+      'https://ogd.ris.bka.gv.at/eli/bgbl/II/2026/317/20261103',
+      'BgblAuth',
+      'BGBLA_2026_II_317',
+    ],
+    [
+      'a state gazette ELI',
+      'https://ogd.ris.bka.gv.at/eli/lgbl/SA/2026/103/20261104',
+      'LgblAuth',
+      'LGBLA_SA_20261104_103',
+    ],
+    [
+      'a Niederösterreich consolidated ELI',
+      'https://ogd.ris.bka.gv.at/eli/lgbl/NI/0824/A13/LNO40086080',
+      'LrKons',
+      'LNO40086080',
+    ],
+    [
+      'a state gazette ELI with a lowercase state code',
+      'https://ogd.ris.bka.gv.at/eli/lgbl/ka/2014/10/20140228',
+      'LgblAuth',
+      'LGBLA_KA_20140228_10',
+    ],
+    [
+      'a Vfgh web view on ris.bka.gv.at, where a browser lands',
+      'https://ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_20261007_26G00167_01',
+      'Vfgh',
+      'JFR_20261007_26G00167_01',
+    ],
+    [
+      'a Gemeinderecht web view on ris.bka.gv.at',
+      'https://ris.bka.gv.at/Dokument.wxe?Abfrage=Gemeinderecht&Dokumentnummer=GEMRE_KA_20701_000__902__2020_me_',
+      'Gr',
+      'GEMRE_KA_20701_000__902__2020_me_',
+    ],
+    // Nothing is fetched from the link, so plain http reads like https.
+    [
+      'a web view over plain http',
+      'http://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_20261007_26G00167_01',
+      'Vfgh',
+      'JFR_20261007_26G00167_01',
+    ],
+    [
+      'an ELI over plain http',
+      'http://www.ris.bka.gv.at/eli/bgbl/II/2026/317/20261103',
+      'BgblAuth',
+      'BGBLA_2026_II_317',
+    ],
+  ])('reads %s like its number + application', async (_label, link, application, number) => {
+    serveRendition('<h2>§ 1</h2><p>Text des Dokuments</p>');
+    const byLink = await runToolContract(risGetDocument, { document_url: link });
+    const fetchedByLink = fetchDocumentContent.mock.calls.map(([url]) => url as string);
+    fetchDocumentContent.mockClear();
+    const byNumber = await runToolContract(risGetDocument, {
+      document_number: number,
+      application,
+    });
+
+    expect(byLink.isError).not.toBe(true);
+    expect(byLink.structuredContent).toMatchObject({
+      application,
+      document_number: number,
+      kind: 'full',
+    });
+    expect(byLink.structuredContent).toEqual(byNumber.structuredContent);
+    expect(byLink.content).toEqual(byNumber.content);
+    // One fetch, of the rendition the number names on the content host — never the link.
+    expect(fetchedByLink).toEqual(fetchDocumentContent.mock.calls.map(([url]) => url as string));
+    expect(fetchedByLink).toHaveLength(1);
+    const fetched = new URL(fetchedByLink[0] as string);
+    expect(fetched.origin).toBe('https://ogd.ris.bka.gv.at');
+    expect(fetched.pathname).toMatch(/^\/Dokumente\/[^/]+\/[^/]+\/[^/]+\.html$/u);
+  });
+
+  it('reads a link for urls_only without fetching anything', async () => {
+    const result = await runToolContract(risGetDocument, {
+      document_url: 'https://ogd.ris.bka.gv.at/eli/bgbl/II/2026/317/20261103',
+      format: 'urls_only',
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      application: 'BgblAuth',
+      document_number: 'BGBLA_2026_II_317',
+      authentic_pdf_url:
+        'https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2026_II_317/BGBLA_2026_II_317.pdfsig',
+    });
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+
+  // A link in the family, in a shape the reader does not read, names its cause; a link outside
+  // it falls through to the /Dokumente/ parse, whose refusals are unchanged.
+  it.each([
+    [
+      'a web view with Abfrage=Gr, the code rather than the name RIS writes',
+      'https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Gr&Dokumentnummer=GEMRE_KA_20701_000__902__2020_me_',
+      'Abfrage',
+    ],
+    [
+      'a web view whose Abfrage names no application',
+      'https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Foo&Dokumentnummer=JFR_20261007_26G00167_01',
+      'Abfrage',
+    ],
+    [
+      'a web view with no Dokumentnummer',
+      'https://ogd.ris.bka.gv.at/Dokument.wxe?Abfrage=Vfgh',
+      'Dokumentnummer',
+    ],
+    ['a work-level ELI', 'https://ris.bka.gv.at/eli/bgbl/i/1999/165', 'ELI'],
+    [
+      'a web view on a port other than the default',
+      'https://ogd.ris.bka.gv.at:8443/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_20261007_26G00167_01',
+      'default port',
+    ],
+    [
+      'an ELI over http on the https port',
+      'http://ogd.ris.bka.gv.at:443/eli/bgbl/II/2026/317/20261103',
+      'default port',
+    ],
+  ])('refuses %s as unsupported_url, naming the cause', async (_label, link, cause) => {
+    const error = await contractError(risGetDocument, { document_url: link });
+
+    expect(error.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(error.data?.reason).toBe('unsupported_url');
+    const reading = readDocumentLink(link);
+    if (reading === null || !('error' in reading)) throw new Error('expected a reader refusal');
+    expect(error.message).toBe(`document_url is not readable — ${reading.error}`);
+    expect(reading.error).toContain(cause);
+    expect(error.data?.recovery).toMatchObject({ hint: expect.stringContaining('eli') });
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'a GeltendeFassung.wxe law view',
+      'https://www.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=Bundesnormen&Gesetzesnummer=10001597',
+      'outside the /Dokumente/ tree',
+    ],
+    [
+      'a JudikaturEntscheidung.wxe view',
+      'https://ogd.ris.bka.gv.at/JudikaturEntscheidung.wxe?Abfrage=Vfgh&Dokumentnummer=JFT_20261007_26G00167_00',
+      'outside the /Dokumente/ tree',
+    ],
+    [
+      'a web view on another host',
+      'https://example.com/Dokument.wxe?Abfrage=Vfgh&Dokumentnummer=JFR_20261007_26G00167_01',
+      'URLs are fetchable',
+    ],
+    [
+      'an ELI on another host',
+      'https://eur-lex.europa.eu/eli/reg/2016/679/oj',
+      'URLs are fetchable',
+    ],
+  ])('refuses %s as unsupported_url, as before', async (_label, link, cause) => {
+    expect(readDocumentLink(link)).toBeNull();
+    const error = await contractError(risGetDocument, { document_url: link });
+
+    expect(error.data?.reason).toBe('unsupported_url');
+    expect(error.message).toContain(cause);
+    expect(fetchDocumentContent).not.toHaveBeenCalled();
   });
 });
 
@@ -2316,6 +2518,515 @@ describe('risGetDocument — overflow (outline + selective retrieval)', () => {
   );
 });
 
+// An amending act quotes the text it inserts — whole new articles and §§, headings included —
+// between „ and “. Those headings belong to the article quoting them, so they never start an
+// outline entry of their own (#103).
+describe('risGetDocument — headings quoted in an amending act (#103)', () => {
+  const B_VG_NOVELLE = { document_number: 'BGBLA_2012_I_51', application: 'BgblAuth' };
+  const DSG_NOVELLE = { document_number: 'BGBLA_2018_I_24', application: 'BgblAuth' };
+  const WIEN_NOVELLE = { document_number: 'LGBLA_WI_20261109_40', application: 'LgblAuth' };
+  const B_VG_ARTICLES = ['Präambel', ...Array.from({ length: 10 }, (_, i) => `Artikel ${i + 1}`)];
+
+  it('outlines BGBLA_2012_I_51 by its own ten articles', async () => {
+    const { result } = await callTool(B_VG_NOVELLE_HTML, B_VG_NOVELLE);
+
+    expect(result.kind).toBe('outline');
+    expect(result.byte_size).toBe(95_698);
+    const sections = result.sections ?? [];
+    expect(sections.map((section) => section.name).toSorted()).toEqual(B_VG_ARTICLES.toSorted());
+    expect(sections.find((section) => section.name === 'Artikel 1')?.bytes).toBe(73_506);
+    expect(sections.reduce((sum, section) => sum + section.bytes, 0)).toBe(95_698);
+    // Neither the B-VG articles it quotes nor the §§ quoted in Artikel 6 and 9 are entries.
+    for (const quoted of ['Artikel 129', 'Artikel 136', 'Artikel 6 § 1a', 'Artikel 9 § 80']) {
+      expect(sections.map((section) => section.name)).not.toContain(quoted);
+    }
+  });
+
+  it('returns the whole of Artikel 1, up to the heading of Artikel 2', async () => {
+    const { ctx, result } = await callTool(B_VG_NOVELLE_HTML, {
+      ...B_VG_NOVELLE,
+      sections: ['Artikel 1'],
+    });
+
+    expect(result.kind).toBe('full');
+    expect(result.byte_size).toBe(73_506);
+    expect(getEnrichment(ctx).notice).toBeUndefined();
+    const text = result.text as string;
+    expect(text.startsWith('## Artikel 1')).toBe(true);
+    // Items 61 onward and the quoted Anlage used to fall under a quoted Artikel 136.
+    for (const quoted of [
+      '### Artikel 129.',
+      '### Artikel 136.',
+      '## „Anlage',
+      '## J. Land Wien',
+    ]) {
+      expect(text).toContain(quoted);
+    }
+    const { result: both } = await callTool(B_VG_NOVELLE_HTML, {
+      ...B_VG_NOVELLE,
+      sections: ['Artikel 1', 'Artikel 2'],
+    });
+    expect((both.text as string).slice(text.length).startsWith('## Artikel 2')).toBe(true);
+  });
+
+  it.each([
+    ['Artikel 6', '### § 1a.'],
+    ['Artikel 9', '### § 80.'],
+  ])('keeps a § quoted in %s inside it', async (article, heading) => {
+    const { result } = await callTool(B_VG_NOVELLE_HTML, { ...B_VG_NOVELLE, sections: [article] });
+    expect(result.kind).toBe('full');
+    expect(result.text).toContain(heading);
+  });
+
+  it('folds the §§ LGBLA_WI_20261109_40 quotes into Artikel I and keeps Artikel II’s own §§', async () => {
+    const { result } = await callTool(WIEN_NOVELLE_HTML, { ...WIEN_NOVELLE, sections: ['?'] });
+
+    expect(result.kind).toBe('outline');
+    const names = result.sections?.map((section) => section.name) ?? [];
+    expect(names.toSorted()).toEqual(
+      [
+        'Präambel',
+        'Artikel I',
+        'Artikel II',
+        ...Array.from({ length: 11 }, (_, i) => `Artikel II § ${i + 1}`),
+        'Artikel III',
+        'Artikel IV',
+      ].toSorted(),
+    );
+
+    const { result: artikelI } = await callTool(WIEN_NOVELLE_HTML, {
+      ...WIEN_NOVELLE,
+      sections: ['Artikel I'],
+    });
+    expect(artikelI.byte_size).toBe(892 + 3_307 + 1_276);
+    expect(artikelI.text).toMatch(/^#+ § 7g\./mu);
+    expect(artikelI.text).toMatch(/^#+ § 138a\./mu);
+  });
+
+  it('returns BGBLA_2018_I_24 whole, since its only headings are quoted', async () => {
+    const { ctx, result } = await callTool(DSG_NOVELLE_HTML, DSG_NOVELLE);
+    expect(result.kind).toBe('full');
+    expect(result.byte_size).toBe(11_905);
+    expect(result.sections).toBeUndefined();
+    expect(getEnrichment(ctx).notice).toBeUndefined();
+
+    // A name that is no heading of it at all still gets the whole document.
+    const { ctx: selected, result: whole } = await callTool(DSG_NOVELLE_HTML, {
+      ...DSG_NOVELLE,
+      sections: ['§ 99'],
+    });
+    expect(whole.text).toBe(result.text);
+    expect(getEnrichment(selected).notice).toContain('no addressable entries');
+  });
+
+  it('serves the same outline on both surfaces', async () => {
+    serveRendition(B_VG_NOVELLE_HTML);
+    const result = await runToolContract(risGetDocument, B_VG_NOVELLE);
+    const { sections } = result.structuredContent as { sections: { name: string }[] };
+    expect(sections.map((section) => section.name).toSorted()).toEqual(B_VG_ARTICLES.toSorted());
+    const text = readCommonMark(contentText(result));
+    for (const name of B_VG_ARTICLES) expect(text).toContain(name);
+    expect(text).not.toContain('Artikel 129');
+  });
+
+  // 0.6.1 split an amending act at the headings it quotes, so its outline offered names no entry
+  // carries now. Each still selects its quoted passage, never the outline of a miss.
+  const utf8 = (text: string) => new TextEncoder().encode(text).length;
+  const markdownOf = (html: string, documentNumber: string, segment: string) =>
+    toMarkdown(
+      html,
+      `https://ogd.ris.bka.gv.at/Dokumente/${segment}/${documentNumber}/${documentNumber}.html`,
+    ).markdown;
+  const B_VG_MARKDOWN = markdownOf(B_VG_NOVELLE_HTML, 'BGBLA_2012_I_51', 'BgblAuth');
+  const WIEN_MARKDOWN = markdownOf(WIEN_NOVELLE_HTML, 'LGBLA_WI_20261109_40', 'LgblAuth');
+
+  /**
+   * Every name 0.6.1's outline listed that the outline no longer does: the code-unit span of the
+   * markdown 0.6.1 returned for it, that span's UTF-8 size, the size it returns now, and the
+   * entry quoting it. Equal sizes are the same bytes. A smaller size is the same text cut at the
+   * “ closing its quotation, where 0.6.1 ran on into the items after it.
+   */
+  it.each([
+    ['BGBLA_2012_I_51', 'Artikel 129', 13_198, 13_471, 276, 276, 'Artikel 1'],
+    ['BGBLA_2012_I_51', 'Artikel 130', 13_471, 15_564, 2_129, 2_129, 'Artikel 1'],
+    ['BGBLA_2012_I_51', 'Artikel 131', 15_564, 18_305, 2_796, 2_796, 'Artikel 1'],
+    ['BGBLA_2012_I_51', 'Artikel 132', 18_305, 19_696, 1_404, 1_404, 'Artikel 1'],
+    ['BGBLA_2012_I_51', 'Artikel 133', 19_696, 22_347, 2_676, 2_676, 'Artikel 1'],
+    ['BGBLA_2012_I_51', 'Artikel 134', 22_347, 26_448, 4_179, 4_179, 'Artikel 1'],
+    ['BGBLA_2012_I_51', 'Artikel 135', 26_448, 29_051, 2_630, 2_630, 'Artikel 1'],
+    ['BGBLA_2012_I_51', 'Artikel 135a', 29_051, 29_716, 674, 674, 'Artikel 1'],
+    ['BGBLA_2012_I_51', 'Artikel 136', 29_716, 72_599, 44_109, 1_222, 'Artikel 1'],
+    ['BGBLA_2012_I_51', 'Artikel 6 § 1a', 81_983, 82_397, 429, 228, 'Artikel 6'],
+    ['BGBLA_2012_I_51', 'Artikel 9 § 80', 89_963, 90_810, 883, 292, 'Artikel 9'],
+    ['LGBLA_WI_20261109_40', 'Artikel I § 7g', 1_536, 4_740, 3_307, 1_350, 'Artikel I'],
+    ['LGBLA_WI_20261109_40', 'Artikel I § 138a', 4_740, 5_996, 1_276, 1_271, 'Artikel I'],
+  ] as const)(
+    'selects %s’s former entry %s as its quoted passage',
+    async (document, name, start, end, formerBytes, bytes, within) => {
+      const [html, markdown, addressing] =
+        document === 'BGBLA_2012_I_51'
+          ? [B_VG_NOVELLE_HTML, B_VG_MARKDOWN, B_VG_NOVELLE]
+          : [WIEN_NOVELLE_HTML, WIEN_MARKDOWN, WIEN_NOVELLE];
+      const former = markdown.slice(start, end);
+      expect(utf8(former)).toBe(formerBytes);
+      expect(former).toMatch(/^### +§|^### Artikel/u);
+
+      const { ctx, result } = await callTool(html, { ...addressing, sections: [name] });
+      expect(result.kind).toBe('full');
+      expect(result.byte_size).toBe(bytes);
+      const text = result.text as string;
+      if (bytes === formerBytes) {
+        expect(text).toBe(former);
+      } else {
+        expect(text.length).toBeLessThan(former.length);
+        expect(former.startsWith(text)).toBe(true);
+        expect(markdown[start + text.length]).toBe('“');
+      }
+      expect(getEnrichment(ctx).notice).toBe(
+        `"${name}" (in "${within}"): a heading inside quoted replacement text, not an entry of this document’s outline, so it returns its quoted passage — from the heading to the next heading or the close of the quotation. Select the entry in parentheses for the text around it.`,
+      );
+    },
+  );
+
+  it('stops Artikel 6 § 1a at the close of its quotation, where 0.6.1 ran on into item 2', async () => {
+    const former = B_VG_MARKDOWN.slice(81_983, 82_397);
+    const { result } = await callTool(B_VG_NOVELLE_HTML, {
+      ...B_VG_NOVELLE,
+      sections: ['Artikel 6 § 1a'],
+    });
+    const text = result.text as string;
+    expect(text.startsWith('### § 1a.')).toBe(true);
+    expect(text.endsWith('besorgt werden.')).toBe(true);
+    expect(former.slice(text.length)).toMatch(
+      /^“\n\n2\. Dem § 10 wird folgender Abs\. 5 angefügt/u,
+    );
+    expect(text).not.toContain('Dem § 10');
+  });
+
+  // The act's own entries, as the outline lists them — largest first — whatever is selected.
+  const B_VG_OUTLINE = [
+    ['Artikel 1', 73_506],
+    ['Artikel 9', 6_133],
+    ['Artikel 3', 5_069],
+    ['Artikel 2', 2_744],
+    ['Artikel 10', 2_349],
+    ['Artikel 8', 1_659],
+    ['Präambel', 1_023],
+    ['Artikel 7', 999],
+    ['Artikel 6', 775],
+    ['Artikel 5', 732],
+    ['Artikel 4', 709],
+  ];
+  const WIEN_OUTLINE = [
+    ['Artikel I', 5_475],
+    ['Artikel II § 4', 4_670],
+    ['Artikel II § 3', 3_902],
+    ['Artikel II § 2', 2_884],
+    ['Artikel II § 7', 2_059],
+    ['Artikel II § 6', 1_942],
+    ['Artikel II § 5', 1_451],
+    ['Präambel', 696],
+    ['Artikel II § 8', 634],
+    ['Artikel II § 9', 441],
+    ['Artikel II § 1', 428],
+    ['Artikel IV', 402],
+    ['Artikel II § 11', 347],
+    ['Artikel II', 261],
+    ['Artikel II § 10', 257],
+    ['Artikel III', 181],
+  ];
+
+  it.each([
+    ['BGBLA_2012_I_51', 'Artikel 129', B_VG_OUTLINE],
+    ['LGBLA_WI_20261109_40', 'Artikel I § 7g', WIEN_OUTLINE],
+  ] as const)(
+    'keeps %s’s outline to its own entries, %s never among them',
+    async (document, formerName, outline) => {
+      const [html, addressing] =
+        document === 'BGBLA_2012_I_51'
+          ? [B_VG_NOVELLE_HTML, B_VG_NOVELLE]
+          : [WIEN_NOVELLE_HTML, WIEN_NOVELLE];
+      const { ctx, result } = await callTool(html, { ...addressing, sections: ['Artikel 77'] });
+      expect(result.kind).toBe('outline');
+      expect(result.sections?.map(({ name, bytes }) => [name, bytes])).toEqual(outline);
+      expect(getEnrichment(ctx).notice).toContain('"Artikel 77" named no section');
+
+      // Selected beside a name that matches nothing, the former entry returns and the other is
+      // skipped, with examples from the same roster.
+      const { ctx: mixed, result: partial } = await callTool(html, {
+        ...addressing,
+        sections: [formerName, 'Artikel 77'],
+      });
+      expect(partial.kind).toBe('full');
+      const notice = getEnrichment(mixed).notice ?? '';
+      expect(notice).toContain(`"${formerName}" (in "`);
+      expect(notice).toContain(
+        `"Artikel 77" named no entry of this document and was skipped. This document has ${outline.length} §/Artikel/Anlage sections`,
+      );
+      expect(notice).toContain(
+        `e.g. ${outline
+          .slice(0, 3)
+          .map(([name]) => `"${name}"`)
+          .join(', ')}.`,
+      );
+    },
+  );
+
+  it('returns a former entry inside a selected entry once, and keeps document order', async () => {
+    const { result: artikel1 } = await callTool(B_VG_NOVELLE_HTML, {
+      ...B_VG_NOVELLE,
+      sections: ['Artikel 1'],
+    });
+    const { ctx, result: both } = await callTool(B_VG_NOVELLE_HTML, {
+      ...B_VG_NOVELLE,
+      sections: ['Artikel 129', 'Artikel 1'],
+    });
+    expect(both.text).toBe(artikel1.text);
+    expect(both.byte_size).toBe(73_506);
+    expect(getEnrichment(ctx).notice).toContain('"Artikel 129" (in "Artikel 1")');
+
+    // Two former entries and an entry, requested out of order, come back in document order.
+    const { result: ordered } = await callTool(B_VG_NOVELLE_HTML, {
+      ...B_VG_NOVELLE,
+      sections: ['Artikel 2', 'Artikel 6 § 1a', 'Artikel 129'],
+    });
+    const artikel2 = (
+      await callTool(B_VG_NOVELLE_HTML, { ...B_VG_NOVELLE, sections: ['Artikel 2'] })
+    ).result.text as string;
+    const paragraph1a = B_VG_MARKDOWN.slice(
+      81_983,
+      B_VG_MARKDOWN.indexOf('“\n\n2. Dem § 10 wird', 81_983),
+    );
+    expect(utf8(paragraph1a)).toBe(228);
+    expect(ordered.text).toBe(B_VG_MARKDOWN.slice(13_198, 13_471) + artikel2 + paragraph1a);
+  });
+
+  it('returns a former entry of BGBLA_2018_I_24, which has no outline, as its quoted passage', async () => {
+    const markdown = markdownOf(DSG_NOVELLE_HTML, 'BGBLA_2018_I_24', 'BgblAuth');
+    const { ctx, result } = await callTool(DSG_NOVELLE_HTML, {
+      ...DSG_NOVELLE,
+      sections: ['§ 9'],
+    });
+    expect(result.kind).toBe('full');
+    expect(result.text).toBe(
+      markdown.slice(3_084, markdown.indexOf('“\n\n8. § 11 samt Überschrift lautet', 3_084)),
+    );
+    expect(result.byte_size).toBe(1_790);
+    expect(getEnrichment(ctx).notice).toBe(
+      '"§ 9": a heading inside quoted replacement text in a document with no outline entries, so it returns its quoted passage — from the heading to the next heading or the close of the quotation. Re-call without sections:[…] for the whole document.',
+    );
+
+    const { ctx: mixed } = await callTool(DSG_NOVELLE_HTML, {
+      ...DSG_NOVELLE,
+      sections: ['§ 9', '§ 99'],
+    });
+    expect(getEnrichment(mixed).notice).toContain(
+      '"§ 99" named no heading of this document and was skipped.',
+    );
+    expect(getEnrichment(mixed).notice).not.toContain('e.g.');
+  });
+
+  it('returns a former entry and its notice on both surfaces', async () => {
+    serveRendition(B_VG_NOVELLE_HTML);
+    const result = await runToolContract(risGetDocument, {
+      ...B_VG_NOVELLE,
+      sections: ['Artikel 135a'],
+    });
+    const passage = B_VG_MARKDOWN.slice(29_051, 29_716);
+    const { kind, notice, text } = result.structuredContent as {
+      kind: string;
+      notice?: string;
+      text?: string;
+    };
+    expect(kind).toBe('full');
+    expect(text).toBe(passage);
+    expect(notice).toContain('"Artikel 135a" (in "Artikel 1")');
+    expect(result.content).toHaveLength(2);
+    expect(contentText(result)).toContain(passage.trim());
+    const trailer = result.content[1];
+    if (trailer?.type !== 'text') throw new Error('expected a text trailer in content[]');
+    expect(readCommonMark(trailer.text)).toBe(
+      ['⟨blockquote_open⟩', notice, '⟨blockquote_close⟩'].join('\n\n'),
+    );
+  });
+});
+
+describe('segmentDocument — „…“ quotations', () => {
+  const names = (markdown: string) => segmentDocument(markdown).map((section) => section.name);
+
+  // Characterization: documents whose headings all sit outside quotations, quotes in their text
+  // included (the RegV excerpt carries fifteen „…“ pairs), segment as they always have.
+  it.each([
+    [
+      'the RegV excerpt',
+      ARTIKEL_SECTIONS_HTML,
+      [
+        ['Artikel 1', 1675],
+        ['Artikel 2', 1062],
+        ['Artikel 3', 711],
+      ],
+    ],
+    [
+      'the BrKons excerpt',
+      ABSATZ_LISTS_HTML,
+      [
+        ['Präambel', 69],
+        ['§ 9', 6847],
+      ],
+    ],
+  ] as const)('segments %s as before', (_label, html, expected) => {
+    const { markdown: text } = toMarkdown(html, 'https://ogd.ris.bka.gv.at/Dokumente/X/Y/Y.html');
+    expect(segmentDocument(text).map(({ name, bytes }) => [name, bytes])).toEqual(expected);
+  });
+
+  it('lists BGBLA_2012_I_51’s articles in document order, Artikel 2 opening at its heading', () => {
+    const { markdown: text } = toMarkdown(
+      B_VG_NOVELLE_HTML,
+      'https://ogd.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2012_I_51/BGBLA_2012_I_51.html',
+    );
+    const sections = segmentDocument(text);
+    expect(sections.map((section) => section.name)).toEqual([
+      'Präambel',
+      ...Array.from({ length: 10 }, (_, i) => `Artikel ${i + 1}`),
+    ]);
+    expect(sections[2]?.text.startsWith('## Artikel 2')).toBe(true);
+    expect(sections.map((section) => section.text).join('')).toBe(text);
+  });
+
+  it('keeps a heading inside a quotation in the section around it', () => {
+    const text = [
+      '## Artikel 1',
+      '1. Die §§ 5 und 6 lauten:',
+      '## „Überschrift',
+      '### § 5.',
+      'Text mit „innerem Zitat“ und weiter.',
+      '### § 6.',
+      'Ende.“',
+      '## Artikel 2',
+      'Text.',
+    ].join('\n');
+    expect(names(text)).toEqual(['Artikel 1', 'Artikel 2']);
+  });
+
+  // The outer quotation is still open when the two inner ones close, so §§ 1 and 2 stay quoted.
+  it('counts nested quotations, three levels deep', () => {
+    const text = [
+      '## Artikel 1',
+      '„Ebene 1 „Ebene 2 „Ebene 3“',
+      '## § 1',
+      'zurück in Ebene 2“',
+      '## § 2',
+      'zurück in Ebene 1“',
+      '## § 3',
+    ].join('\n');
+    expect(names(text)).toEqual(['Artikel 1', 'Artikel 1 § 3']);
+  });
+
+  it('reads ‚…‘ only as text inside „…“, and never as a quotation of its own', () => {
+    expect(names('## Artikel 1\n„Text ‚innen‘\n## § 1\nmehr“\n## § 2')).toEqual([
+      'Artikel 1',
+      'Artikel 1 § 2',
+    ]);
+    expect(names('## Artikel 1\n‚Text\n## § 1\nmehr‘\n## § 2')).toEqual([
+      'Artikel 1',
+      'Artikel 1 § 1',
+      'Artikel 1 § 2',
+    ]);
+  });
+
+  it('ignores straight quotes', () => {
+    expect(names('## § 1\n"Text\n## § 2\nmehr"\n## § 3')).toEqual(['§ 1', '§ 2', '§ 3']);
+  });
+
+  it('lets an unterminated „ quote nothing, so the headings after it keep their sections', () => {
+    expect(names('## § 1\nEr schrieb „offen\n## § 2\nText\n## § 3\nText')).toEqual([
+      '§ 1',
+      '§ 2',
+      '§ 3',
+    ]);
+    // An inner quotation closes inside the unterminated one: only what it encloses is quoted.
+    expect(names('## § 1\n„außen „innen\n## § 2\ninnen“\n## § 3\n## § 4')).toEqual([
+      '§ 1',
+      '§ 3',
+      '§ 4',
+    ]);
+    // The “ closes the innermost open „, so a heading before that one keeps its section.
+    expect(names('## § 1\n„außen\n## § 2\n„innen\n## § 3\ninnen“\n## § 4')).toEqual([
+      '§ 1',
+      '§ 2',
+      '§ 4',
+    ]);
+  });
+
+  it('ignores a “ that opens nothing, and a „ on the heading’s own line', () => {
+    expect(
+      names('## § 1\nEr sagte “so”.\n## § 2 „Begriff“\nText „Zitat\n## § 3\nEnde“\n## § 4'),
+    ).toEqual(['§ 1', '§ 2', '§ 4']);
+    // A stray “ quotes nothing before it either, a heading past the document's start included.
+    expect(names('Vorspann\n## § 1\nEr sagte “so”.\n## § 2')).toEqual(['Präambel', '§ 1', '§ 2']);
+  });
+});
+
+// The names an outline gave quoted headings before quotations were read, and the passage each
+// spans: to the next heading, quoted or not, or to the “ closing the innermost quotation open at
+// the heading, whichever comes first.
+describe('quotedHeadings', () => {
+  const spans = (markdown: string) =>
+    quotedHeadings(markdown).map(({ name, start, end }) => [name, markdown.slice(start, end)]);
+
+  it('names each quoted heading as if nothing were quoted, the article before it included', () => {
+    const markdown = [
+      '## Artikel 1',
+      '1. Art. 7 und § 5 lauten:',
+      '„',
+      '### Artikel 7',
+      'sieben',
+      '### § 5',
+      'fünf“',
+      '### § 6',
+      'eigener sechster',
+    ].join('\n');
+    // § 5 sits under the quoted Artikel 7, as 0.6.1 read it; the unquoted § 6 is no quoted heading.
+    expect(spans(markdown)).toEqual([
+      ['Artikel 7', '### Artikel 7\nsieben\n'],
+      ['Artikel 7 § 5', '### § 5\nfünf'],
+    ]);
+  });
+
+  it('ends a passage at the innermost quotation open at its heading', () => {
+    const markdown = [
+      '## Artikel 1',
+      '„außen',
+      '„innen',
+      '### § 2',
+      'zwei“',
+      'weiter',
+      '### § 3',
+      'drei „Zitat“ mehr',
+      '“',
+      '## Artikel 2',
+    ].join('\n');
+    expect(spans(markdown)).toEqual([
+      ['Artikel 1 § 2', '### § 2\nzwei'],
+      ['Artikel 1 § 3', '### § 3\ndrei „Zitat“ mehr\n'],
+    ]);
+  });
+
+  it('suffixes a repeated name as 0.6.1 did, and lists no heading an unclosed „ precedes', () => {
+    const markdown =
+      '## Artikel 1\n„\n### § 1\neins\n### § 1\nnoch eins“\nText „offen\n### § 9\nneun';
+    expect(spans(markdown)).toEqual([
+      ['Artikel 1 § 1', '### § 1\neins\n'],
+      ['Artikel 1 § 1 (2)', '### § 1\nnoch eins'],
+    ]);
+  });
+
+  it('lists nothing for a document with no quoted heading', () => {
+    expect(quotedHeadings('## § 1\nText „Zitat“\n## § 2\nText')).toEqual([]);
+    expect(quotedHeadings('kein Titel')).toEqual([]);
+  });
+});
+
 describe('risGetDocument — raw html/xml output budget (#36)', () => {
   const encoder = new TextEncoder();
   const CONTENT_URLS = {
@@ -3104,7 +3815,7 @@ describe('risGetDocument — notices read back verbatim in content[]', () => {
     expect(notice).not.toContain('\\');
   });
 
-  // DOCUMENT_NUMBER_PATTERN admits `~`, which encodeURIComponent leaves as is, so a
+  // isDocumentNumber admits `~`, which encodeURIComponent leaves as is, so a
   // `~~NOR1~~` number reaches the URL the format_unavailable notice names.
   it('reads back a ~~NOR1~~ document number inside a format_unavailable URL', async () => {
     const result = await runToolContract(risGetDocument, {
@@ -3328,6 +4039,53 @@ describe('selectDocumentSections', () => {
       expect(addressableSections(text, format)).toEqual([]);
       expect(selectDocumentSections(text, ['Part 1 of 2'], format).available).toEqual([]);
     }
+  });
+
+  // A quoted § 5 comes first, so 0.6.1 named it "Artikel 1 § 5" and the act's own § 5
+  // "Artikel 1 § 5 (2)"; the outline names the act's own one "Artikel 1 § 5".
+  const amending = [
+    '## Artikel 1',
+    '1. § 5 lautet:',
+    '„',
+    '### § 5',
+    'zitierter fünfter“',
+    '### § 5',
+    'eigener fünfter',
+  ].join('\n');
+
+  it('resolves a quoted heading’s former name when the roster has no such entry', () => {
+    const selection = selectDocumentSections(
+      `${amending}\n## Artikel 2\n„\n### § 7\nsieben“`,
+      ['Artikel 2 § 7', 'Artikel 9'],
+      'markdown',
+    );
+    expect(selection.text).toBe('### § 7\nsieben');
+    expect(selection.quoted).toEqual([{ name: 'Artikel 2 § 7', within: 'Artikel 2' }]);
+    expect(selection.unmatched).toEqual(['Artikel 9']);
+    expect(selection.available.map((entry) => entry.name)).not.toContain('Artikel 2 § 7');
+  });
+
+  it('lets an outline entry win over a quoted heading’s former name it collides with', () => {
+    const selection = selectDocumentSections(amending, ['Artikel 1 § 5'], 'markdown');
+    expect(selection.text).toBe('### § 5\neigener fünfter');
+    expect(selection.quoted).toEqual([]);
+
+    // The suffixed name 0.6.1 gave the act's own § 5 names no quoted heading.
+    const former = selectDocumentSections(amending, ['Artikel 1 § 5 (2)'], 'markdown');
+    expect(former.text).toBe('');
+    expect(former.quoted).toEqual([]);
+    expect(former.unmatched).toEqual(['Artikel 1 § 5 (2)']);
+  });
+
+  it('names no quoting entry where the document has no roster', () => {
+    const selection = selectDocumentSections(
+      'Vorspann\n„\n### § 3\ndrei“\nEnde',
+      ['§ 3'],
+      'markdown',
+    );
+    expect(selection.available).toEqual([]);
+    expect(selection.text).toBe('### § 3\ndrei');
+    expect(selection.quoted).toEqual([{ name: '§ 3', within: undefined }]);
   });
 });
 
@@ -3575,6 +4333,60 @@ describe('markdown post-passes — time on adversarial input', () => {
   ])('layoutLabelledItem stays linear on %s', (_shape, make) => {
     expectLinear(make, (input) => layoutLabelledItem(`1.\n${input}`, '  ', '    ', true));
   });
+
+  // segmentDocument pairs every „ and “ in the markdown to keep quoted headings in place.
+  it.each<[string, (size: number) => string]>([
+    ['a long digit run', (size) => '1'.repeat(size)],
+    ['openers that never close', (size) => '„'.repeat(size)],
+    ['closers that open nothing', (size) => '“'.repeat(size)],
+    [
+      'nested openers, then their closers',
+      (size) => `${'„'.repeat(size / 2)}${'“'.repeat(size / 2)}`,
+    ],
+    [
+      'a heading after every run of unclosed openers',
+      (size) => `${'„'.repeat(16)}\n## § 1\n`.repeat(size / 24),
+    ],
+    ['a quoted heading in every closed pair', (size) => '„\n## § 1\n“'.repeat(size / 10)],
+    ['one long line ending in a break', (size) => `${'§1 x'.repeat(size / 4)}\ny`],
+    ['line breaks throughout', (size) => `x${'  \r\n'.repeat(size / 4)}`],
+  ])('segmentDocument stays linear on %s', (_shape, make) => {
+    expectLinear(make, segmentDocument);
+  });
+
+  // quotedHeadings also reads from each quoted heading on to the close of its quotation.
+  it.each<[string, (size: number) => string]>([
+    ['a quoted heading, then a long digit run', (size) => `„\n## § 1\n${'1'.repeat(size)}“`],
+    [
+      'a quoted heading, then nested openers and their closers',
+      (size) => `„\n## § 1\n${'„'.repeat(size / 2)}${'“'.repeat(size / 2)}“`,
+    ],
+    [
+      'a quoted heading, then openers that never close',
+      (size) => `„\n## § 1\n“„\n## § 2\n${'„'.repeat(size)}`,
+    ],
+    ['a quoted heading in every closed pair', (size) => '„\n## § 1\n“'.repeat(size / 10)],
+    [
+      'quoted headings in one long quotation',
+      (size) => `„${'\n## § 1\nText'.repeat(size / 13)}\n“`,
+    ],
+    [
+      'quoted headings ever deeper, then every closer',
+      (size) => `${'„\n## § 1\n'.repeat(size / 20)}${'“'.repeat(size / 20)}`,
+    ],
+    [
+      'a quoted heading, then one long line ending in a break',
+      (size) => `„\n## § 1\n${'§1 x'.repeat(size / 4)}\ny“`,
+    ],
+    [
+      'a quoted heading, then line breaks throughout',
+      (size) => `„\n## § 1\nx${'  \r\n'.repeat(size / 4)}“`,
+    ],
+  ])('quotedHeadings stays linear on %s', (_shape, make) => {
+    // Every shape quotes a heading, so the scan from it to its quotation's close runs.
+    expect(quotedHeadings(make(SIZES[0] ?? 0)).length).toBeGreaterThan(0);
+    expectLinear(make, quotedHeadings);
+  });
 });
 
 describe('risGetDocument — error mapping', () => {
@@ -3655,7 +4467,7 @@ describe('risGetDocument — format() parity', () => {
     expect(text).toContain('**Text source:** html');
   });
 
-  // DOCUMENT_NUMBER_PATTERN admits `~`, and the number is echoed into the heading: a raw
+  // isDocumentNumber admits `~`, and the number is echoed into the heading: a raw
   // `## ~~NOR1~~` renders as strikethrough.
   it.each(['BrKons', 'BgblAuth'] as const)(
     'reads back an echoed ~~NOR1~~ and every URL from content[] (%s, urls_only)',

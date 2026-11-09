@@ -2,10 +2,11 @@
  * @fileoverview ris_get_document — read one RIS document's full text (markdown/html/xml)
  * or its rendition URLs, with explicit binding status and the amtssigniert Authentisch PDF
  * surfaced wherever it exists. Two addressing modes route to the same fetch path:
- * `document_number` + `application`, or a `document_url` from a result's content_urls — the
- * latter also carrying the one route to a draft's companion documents, whose per-record
- * opaque filenames no document number reaches (see {@link COMPANION_STEMS} for the shapes
- * RIS files them under).
+ * `document_number` + `application`, or a `document_url` — a record's own ELI or `Dokument.wxe`
+ * web view, read for the pair it names without fetching it (see `readDocumentLink`), or a
+ * `/Dokumente/` URL from a result's content_urls, which also carries the one route to a draft's
+ * companion documents, whose per-record opaque filenames no document number reaches (see
+ * {@link COMPANION_STEMS} for the shapes RIS files them under).
  * Format availability varies by application (full text · authentic-PDF-only · PDF-only ·
  * metadata-only). Where a PDF is a document's only rendition — the PDF-only and
  * authentic-PDF-only applications, and a companion filed with no html twin — `markdown` returns
@@ -52,6 +53,7 @@ import {
 import { NodeHtmlMarkdown, type TranslatorConfigFactory } from 'node-html-markdown';
 
 import { getServerConfig } from '@/config/server-config.js';
+import { readDocumentLink } from '@/services/ris/document-link.js';
 import type { RisApplication, RisBindingStatus } from '@/services/ris/reference/index.js';
 import { RIS_APPLICATIONS } from '@/services/ris/reference/index.js';
 import {
@@ -62,7 +64,7 @@ import {
 } from '@/services/ris/ris-service.js';
 import type { RisDocumentContent } from '@/services/ris/types.js';
 
-import { joinNotices, renditionLinks } from './_shared.js';
+import { escapedNoticeTrailer, foldCodeCase, joinNotices, renditionLinks } from './_shared.js';
 
 /** The seven canonical binding labels (Design Decisions › Binding status). */
 const BINDING_STATUSES = [
@@ -850,50 +852,152 @@ export interface DocumentSection {
 const SECTION_HEADING =
   /^#{1,6}[ \t]+(§§?[ \t]*\d+[ \t]*[a-z]?|Art(?:ikel|\.)[ \t]*[\dIVXLC]+[ \t]*[a-z]?|Anlage(?:[ \t]+[\dA-Za-z]+)?)/gim;
 
+/** The German quotation marks that open and close quoted text: „ and “. */
+const OPENING_QUOTE = 0x201e;
+const CLOSING_QUOTE = 0x201c;
+
+/**
+ * The outermost „…“ quotations in `text`, as `[open, close]` code-unit offsets in document
+ * order. Nesting is counted, so a quotation spans to the “ that closes its own „. A “ with no
+ * open „ closes nothing, and a „ that never closes quotes nothing. ‚…‘ only ever nests inside
+ * „…“ and straight quotes cannot be paired by direction, so neither is read.
+ */
+function quotations(text: string): [number, number][] {
+  const open: number[] = [];
+  const outermost: [number, number][] = [];
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code === OPENING_QUOTE) {
+      open.push(index);
+      continue;
+    }
+    if (code !== CLOSING_QUOTE) continue;
+    const start = open.pop();
+    if (start === undefined) continue;
+    // A closing quotation contains every one that closed since its „, which all opened later.
+    while ((outermost.at(-1)?.[0] ?? -1) > start) outermost.pop();
+    outermost.push([start, index]);
+  }
+  return outermost;
+}
+
+/**
+ * One §/Artikel/Anlage heading: its offset, its marker with whitespace runs collapsed, and
+ * whether a „…“ quotation holds it.
+ */
+interface HeadingMark {
+  readonly index: number;
+  readonly marker: string;
+  readonly quoted: boolean;
+}
+
+/** Every structural heading in `text`, in document order, each marked quoted or not. */
+function headingMarks(text: string): HeadingMark[] {
+  const quoted = quotations(text);
+  let next = 0; // the first quotation that does not end before the heading being judged
+  return [...text.matchAll(SECTION_HEADING)].map((match) => {
+    while ((quoted[next]?.[1] ?? Number.POSITIVE_INFINITY) < match.index) next += 1;
+    return {
+      index: match.index,
+      marker: (match[1] ?? '').replace(/[ \t]+/gu, ' ').trim(),
+      quoted: (quoted[next]?.[0] ?? Number.POSITIVE_INFINITY) < match.index,
+    };
+  });
+}
+
+/**
+ * Name each heading as an entry: a § is qualified by the article or annex heading before it
+ * (`Artikel 25 § 39`) so names stay unique across a bill that amends many laws, and any
+ * residual collision gets a ` (n)` suffix.
+ */
+function nameHeadings(marks: readonly HeadingMark[]): (HeadingMark & { readonly name: string })[] {
+  const counts = new Map<string, number>();
+  let container = '';
+  return marks.map((mark) => {
+    const isContainer = /^(?:Art|Anlage)/iu.test(mark.marker);
+    if (isContainer) container = mark.marker;
+    const name = !isContainer && container !== '' ? `${container} ${mark.marker}` : mark.marker;
+    const seen = (counts.get(name) ?? 0) + 1;
+    counts.set(name, seen);
+    return { ...mark, name: seen > 1 ? `${name} (${seen})` : name };
+  });
+}
+
 /**
  * Segment rendered document text into its §/Artikel/Anlage sections. Each heading starts a
  * section running to the next heading; text before the first heading becomes `Präambel`.
- * Paragraph (§) sections are qualified by their containing article (`Artikel 25 § 39`) so
- * names stay unique across a bill that amends many laws; any residual collision gets a
- * ` (n)` suffix. Returns `[]` when the text carries no structural headings (e.g. a raw
- * html/xml rendition) — the caller reads that as "nothing to outline".
+ * A heading inside a „…“ quotation — the replacement text an amending act quotes, new
+ * articles and §§ included — is part of the section that quotes it, not a section of its own.
+ * Sections are named by {@link nameHeadings}. Returns `[]` when the text carries no structural
+ * headings outside quotations (e.g. a raw html/xml rendition) — the caller reads that as
+ * "nothing to outline".
  */
 export function segmentDocument(text: string): DocumentSection[] {
-  const marks = [...text.matchAll(SECTION_HEADING)].map((match) => ({
-    index: match.index,
-    marker: (match[1] ?? '').replace(/[ \t]+/gu, ' ').trim(),
-  }));
+  const marks = nameHeadings(headingMarks(text).filter((mark) => !mark.quoted));
   const firstMark = marks[0];
   if (firstMark === undefined) return [];
 
   const encoder = new TextEncoder();
-  const sections: DocumentSection[] = [];
-  const counts = new Map<string, number>();
-  const push = (name: string, slice: string): void => {
-    const seen = (counts.get(name) ?? 0) + 1;
-    counts.set(name, seen);
-    sections.push({
-      kind: 'section',
-      name: seen > 1 ? `${name} (${seen})` : name,
-      text: slice,
-      bytes: encoder.encode(slice).length,
-    });
-  };
-
-  if (firstMark.index > 0) {
-    const preamble = text.slice(0, firstMark.index);
-    if (preamble.trim() !== '') push('Präambel', preamble);
-  }
-
-  let container = '';
-  marks.forEach((mark, i) => {
-    const end = marks[i + 1]?.index ?? text.length;
-    const isContainer = /^(?:Art|Anlage)/iu.test(mark.marker);
-    if (isContainer) container = mark.marker;
-    const name = !isContainer && container !== '' ? `${container} ${mark.marker}` : mark.marker;
-    push(name, text.slice(mark.index, end));
+  const section = (name: string, slice: string): DocumentSection => ({
+    kind: 'section',
+    name,
+    text: slice,
+    bytes: encoder.encode(slice).length,
   });
-  return sections;
+  const preamble = text.slice(0, firstMark.index);
+  return [
+    ...(preamble.trim() !== '' ? [section('Präambel', preamble)] : []),
+    ...marks.map((mark, i) =>
+      section(mark.name, text.slice(mark.index, marks[i + 1]?.index ?? text.length)),
+    ),
+  ];
+}
+
+/**
+ * A heading inside a „…“ quotation, under the name an outline gave it before quotations were
+ * read, and the code-unit span of its passage.
+ */
+export interface QuotedHeading {
+  /** End of its passage: the next heading, or the “ closing its quotation, whichever comes first. */
+  readonly end: number;
+  readonly name: string;
+  /** Offset of the heading. */
+  readonly start: number;
+}
+
+/**
+ * Offset of the “ that closes the innermost quotation open at `from`, scanning no further than
+ * `limit`; `limit` when none closes before it. Quotations opening after `from` are counted so
+ * their closers pass, which pairs each “ with the „ {@link quotations} pairs it with.
+ */
+function quotationClose(text: string, from: number, limit: number): number {
+  let depth = 0;
+  for (let index = from; index < limit; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code === OPENING_QUOTE) depth += 1;
+    else if (code === CLOSING_QUOTE) {
+      if (depth === 0) return index;
+      depth -= 1;
+    }
+  }
+  return limit;
+}
+
+/**
+ * The headings {@link segmentDocument} leaves inside the section quoting them, each named as if
+ * no heading were quoted — the name an outline listed it under before quotations were read
+ * (0.6.1 and earlier) — so a `sections:[…]` name copied from such an outline still selects its
+ * passage. Each passage runs from its heading to the next heading, quoted or not, or to the “
+ * closing the innermost quotation open at the heading, whichever comes first. Each scan stops
+ * at the next heading, so the whole pass reads the text once.
+ */
+export function quotedHeadings(text: string): QuotedHeading[] {
+  const marks = nameHeadings(headingMarks(text));
+  return marks.flatMap((mark, i) => {
+    if (!mark.quoted) return [];
+    const limit = marks[i + 1]?.index ?? text.length;
+    return [{ name: mark.name, start: mark.index, end: quotationClose(text, mark.index, limit) }];
+  });
 }
 
 /**
@@ -1009,6 +1113,13 @@ export function addressableSections(text: string, format: DocumentFormat): Docum
   return format === 'markdown' ? windowDocument(text, OUTLINE_BUDGET_BYTES) : [];
 }
 
+/** A requested name that selected a quoted heading's passage ({@link quotedHeadings}). */
+export interface QuotedPick {
+  readonly name: string;
+  /** The roster entry whose text holds the heading; `undefined` when the document has no roster. */
+  readonly within: string | undefined;
+}
+
 /** Outcome of resolving a `sections:[…]` selector against a rendered document. */
 export interface SectionSelection {
   /**
@@ -1016,9 +1127,14 @@ export interface SectionSelection {
    * largest first; windows keep document order (see {@link outlineDocument}).
    */
   readonly available: SectionMeta[];
-  /** Concatenated text of the matched entries, in document order; `''` when none matched. */
+  /** Requested names no entry carries that selected a quoted heading's passage, in document order. */
+  readonly quoted: QuotedPick[];
+  /**
+   * Text of the matched entries and quoted passages, in document order and each byte once;
+   * `''` when none matched.
+   */
   readonly text: string;
-  /** Requested names that matched no entry, in the order requested. */
+  /** Requested names that matched neither an entry nor a quoted heading, in the order requested. */
   readonly unmatched: string[];
   /** Whether `available` lists byte windows rather than §/Artikel/Anlage sections. */
   readonly windowed: boolean;
@@ -1029,8 +1145,10 @@ export interface SectionSelection {
  * counterpart to the outline, resolving through the same {@link addressableSections} roster
  * so every advertised name retrieves. The handler re-fetches the document (the upstream query
  * is deterministic, so it reproduces the same text) and slices it to the requested entries.
- * Reports the unmatched names and the full roster alongside the matched text so the handler
- * can disclose a mismatch instead of silently returning something the caller didn't ask for.
+ * A name no entry carries that names a quoted heading the way an outline did before quotations
+ * were read selects that heading's passage instead; an entry's name always wins. Reports the
+ * unmatched names and the full roster alongside the matched text so the handler can disclose a
+ * mismatch instead of silently returning something the caller didn't ask for.
  */
 export function selectDocumentSections(
   text: string,
@@ -1039,22 +1157,52 @@ export function selectDocumentSections(
 ): SectionSelection {
   const sections = addressableSections(text, format);
   const windowed = sections[0]?.kind === 'window';
+  // Entries tile the text from the first one's offset to its end.
+  let cursor = text.length - sections.reduce((sum, section) => sum + section.text.length, 0);
+  const entries = sections.map(({ name, text: slice }) => {
+    const start = cursor;
+    cursor += slice.length;
+    return { name, start, end: cursor };
+  });
   const names = new Set(sections.map((section) => section.name));
+  const requested = [...new Set(want)];
+  const missing = new Set(requested.filter((name) => !names.has(name)));
+  const passages =
+    missing.size > 0 ? quotedHeadings(text).filter((heading) => missing.has(heading.name)) : [];
+  let holder = 0;
+  const quoted = passages.map(({ name, start }) => {
+    while ((entries[holder]?.end ?? Number.POSITIVE_INFINITY) <= start) holder += 1;
+    return { name, within: entries[holder]?.name };
+  });
+  const resolved = new Set(passages.map((passage) => passage.name));
+
+  // No separator: every entry is a contiguous slice that already carries the line break ending
+  // it, so a multi-entry selection reassembles the source byte for byte and its size is the sum
+  // of the byte sizes the outline advertised. Inserting one would put bytes on the wire that are
+  // not in the document — enough, in a table-heavy RIS body, to split a table at the seam and
+  // orphan its rows from their header row. A quoted passage inside a selected entry is already
+  // in its text, so the spans are merged rather than concatenated.
   const wanted = new Set(want);
-  const matched = sections.filter((section) => wanted.has(section.name));
+  const spans = [...entries.filter((entry) => wanted.has(entry.name)), ...passages].sort(
+    (a, b) => a.start - b.start,
+  );
+  let reach = 0;
+  const pieces: string[] = [];
+  for (const { start, end } of spans) {
+    const from = Math.max(start, reach);
+    if (end > from) pieces.push(text.slice(from, end));
+    reach = Math.max(reach, end);
+  }
+
   const available = sections.map(({ name, bytes }) => ({ name, bytes }));
   // Same split as the outline's: a section roster is a menu, so largest first puts the
   // substantial units on top; a window roster is a reading sequence and keeps document order.
   if (!windowed) available.sort((a, b) => b.bytes - a.bytes);
   return {
     available,
-    // No separator: every entry is a contiguous slice that already carries the line break
-    // ending it, so a multi-entry selection reassembles the source byte for byte and its
-    // size is the sum of the byte sizes the outline advertised. Inserting one would put
-    // bytes on the wire that are not in the document — enough, in a table-heavy RIS body,
-    // to split a table at the seam and orphan its rows from their header row.
-    text: matched.map((section) => section.text).join(''),
-    unmatched: [...new Set(want)].filter((name) => !names.has(name)),
+    quoted,
+    text: pieces.join(''),
+    unmatched: requested.filter((name) => missing.has(name) && !resolved.has(name)),
     windowed,
   };
 }
@@ -1080,6 +1228,27 @@ function quoteNames(names: readonly string[]): string {
     return name;
   };
   return names.map((name) => `"${shorten(name)}"`).join(', ');
+}
+
+/**
+ * The notice for names that selected a quoted heading's passage: each name, the entry quoting
+ * it, where the passage ends, and where to read it in context. A document has a roster for
+ * every pick or for none.
+ */
+function quotedPassageNotice(picks: readonly QuotedPick[]): string {
+  const one = picks.length === 1;
+  const list = picks
+    .map(({ name, within }) =>
+      within === undefined
+        ? quoteNames([name])
+        : `${quoteNames([name])} (in ${quoteNames([within])})`,
+    )
+    .join(', ');
+  const headings = `${one ? 'a heading' : 'headings'} inside quoted replacement text`;
+  const passage = `so ${one ? 'it returns' : 'each returns'} its quoted passage — from the heading to the next heading or the close of the quotation.`;
+  return picks[0]?.within === undefined
+    ? `${list}: ${headings} in a document with no outline entries, ${passage} Re-call without sections:[…] for the whole document.`
+    : `${list}: ${headings}, not ${one ? 'an entry' : 'entries'} of this document’s outline, ${passage} Select the entry in parentheses for the text around ${one ? 'it' : 'each'}.`;
 }
 
 /**
@@ -1297,7 +1466,7 @@ const ContentUrlsSchema = z
 export const risGetDocument = tool('ris_get_document', {
   title: 'Get RIS Document',
   description:
-    'Fetch one RIS document’s full text or its rendition URLs, with explicit binding status and the amtssigniert authentic PDF surfaced wherever it exists. Address the document exactly one of two ways: document_number plus application (both copied verbatim from a ris_search_* or ris_lookup_citation result), or a document_url from a result’s content_urls — or, for a draft’s companion documents (Erläuterungen, Textgegenüberstellung, WFA, cover letter, annexes), a ris_search_drafts record’s materials[].url, which is the only route to them. format: markdown (default — the HTML rendition converted to markdown, or the PDF’s extracted text where a PDF is the only rendition), html (raw HTML rendition), xml (the RIS Nutzdaten XML), or urls_only (no fetch — every rendition URL, including the Authentisch PDF). Format availability varies by application and the tool degrades explicitly, never silently: consolidated law, gazettes, case law, drafts, and most sectoral collections carry full text; district and municipal promulgations and court rules (Bvb, GrA, KmGer) publish only the signed authentic PDF; party-transparency decisions and council minutes (Upts, Mrp) are PDF-only; the 1848–1940 imperial gazettes (BgblAlt) are metadata-only. Where a PDF is the only rendition — those PDF-only and authentic-PDF-only applications, and a draft companion filed with no html twin — markdown returns the text extracted from it (text_source: pdf, a "--- Page N of M ---" line before each page, a notice naming the PDF); for an authentic application the signed PDF stays the binding artifact to cite. html and xml there, every format on BgblAlt, and a PDF whose text cannot be extracted (a scan with no text layer — no OCR is performed — or an oversized, unreadable, or unreachable file) return a format_unavailable notice with the usable URL, not an error. Every result carries binding_status; only authentic (amtssigniert) publications are legally binding. This tool returns content, not fresh metadata — the metadata rides the search/lookup step that produced the document number. When the markdown text overflows the 40,000-byte budget the tool returns an outline (kind: outline) instead of truncating: the document’s §/Artikel/Anlage sections where it carries at least two such headings, otherwise contiguous byte windows named Part 1 of N … Part N of N covering the whole text and listed in document order. Re-call with sections:[…] naming outline entries to retrieve just those; a name matching no entry returns the outline again with a notice rather than the whole document. Windows are cut at line breaks, not at sentence or § boundaries, so one can open mid-sentence — read them in order and pull the neighbour when a passage straddles a cut. Raw html and xml renditions are never sliced: at or under the 40,000-byte budget they return whole; over it the result is kind: link — no text, truncated: true, the full byte_size, and content_urls, whose html or xml entry fetches the whole artifact in one GET. Every HTML rendition opens with a 40–70 KB stylesheet, so html practically always returns kind: link — read with markdown, parse with xml, and fetch content_urls.html for the authentic markup. Markdown drops the screen-reader expansions RIS ships alongside each abbreviated citation, keeping the visible citation form, and prints each Absatz, Ziffer, and litera under its own statutory label — (1a), 2., b) — with no generated list number in front; raw html/xml renditions are returned exactly as published.',
+    'Fetch one RIS document’s full text or its rendition URLs, with explicit binding status and the amtssigniert authentic PDF surfaced wherever it exists. Address the document exactly one of two ways: document_number plus application (both copied verbatim from a ris_search_* or ris_lookup_citation result), or a document_url — a record’s own document_url or eli (an ELI or Dokument.wxe web view, read for the document it names without fetching the link), one of its content_urls, or, for a draft’s companion documents (Erläuterungen, Textgegenüberstellung, WFA, cover letter, annexes), a ris_search_drafts record’s materials[].url, which is the only route to them. format: markdown (default — the HTML rendition converted to markdown, or the PDF’s extracted text where a PDF is the only rendition), html (raw HTML rendition), xml (the RIS Nutzdaten XML), or urls_only (no fetch — every rendition URL, including the Authentisch PDF). Format availability varies by application and the tool degrades explicitly, never silently: consolidated law, gazettes, case law, drafts, and most sectoral collections carry full text; district and municipal promulgations and court rules (Bvb, GrA, KmGer) publish only the signed authentic PDF; party-transparency decisions and council minutes (Upts, Mrp) are PDF-only; the 1848–1940 imperial gazettes (BgblAlt) are metadata-only. Where a PDF is the only rendition — those PDF-only and authentic-PDF-only applications, and a draft companion filed with no html twin — markdown returns the text extracted from it (text_source: pdf, a "--- Page N of M ---" line before each page, a notice naming the PDF); for an authentic application the signed PDF stays the binding artifact to cite. html and xml there, every format on BgblAlt, and a PDF whose text cannot be extracted (a scan with no text layer — no OCR is performed — or an oversized, unreadable, or unreachable file) return a format_unavailable notice with the usable URL, not an error. Every result carries binding_status; only authentic (amtssigniert) publications are legally binding. This tool returns content, not fresh metadata — the metadata rides the search/lookup step that produced the document number. When the markdown text overflows the 40,000-byte budget the tool returns an outline (kind: outline) instead of truncating: the document’s §/Artikel/Anlage sections where it carries at least two such headings, otherwise contiguous byte windows named Part 1 of N … Part N of N covering the whole text and listed in document order. Re-call with sections:[…] naming outline entries to retrieve just those; a name matching nothing returns the outline again with a notice rather than the whole document. Windows are cut at line breaks, not at sentence or § boundaries, so one can open mid-sentence — read them in order and pull the neighbour when a passage straddles a cut. Raw html and xml renditions are never sliced: at or under the 40,000-byte budget they return whole; over it the result is kind: link — no text, truncated: true, the full byte_size, and content_urls, whose html or xml entry fetches the whole artifact in one GET. Every HTML rendition opens with a 40–70 KB stylesheet, so html practically always returns kind: link — read with markdown, parse with xml, and fetch content_urls.html for the authentic markup. Markdown drops the screen-reader expansions RIS ships alongside each abbreviated citation, keeping the visible citation form, and prints each Absatz, Ziffer, and litera under its own statutory label — (1a), 2., b) — with no generated list number in front; raw html/xml renditions are returned exactly as published.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     document_number: z
@@ -1306,17 +1475,17 @@ export const risGetDocument = tool('ris_get_document', {
       .describe(
         'Technical RIS document number (Technisch.ID), e.g. NOR40262691, JJT_…, BGBLA_2026_II_171 — copy verbatim from a ris_search_* or ris_lookup_citation result. Requires application; mutually exclusive with document_url.',
       ),
-    application: z
-      .enum(APPLICATION_CODES)
-      .optional()
-      .describe(
-        'RIS application the document belongs to (e.g. BrKons, Dsk, BgblAuth) — copy verbatim from the same result. Required with document_number. Codes and coverage: ris_list_reference topic applications.',
-      ),
+    application: foldCodeCase(z.enum(APPLICATION_CODES).optional(), {
+      definition: 'ris_get_document',
+      field: 'application',
+    }).describe(
+      'RIS application the document belongs to (e.g. BrKons, Dsk, BgblAuth) — copy verbatim from the same result. Required with document_number. Codes and coverage: ris_list_reference topic applications.',
+    ),
     document_url: z
       .string()
       .optional()
       .describe(
-        'A /Dokumente/… rendition URL on https://www.ris.bka.gv.at or https://ogd.ris.bka.gv.at, passed exactly as a result’s content_urls returned it — the alternative to document_number + application. Also the only way to read a draft’s companion documents: pass a ris_search_drafts record’s materials[].url (the Erläuterungen, Textgegenüberstellung, WFA, cover letter, or annex), whose filenames are opaque and per-record and so cannot be reached through document_number. Every companion filename RIS publishes is accepted, whichever shape it carries. The URL’s own extension is only checked against the rendition extensions RIS uses and is then discarded — format selects which rendition is returned, for a companion exactly as for a main document. A filename that is neither this document’s own rendition nor one of its companions is rejected; companion filenames cannot be composed by hand, so copy one verbatim.',
+        'A link to one RIS document, passed exactly as a result returned it — the alternative to document_number + application. Accepted: a record’s own document_url or eli — an ELI or a Dokument.wxe web view on ris.bka.gv.at, www.ris.bka.gv.at, or ogd.ris.bka.gv.at, over https or http, read for the application and document number it names, so nothing is fetched from the link and the result is the document_number + application call’s; or a /Dokumente/… rendition URL on https://www.ris.bka.gv.at or https://ogd.ris.bka.gv.at from a result’s content_urls. Other RIS web views (GeltendeFassung, JudikaturEntscheidung, JudikaturRechtssaetze, VwghRechtssatzkette, VergEntscheidung) name a whole law or several documents and are rejected. Also the only way to read a draft’s companion documents: pass a ris_search_drafts record’s materials[].url (the Erläuterungen, Textgegenüberstellung, WFA, cover letter, or annex), whose filenames are opaque and per-record and so cannot be reached through document_number. Every companion filename RIS publishes is accepted, whichever shape it carries. The URL’s own extension is only checked against the rendition extensions RIS uses and is then discarded — format selects which rendition is returned, for a companion exactly as for a main document. A filename that is neither this document’s own rendition nor one of its companions is rejected; companion filenames cannot be composed by hand, so copy one verbatim.',
       ),
     format: z
       .enum(['markdown', 'html', 'xml', 'urls_only'])
@@ -1328,7 +1497,7 @@ export const risGetDocument = tool('ris_get_document', {
       .array(z.string())
       .optional()
       .describe(
-        'Entry names to retrieve, each copied verbatim from a prior outline response (kind: outline) — §/Artikel/Anlage section names, or window names of the form "Part 2 of 6". Omit for the full document, which returns an outline instead when the markdown overflows the 40,000-byte budget. A name that matches no entry is never silently ignored: a total miss returns the outline (kind: outline) with a notice, a partial miss returns the matched entries with a notice naming others to pick from. Applies to markdown only. html and xml are never sliced — the selector is ignored with a notice, and they return whole under the 40,000-byte budget and as kind: link over it; urls_only carries no text to select from.',
+        'Entry names to retrieve, each copied verbatim from a prior outline response (kind: outline) — §/Artikel/Anlage section names, or window names of the form "Part 2 of 6". Omit for the full document, which returns an outline instead when the markdown overflows the 40,000-byte budget. A name that matches no entry is never silently ignored: one naming a heading inside quoted replacement text (an amending act’s „…“ wording, which stays inside the entry quoting it) returns that heading’s passage with a notice naming the entry; otherwise a total miss returns the outline (kind: outline) with a notice, a partial miss returns the matched entries with a notice naming others to pick from. Applies to markdown only. html and xml are never sliced — the selector is ignored with a notice, and they return whole under the 40,000-byte budget and as kind: link over it; urls_only carries no text to select from.',
       ),
   }),
   output: z.object({
@@ -1397,33 +1566,23 @@ export const risGetDocument = tool('ris_get_document', {
         'Present when the text was extracted from a PDF (names the PDF and what extraction loses, ahead of any other notice below), when an html rendition carries only page images and its PDF has no extractable text (gives the image count, names content_urls.pdf and why, ahead of any other notice below), when the requested text format is unavailable or a PDF’s text could not be extracted (names why and the usable URL, and that a sections:[…] selector was ignored), when the document overflowed to a section outline (names how to retrieve sections), when an html or xml rendition overflowed to a link (names content_urls.<format> and format: markdown), or when a sections:[…] entry matched no section or was ignored (names the unmatched entries).',
       ),
   },
-  // The framework writes a notice into content[] as authored Markdown, and these quote caller
-  // text: unmatched sections:[…] names and URLs carrying the document_number. Escape the whole
-  // notice, then quote every line as the framework does, so content[] reads back what
-  // structuredContent.notice holds.
-  enrichmentTrailer: {
-    notice: {
-      render: (notice: string) =>
-        escapeMarkdownInline(notice)
-          .split('\n')
-          .map((line) => (line === '' ? '>' : `> ${line}`))
-          .join('\n'),
-    },
-  },
+  // Notices quote caller text — unmatched sections:[…] names and URLs carrying the
+  // document_number — so content[] escapes them to read back what structuredContent holds.
+  enrichmentTrailer: { notice: escapedNoticeTrailer },
   errors: [
     {
       reason: 'invalid_addressing',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Neither or both addressing modes were provided, document_number was given without application, or the document_number/application pairing is not a valid RIS document — thrown locally before any fetch.',
       recovery:
-        'Provide exactly one addressing mode: document_number plus application (both from one search result), or a document_url from a result’s content_urls.',
+        'Provide exactly one addressing mode: document_number plus application (both from one search result), or a document_url — the record’s document_url or eli, or an entry of its content_urls.',
     },
     {
       reason: 'unsupported_url',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'document_url fails the origin + /Dokumente/ path-prefix allowlist (exactly https://www.ris.bka.gv.at and https://ogd.ris.bka.gv.at), its path segment is not a recognized RIS application, or its trailing filename addresses neither the document’s own rendition nor one of its companion documents — thrown locally, nothing fetched.',
+      when: 'document_url is an ELI or Dokument.wxe web view in a shape that names no one document (a work-level or unknown ELI layout, an Abfrage naming no application, a missing or repeated Dokumentnummer, a port other than the default or a scheme other than https or http), or a URL that fails the origin + /Dokumente/ path-prefix allowlist (exactly https://www.ris.bka.gv.at and https://ogd.ris.bka.gv.at), whose path segment is not a recognized RIS application, or whose trailing filename addresses neither the document’s own rendition nor one of its companion documents — thrown locally, nothing fetched.',
       recovery:
-        'Only /Dokumente/ URLs on www.ris.bka.gv.at or ogd.ris.bka.gv.at are fetchable, and only a document’s own rendition or a companion filed in the same folder — copy the URL verbatim from a result’s content_urls or a ris_search_drafts record’s materials, or switch to document_number + application.',
+        'Pass a record’s document_url or eli, an entry of its content_urls, or a ris_search_drafts record’s materials[].url verbatim, or switch to document_number + application. Other RIS web views (GeltendeFassung, JudikaturEntscheidung, and the like) name a whole law or several documents and are not read.',
     },
     {
       reason: 'document_not_found',
@@ -1474,13 +1633,19 @@ export const risGetDocument = tool('ris_get_document', {
           'Provide document_url OR document_number + application, not both addressing modes.',
         );
       }
-      const parsed = parseDocumentUrl(documentUrl, getServerConfig().contentBaseUrl);
+      // A record's document_url or eli names one document by its application and number, read
+      // without fetching the link; every other URL is a /Dokumente/ rendition URL or refused.
+      const link = readDocumentLink(documentUrl);
+      if (link !== null && 'error' in link) {
+        throw ctx.fail('unsupported_url', `document_url is not readable — ${link.error}`);
+      }
+      const parsed = link ?? parseDocumentUrl(documentUrl, getServerConfig().contentBaseUrl);
       if ('error' in parsed) {
         throw ctx.fail('unsupported_url', `document_url is not fetchable — ${parsed.error}.`);
       }
       resolvedApplication = parsed.application;
       resolvedDocumentNumber = parsed.documentNumber;
-      resolvedContentName = parsed.contentName;
+      resolvedContentName = 'contentName' in parsed ? parsed.contentName : undefined;
     } else {
       if (documentNumber === undefined || application === undefined) {
         throw failAddressing(
@@ -1607,14 +1772,19 @@ export const risGetDocument = tool('ris_get_document', {
         ? `${selection.available.length} contiguous byte windows, since it carries no §/Artikel/Anlage headings and overflows the ${OUTLINE_BUDGET_BYTES}-byte budget`
         : `${selection.available.length} §/Artikel/Anlage sections`;
       if (selection.text !== '') {
-        if (selection.unmatched.length > 0) {
-          // Names candidates from the roster rather than promising an outline on a re-call
-          // without sections:[…] — that re-call only outlines a document over the byte
-          // budget, and returns the whole text for every document under it.
-          notify(
-            `Returned only the matched entries — ${quoteNames(selection.unmatched)} named no entry of this document and ${selection.unmatched.length === 1 ? 'was' : 'were'} skipped. This document has ${roster}; copy a name verbatim and re-call ris_get_document with the same addressing — e.g. ${exampleSectionNames(selection.available)}.`,
-          );
-        }
+        const skipped = `${selection.unmatched.length === 1 ? 'was' : 'were'} skipped.`;
+        // Names candidates from the roster rather than promising an outline on a re-call
+        // without sections:[…] — that re-call only outlines a document over the byte
+        // budget, and returns the whole text for every document under it.
+        const notice = joinNotices(
+          selection.quoted.length > 0 ? quotedPassageNotice(selection.quoted) : undefined,
+          selection.unmatched.length === 0
+            ? undefined
+            : selection.available.length > 0
+              ? `Returned only the matched entries — ${quoteNames(selection.unmatched)} named no entry of this document and ${skipped} This document has ${roster}; copy a name verbatim and re-call ris_get_document with the same addressing — e.g. ${exampleSectionNames(selection.available)}.`
+              : `Returned only the matched passages — ${quoteNames(selection.unmatched)} named no heading of this document and ${skipped}`,
+        );
+        if (notice !== undefined) notify(notice);
         return {
           ...base,
           kind: 'full' as const,
