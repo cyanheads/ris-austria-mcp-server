@@ -45,6 +45,21 @@ function expectValidationError(fn: () => unknown, messagePart?: string): void {
   if (messagePart !== undefined) expect(caught!.message).toContain(messagePart);
 }
 
+/**
+ * Stub the network with a request the caller cancels mid-flight: the caller's signal aborts and
+ * fetch rejects with the `AbortError` that follows. Returns that caller's signal and the mock. An
+ * `AbortError` with no aborted signal behind it is a network failure, not a cancellation.
+ */
+function stubCallerAbort(): { fetchMock: ReturnType<typeof vi.fn>; signal: AbortSignal } {
+  const controller = new AbortController();
+  const fetchMock = vi.fn(() => {
+    controller.abort();
+    return Promise.reject(new DOMException('The operation was aborted.', 'AbortError'));
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return { fetchMock, signal: controller.signal };
+}
+
 describe('assertFetchableDocumentUrl', () => {
   it('accepts content-host URLs under /Dokumente/', () => {
     const url = `${CONTENT_BASE}/Dokumente/Bundesnormen/NOR11013238/NOR11013238.html`;
@@ -169,6 +184,21 @@ describe('RisService.buildDocumentContentUrl', () => {
     );
     expectValidationError(() => service.buildDocumentContentUrl('BrKons', 'NOR1?x=1', 'html'));
     expectValidationError(() => service.buildDocumentContentUrl('BrKons', '', 'html'));
+  });
+
+  it('builds a document number with a dot inside it, which stays one path segment', () => {
+    expect(service.buildDocumentContentUrl('BrKons', 'NOR1.1', 'html')).toBe(
+      `${DEFAULT_CONTENT_HOST}/Dokumente/Bundesnormen/NOR1.1/NOR1.1.html`,
+    );
+  });
+
+  it('refuses a dot segment as the document number, before any URL is built', () => {
+    for (const documentNumber of ['.', '..']) {
+      expectValidationError(
+        () => service.buildDocumentContentUrl('BrKons', documentNumber, 'html'),
+        `document_number "${documentNumber}" is not a valid RIS document number.`,
+      );
+    }
   });
 
   // A draft's companion documents (Erläuterungen, Textgegenüberstellung, WFA, covering
@@ -333,10 +363,9 @@ describe('RisService — search retry budget', () => {
   });
 
   it('keeps caller cancellation distinct from a search deadline without retrying', async () => {
-    const fetchMock = vi.fn(() => Promise.reject(new DOMException('Aborted', 'AbortError')));
-    vi.stubGlobal('fetch', fetchMock);
+    const { fetchMock, signal } = stubCallerAbort();
     const error = await service
-      .trackChanges({ application: 'Dsk' }, createMockContext())
+      .trackChanges({ application: 'Dsk' }, createMockContext({ signal }))
       .catch((error: unknown) => error);
     expect(error).toMatchObject({
       code: JsonRpcErrorCode.RequestCancelled,
@@ -648,12 +677,9 @@ describe('RisService.fetchDocumentContent — upstream classification and retry 
   });
 
   it('classifies a caller abort as RequestCancelled without retrying', async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.reject(new DOMException('The operation was aborted.', 'AbortError')),
-    );
-    vi.stubGlobal('fetch', fetchMock);
+    const { fetchMock, signal } = stubCallerAbort();
     const err = await service
-      .fetchDocumentContent(URL_UNDER_TEST, createMockContext())
+      .fetchDocumentContent(URL_UNDER_TEST, createMockContext({ signal }))
       .catch((e: unknown) => e);
 
     expect((err as McpError).code).toBe(JsonRpcErrorCode.RequestCancelled);
@@ -910,13 +936,10 @@ describe('RisService.fetchDocumentBytes — byte ceiling and one deadline (#97)'
   });
 
   it('classifies a caller abort as RequestCancelled without retrying', async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.reject(new DOMException('The operation was aborted.', 'AbortError')),
-    );
-    vi.stubGlobal('fetch', fetchMock);
+    const { fetchMock, signal } = stubCallerAbort();
 
     const err = await service
-      .fetchDocumentBytes(PDF_URL, createMockContext(), LIMITS)
+      .fetchDocumentBytes(PDF_URL, createMockContext({ signal }), LIMITS)
       .catch((e: unknown) => e);
 
     expect((err as McpError).code).toBe(JsonRpcErrorCode.RequestCancelled);

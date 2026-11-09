@@ -42,6 +42,7 @@ import {
 
 import { getServerConfig } from '@/config/server-config.js';
 
+import { isDocumentNumber } from './document-link.js';
 import {
   errorFromResponseBody,
   isHtmlErrorPage,
@@ -77,9 +78,13 @@ import type { RisChangeSet, RisDocumentContent, RisSearchResult } from './types.
  * reaching a verdict the MCP SDK's 60s default request timeout had already taken from the
  * caller.
  *
- * `SEARCH_TIMEOUT_MS` covers that band up to its long tail. The tools send page sizes 10
- * and 20 only (#40, #70), which keeps a tool-issued search in the 6–10.5s band; the deadline
- * still sizes for 50 and 100, which `RisPageSize` keeps in the service vocabulary. The tail
+ * `SEARCH_TIMEOUT_MS` covers that band up to its long tail. The search tools send page sizes
+ * 10 and 20 only (#40, #70), which keeps an unfiltered tool search in the 6–10.5s band.
+ * `ris_lookup_citation`'s ranked routes send 100, but each is filtered — by a collection
+ * number, a case number, a quoted ECLI, or a law title — and a filtered page stays in the
+ * filtered band at 100: a title matching 1,384 sections answered in 1.1s (0.3s at 20), a
+ * 78-match case number in 1.2s (measured 2026-11-09). The deadline still sizes for an
+ * unfiltered 50 or 100, which `RisPageSize` keeps in the service vocabulary. The tail
  * past it is out of reach at any deadline that still leaves room to deliver the response, so
  * the `upstream_timeout` recovery hints name the lever that shortens the scan (a smaller
  * page_size).
@@ -224,9 +229,6 @@ async function readCappedBody(
 export const RIS_CONTENT_FORMATS = ['html', 'pdf', 'rtf', 'xml'] as const;
 export type RisContentFormat = (typeof RIS_CONTENT_FORMATS)[number];
 
-/** Document numbers observed live use letters (incl. umlauts), digits, `_`, `.`, `~`, `-`. */
-const DOCUMENT_NUMBER_PATTERN = /^[\p{L}\p{N}_.~-]+$/u;
-
 const CONTENT_PATH_SEGMENTS = new Map<string, string | null>(
   RIS_APPLICATIONS.map((app) => [app.code, app.contentPathSegment]),
 );
@@ -362,7 +364,7 @@ export class RisService {
    * one of the companion documents a draft ships alongside its bill text
    * (`/Dokumente/{segment}/{DOKNR}/{contentName}.{format}`). RIS names those opaquely and in
    * several shapes, so the caller's URL is the only source for one. It is held to the same
-   * safe-character pattern as the document number, so nothing outside the folder is
+   * {@link isDocumentNumber} check as the document number, so nothing outside the folder is
    * constructible.
    */
   buildDocumentContentUrl(
@@ -384,7 +386,7 @@ export class RisService {
         { application },
       );
     }
-    if (!DOCUMENT_NUMBER_PATTERN.test(documentNumber)) {
+    if (!isDocumentNumber(documentNumber)) {
       throw validationError(
         `document_number "${documentNumber}" is not a valid RIS document number.`,
         {
@@ -392,7 +394,7 @@ export class RisService {
         },
       );
     }
-    if (contentName !== undefined && !DOCUMENT_NUMBER_PATTERN.test(contentName)) {
+    if (contentName !== undefined && !isDocumentNumber(contentName)) {
       throw validationError(`"${contentName}" is not a valid RIS content filename.`, {
         contentName,
       });

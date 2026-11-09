@@ -4,8 +4,9 @@
  * (LrKons/LgblAuth; Lgbl has only seven — no Niederösterreich, no Wien), a flat ASCII enum
  * ("Kaernten" — Gr, GrA, Vbl, Lvwg, Uvs, and Spg's RSG `Land`), and a flat umlauted enum
  * ("Kärnten" — Bvb only). Grounded in the request XSDs and live probes (2026-07-05):
- * sending the wrong spelling fails schema validation. Also the fold that maps a caller's
- * spelling of a state (German, capitalized, umlauted, English) onto the tool-parameter code.
+ * sending the wrong spelling fails schema validation. Also the two-letter code RIS writes in
+ * ELIs, and the fold that maps a caller's spelling of a state (German, capitalized, umlauted,
+ * English) onto the tool-parameter code.
  * @module services/ris/reference/states
  */
 
@@ -13,6 +14,12 @@
 export interface RisState {
   /** State code used by tool `scope`/`state` parameters (lowercase). */
   readonly code: string;
+  /**
+   * Two-letter code RIS writes in state ELIs (`/eli/lgbl/{eliCode}/…`, uppercase on current
+   * records and lowercase on some 2014–2015 ones) and in LgblAuth document numbers
+   * (`LGBLA_{eliCode}_…`). Verified against each LgblAuth record's `Bundesland` (2026-11-09).
+   */
+  readonly eliCode: string;
   /** Boolean flag element under `Bundesland.` for LrKons / LgblAuth / Lgbl. */
   readonly flagParam: string;
   /** Flat enum value for Gr, GrA, Vbl, Lvwg, Uvs, and Spg `Land` (ASCII, no umlauts). */
@@ -30,6 +37,7 @@ export const RIS_STATES = [
   {
     code: 'burgenland',
     name: 'Burgenland',
+    eliCode: 'BU',
     flagParam: 'SucheInBurgenland',
     flatAscii: 'Burgenland',
     flatUmlaut: 'Burgenland',
@@ -38,6 +46,7 @@ export const RIS_STATES = [
   {
     code: 'kaernten',
     name: 'Kärnten',
+    eliCode: 'KA',
     flagParam: 'SucheInKaernten',
     flatAscii: 'Kaernten',
     flatUmlaut: 'Kärnten',
@@ -46,6 +55,7 @@ export const RIS_STATES = [
   {
     code: 'niederoesterreich',
     name: 'Niederösterreich',
+    eliCode: 'NI',
     flagParam: 'SucheInNiederoesterreich',
     flatAscii: 'Niederoesterreich',
     flatUmlaut: 'Niederösterreich',
@@ -54,6 +64,7 @@ export const RIS_STATES = [
   {
     code: 'oberoesterreich',
     name: 'Oberösterreich',
+    eliCode: 'OB',
     flagParam: 'SucheInOberoesterreich',
     flatAscii: 'Oberoesterreich',
     flatUmlaut: 'Oberösterreich',
@@ -62,6 +73,7 @@ export const RIS_STATES = [
   {
     code: 'salzburg',
     name: 'Salzburg',
+    eliCode: 'SA',
     flagParam: 'SucheInSalzburg',
     flatAscii: 'Salzburg',
     flatUmlaut: 'Salzburg',
@@ -70,6 +82,7 @@ export const RIS_STATES = [
   {
     code: 'steiermark',
     name: 'Steiermark',
+    eliCode: 'ST',
     flagParam: 'SucheInSteiermark',
     flatAscii: 'Steiermark',
     flatUmlaut: 'Steiermark',
@@ -78,6 +91,7 @@ export const RIS_STATES = [
   {
     code: 'tirol',
     name: 'Tirol',
+    eliCode: 'TI',
     flagParam: 'SucheInTirol',
     flatAscii: 'Tirol',
     flatUmlaut: 'Tirol',
@@ -86,6 +100,7 @@ export const RIS_STATES = [
   {
     code: 'vorarlberg',
     name: 'Vorarlberg',
+    eliCode: 'VO',
     flagParam: 'SucheInVorarlberg',
     flatAscii: 'Vorarlberg',
     flatUmlaut: 'Vorarlberg',
@@ -94,6 +109,7 @@ export const RIS_STATES = [
   {
     code: 'wien',
     name: 'Wien',
+    eliCode: 'WI',
     flagParam: 'SucheInWien',
     flatAscii: 'Wien',
     flatUmlaut: 'Wien',
