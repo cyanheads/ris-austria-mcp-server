@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: ris-austria-mcp-server
+abstract: "Search Austrian consolidated federal & state law, court decisions, and the authentic Bundesgesetzblatt from the official RIS via MCP. Keyless. STDIO or Streamable HTTP."
+type: software
+authors:
+  - family-names: Hand
+    given-names: Casey
+    orcid: "https://orcid.org/0009-0009-3726-568X"
+repository-code: "https://github.com/cyanheads/ris-austria-mcp-server"
+license: Apache-2.0
+doi: 10.5281/zenodo.24193481
+keywords:
+  - mcp
+  - model-context-protocol
+  - ris
+  - austria
+  - austrian-law
+  - legal-research
+  - case-law
+  - legislation
+  - gazette
+  - bundesgesetzblatt
